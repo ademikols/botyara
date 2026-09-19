@@ -31,7 +31,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
-    KeyboardButton, Message, ReplyKeyboardMarkup,
+    KeyboardButton, Message, ReplyKeyboardMarkup, ReplyParameters,
 )
 from aiogram.utils.text_decorations import html_decoration
 
@@ -156,7 +156,8 @@ CREATE TABLE IF NOT EXISTS members(
 );
 CREATE TABLE IF NOT EXISTS relay(
     chat_id INTEGER, msg_id INTEGER, sender_id INTEGER, group_id INTEGER, ts INTEGER,
-    PRIMARY KEY(chat_id, msg_id)
+    src_chat_id INTEGER, src_msg_id INTEGER,   -- «оригинал»: чат и id исходного сообщения отправителя,
+    PRIMARY KEY(chat_id, msg_id)               -- общий для всех копий этого сообщения у получателей
 );
 """)
 
@@ -178,8 +179,16 @@ def migrate():
             SELECT user_id, group_id, role, muted_until, joined FROM members_old;
         DROP TABLE members_old;
         """)
+    relay_cols = {r["name"] for r in db.execute("PRAGMA table_info(relay)")}
+    if "src_chat_id" not in relay_cols:         # старая база: добавляем связку для нативных reply
+        db.executescript("""
+        ALTER TABLE relay ADD COLUMN src_chat_id INTEGER;
+        ALTER TABLE relay ADD COLUMN src_msg_id INTEGER;
+        UPDATE relay SET src_chat_id = chat_id, src_msg_id = msg_id WHERE src_chat_id IS NULL;
+        """)
     db.executescript("""
     CREATE INDEX IF NOT EXISTS ix_members_group ON members(group_id);
+    CREATE INDEX IF NOT EXISTS ix_relay_src ON relay(src_chat_id, src_msg_id);
     UPDATE users SET active_group = (SELECT group_id FROM members WHERE members.user_id = users.user_id)
      WHERE COALESCE(active_group, 0) = 0
        AND (SELECT COUNT(*) FROM members WHERE members.user_id = users.user_id) = 1;
@@ -496,34 +505,64 @@ def to_html(m: Message) -> str:
     return html_decoration.unparse(raw, ents) if raw else ""
 
 
-async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str = "") -> list:
+async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str = "",
+                   reply_to: Optional[int] = None) -> list:
     """Отправляет одно сообщение одному получателю, возвращает id отправленных сообщений.
-    label — название группы (подставляется тем, кто состоит в нескольких группах)."""
+    label — название группы (подставляется тем, кто состоит в нескольких группах).
+    reply_to — id сообщения в чате получателя, на которое нужно ответить нативным Telegram-reply
+    (без текстовых вставок вида «в ответ на…»). Если это сообщение у получателя уже не существует
+    (например, удалено), allow_sending_without_reply просто отправит как обычное сообщение."""
     head = f"<b>{esc(nick)}</b>" + (f" <i>· {esc(label)}</i>" if label else "")
+    rp = ReplyParameters(message_id=reply_to, allow_sending_without_reply=True) if reply_to else None
     if m.text:
-        r = await bot.send_message(chat_id, f"{head}:\n{to_html(m)}", protect_content=protect)
+        r = await bot.send_message(chat_id, f"{head}:\n{to_html(m)}", protect_content=protect,
+                                   reply_parameters=rp)
         return [r.message_id]
     ctype = str(getattr(m.content_type, "value", m.content_type))
     cap = to_html(m)
     text = head + (f"\n{cap}" if cap else "")
     if ctype in CAPTION_TYPES and len(text) <= 1000:      # ник — в подписи к медиа
-        r = await bot.copy_message(chat_id, m.chat.id, m.message_id, caption=text, protect_content=protect)
+        r = await bot.copy_message(chat_id, m.chat.id, m.message_id, caption=text, protect_content=protect,
+                                   reply_parameters=rp)
         return [r.message_id]
-    h = await bot.send_message(chat_id, f"{head}:", protect_content=protect)   # стикеры/кружки: ник отдельной строкой
+    h = await bot.send_message(chat_id, f"{head}:", protect_content=protect,
+                               reply_parameters=rp)         # стикеры/кружки: ник отдельной строкой, реплай — на неё
     r = await bot.copy_message(chat_id, m.chat.id, m.message_id, protect_content=protect)
     return [h.message_id, r.message_id]
 
 
 async def relay(m: Message, u, mem):
     """Рассылает сообщение только тем участникам группы, у кого она сейчас активна —
-    остальные (переключённые на другую группу) сообщения из этой группы не получают."""
+    остальные (переключённые на другую группу) сообщения из этой группы не получают.
+    Если это ответ на ранее пересланное сообщение — у каждого получателя оно уходит тоже
+    нативным Telegram-reply на его копию того же сообщения (без текстовых вставок вида
+    «в ответ на…»)."""
     protect = bool(mem["protect"])
     gid = mem["group_id"]
+    src_chat_id, src_msg_id = m.chat.id, m.message_id
+
+    reply_src = None
+    if m.reply_to_message:
+        r = one("SELECT src_chat_id, src_msg_id FROM relay WHERE chat_id=? AND msg_id=?",
+                (m.chat.id, m.reply_to_message.message_id))
+        if r:
+            reply_src = (r["src_chat_id"], r["src_msg_id"])
+
+    # «корень»: запоминаем само это сообщение, чтобы дальше на него можно было ответить
+    # (в т.ч. самому отправителю — на своё же сообщение в своём чате)
+    db.execute("INSERT OR REPLACE INTO relay VALUES(?,?,?,?,?,?,?)",
+               (src_chat_id, src_msg_id, u["user_id"], gid, now(), src_chat_id, src_msg_id))
+
     for rid in active_recipients(gid, exclude=(u["user_id"],)):
+        reply_to = None
+        if reply_src:
+            rr = one("""SELECT msg_id FROM relay WHERE chat_id=? AND src_chat_id=? AND src_msg_id=?
+                        ORDER BY msg_id DESC LIMIT 1""", (rid, reply_src[0], reply_src[1]))
+            reply_to = rr["msg_id"] if rr else None
         try:
-            for mid in await deliver(m, rid, u["nick"], protect):
-                db.execute("INSERT OR REPLACE INTO relay VALUES(?,?,?,?,?)",
-                           (rid, mid, u["user_id"], gid, now()))
+            for mid in await deliver(m, rid, u["nick"], protect, reply_to=reply_to):
+                db.execute("INSERT OR REPLACE INTO relay VALUES(?,?,?,?,?,?,?)",
+                           (rid, mid, u["user_id"], gid, now(), src_chat_id, src_msg_id))
         except TelegramAPIError as e:
             log.warning("не доставлено %s: %s", rid, e)
         await asyncio.sleep(0.04)      # ~25 сообщений/сек, чтобы не упереться в лимиты Telegram
