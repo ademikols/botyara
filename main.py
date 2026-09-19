@@ -2,7 +2,7 @@
 Бот анонимных групп — aiogram 3, HTML-разметка, SQLite, всё в одном файле.
 
 Запуск:
-    pip install -U aiogram
+    pip install -U aiogram aiosqlite
     export BOT_TOKEN="123456:ABC..."      # токен от @BotFather
     python anon_groups_bot.py
 
@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from html import escape as esc
 from typing import Optional
 
+import aiosqlite
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -31,7 +32,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
-    KeyboardButton, Message, ReplyKeyboardMarkup, ReplyParameters,
+    KeyboardButton, Message, ReplyKeyboardMarkup, ReplyParameters, TelegramObject,
 )
 from aiogram.utils.text_decorations import html_decoration
 
@@ -70,6 +71,7 @@ COMMANDS = [
     ("stats", "Статистика (личная и по группе)"),
     ("nick", "Сменить ник"),
     ("leave", "Выйти из группы"),
+    ("report", "Жалоба (ответом на сообщение)"),
     ("cancel", "Отменить ввод"),
     ("panel", "Управление группой (модератор)"),
     ("rename", "Сменить название группы (владелец)"),
@@ -98,6 +100,7 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 /stats — статистика: сколько сообщений и медиа отправили вы и вся группа
 /nick — сменить ник
 /leave — выйти из активной группы
+/report — пожаловаться на участника (ответом на его сообщение)
 /cancel — отменить ввод
 
 Состоять можно максимум в {MAX_GROUPS} группах.
@@ -125,9 +128,7 @@ ABOUT_TEXT = f"""ℹ️ <b>О боте</b>
 • Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
 • Защита от пересылки и сохранения — настройка группы
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
-• Правка и удаление сообщений у других участников не синхронизируются
-
-<b>Что хранится:</b> ник, членство в группах и связка «сообщение → автор» на {RELAY_TTL // 86400} дня (нужна, чтобы модератор мог ответом на сообщение применить /kick или /mute). Текст сообщений не хранится. Тот, кто запустил бота, технически имеет доступ к базе."""
+• Правка и удаление сообщений у других участников не синхронизируются"""
 
 # ───────────────────────── База данных ─────────────────────────
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -317,6 +318,153 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 bot: Bot = None  # type: ignore  # создаётся в main()
 BOT_USERNAME = ""
+
+
+# ───────────────────────── Жалобы и баны (aiosqlite) ─────────────────────────
+# Этот блок стоит ДО DropState намеренно: BanGuard должен срабатывать первым,
+# чтобы забаненный человек ни на что не влиял (даже на сброс состояния ввода).
+REPORT_HINT = "Свайпните на сообщение нарушителя и напишите /report"
+MIN_DIALOG_SEC = 60                        # жаловаться можно, только если общение идёт не меньше минуты
+PAIR_COOLDOWN = 3600                       # на одного и того же — не чаще раза в час
+DAILY_LIMIT = 3                            # жалоб от одного человека за сутки
+REPORT_WINDOW = 24 * 3600                  # окно подсчёта жалоб и суточного лимита
+BAN_SHORT_AT, BAN_SHORT = 5, 3600          # 5–9 жалоб  → бан на 1 час
+BAN_LONG_AT, BAN_LONG = 10, 24 * 3600      # 10+ жалоб → бан на 24 часа
+REPORT_KEEP = 7 * 24 * 3600                # жалобы старше этого срока удаляются при ежедневной очистке
+
+adb: aiosqlite.Connection = None  # type: ignore  # создаётся в init_report_db()
+report_lock: asyncio.Lock = None  # type: ignore
+
+# Считает жалобы на нарушителя за окно. Жалоба игнорируется, если нарушитель тоже
+# пожаловался на этого человека в том же окне (взаимные жалобы гасят друг друга).
+COUNT_SQL = """
+SELECT COUNT(*) AS c FROM reports r
+WHERE r.offender_id=? AND r.date>=?
+  AND NOT EXISTS (SELECT 1 FROM reports b
+                  WHERE b.reporter_id=r.offender_id AND b.offender_id=r.reporter_id AND b.date>=?)
+"""
+
+
+async def init_report_db():
+    """Открывает aiosqlite-соединение, создаёт таблицу reports и поле users.banned_until (если их нет)."""
+    global adb, report_lock
+    report_lock = asyncio.Lock()
+    # isolation_level=None — автокоммит: каждая запись сразу завершается и не держит блокировку БД
+    adb = await aiosqlite.connect(DB_PATH, timeout=30, isolation_level=None)
+    adb.row_factory = aiosqlite.Row
+    await adb.executescript("""
+    CREATE TABLE IF NOT EXISTS reports(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_id INTEGER NOT NULL,
+        offender_id INTEGER NOT NULL,
+        date INTEGER NOT NULL             -- unix-время жалобы
+    );
+    CREATE INDEX IF NOT EXISTS ix_reports_offender ON reports(offender_id);
+    CREATE INDEX IF NOT EXISTS ix_reports_date ON reports(date);
+    """)
+    async with adb.execute("PRAGMA table_info(users)") as cur:
+        cols = {r["name"] for r in await cur.fetchall()}
+    if "banned_until" not in cols:
+        await adb.execute("ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0")
+
+
+async def afetch1(sql: str, args=()):
+    async with adb.execute(sql, args) as cur:
+        return await cur.fetchone()
+
+
+class BanGuard(BaseMiddleware):
+    """Пока banned_until > сейчас — бот молча игнорирует все сообщения и нажатия кнопок человека."""
+
+    async def __call__(self, handler, event: TelegramObject, data: dict):
+        user = data.get("event_from_user")
+        if user:
+            row = await afetch1("SELECT banned_until FROM users WHERE user_id=?", (user.id,))
+            if row and (row["banned_until"] or 0) > now():
+                if isinstance(event, CallbackQuery):
+                    try:
+                        await event.answer()       # убираем «часики» на кнопке, ничего не показывая
+                    except TelegramAPIError:
+                        pass
+                return None
+        return await handler(event, data)
+
+
+router.message.outer_middleware(BanGuard())
+router.callback_query.outer_middleware(BanGuard())
+
+
+@router.message(Command("report"))
+async def cmd_report(m: Message):
+    u = await reg(m)
+    if not u:
+        return
+    if not m.reply_to_message:
+        await m.answer(REPORT_HINT)
+        return
+
+    reporter = m.from_user.id
+    # автор сообщения, на которое ответили, — по таблице relay (chat_id + message_id)
+    src = await afetch1("SELECT sender_id FROM relay WHERE chat_id=? AND msg_id=?",
+                        (m.chat.id, m.reply_to_message.message_id))
+    if not src:
+        await m.answer("Не удалось определить автора этого сообщения. " + REPORT_HINT)
+        return
+    offender = src["sender_id"]
+    if offender == reporter:
+        await m.answer("🙂 На себя жаловаться нельзя.")
+        return
+
+    refusal = None
+    ban_now = False
+    async with report_lock:            # проверки лимитов и запись — одной «пачкой», без гонок
+        t = now()
+        since = t - REPORT_WINDOW
+
+        # «длительность диалога» = сколько прошло с первого сообщения этого человека, которое дошло до вас
+        first = await afetch1("SELECT MIN(ts) AS ts FROM relay WHERE chat_id=? AND sender_id=?",
+                              (m.chat.id, offender))
+        first_ts = first["ts"] if first and first["ts"] else t
+
+        if t - first_ts < MIN_DIALOG_SEC:
+            refusal = "⏳ Пока рано: вы общаетесь меньше минуты. Попробуйте чуть позже."
+        elif await afetch1("SELECT 1 FROM reports WHERE reporter_id=? AND offender_id=? AND date>?",
+                           (reporter, offender, t - PAIR_COOLDOWN)):
+            refusal = "Вы уже жаловались на этого участника — повторить можно не чаще раза в час."
+        elif (await afetch1("SELECT COUNT(*) AS c FROM reports WHERE reporter_id=? AND date>?",
+                            (reporter, since)))["c"] >= DAILY_LIMIT:
+            refusal = f"Лимит жалоб исчерпан: не больше {DAILY_LIMIT} в сутки."
+        else:
+            await adb.execute("INSERT INTO reports(reporter_id, offender_id, date) VALUES(?,?,?)",
+                              (reporter, offender, t))
+            cnt = (await afetch1(COUNT_SQL, (offender, since, since)))["c"]
+            dur = BAN_LONG if cnt >= BAN_LONG_AT else BAN_SHORT if cnt >= BAN_SHORT_AT else 0
+            if dur:
+                row = await afetch1("SELECT banned_until FROM users WHERE user_id=?", (offender,))
+                remaining = max(0, (row["banned_until"] or 0) - t) if row else 0
+                # новый бан — если человек сейчас не забанен; либо повышение 1 час → 24 часа.
+                # Пока действует бан, дополнительные жалобы срок не продлевают.
+                if remaining == 0 or (dur == BAN_LONG and remaining <= BAN_SHORT):
+                    await adb.execute("UPDATE users SET banned_until=? WHERE user_id=?", (t + dur, offender))
+                    ban_now = True
+
+    if refusal:
+        await m.answer(refusal)
+        return
+    if ban_now:
+        await notify(offender, "Вы забанены за спам/оскорбления")
+    await m.answer("Жалоба отправлена")
+
+
+async def daily_cleanup_loop():
+    """Раз в сутки: удаляет жалобы старше 7 дней и сжимает базу (VACUUM)."""
+    while True:
+        try:
+            await adb.execute("DELETE FROM reports WHERE date<?", (now() - REPORT_KEEP,))
+            await adb.execute("VACUUM")
+        except aiosqlite.Error as e:
+            log.warning("ежедневная очистка не удалась: %s", e)
+        await asyncio.sleep(24 * 3600)
 
 
 class DropState(BaseMiddleware):
@@ -580,6 +728,8 @@ async def relay(m: Message, u, mem):
     # (в т.ч. самому отправителю — на своё же сообщение в своём чате)
     db.execute("INSERT OR REPLACE INTO relay VALUES(?,?,?,?,?,?,?)",
                (src_chat_id, src_msg_id, u["user_id"], gid, now(), src_chat_id, src_msg_id))
+    db.commit()    # коммитим сразу и после каждого получателя: не держим блокировку БД во время отправки
+                   # (иначе запись через aiosqlite — жалобы и баны — ждала бы окончания всей рассылки)
 
     for rid in active_recipients(gid, exclude=(u["user_id"],)):
         reply_to = None
@@ -591,6 +741,7 @@ async def relay(m: Message, u, mem):
             for mid in await deliver(m, rid, u["nick"], protect, reply_to=reply_to):
                 db.execute("INSERT OR REPLACE INTO relay VALUES(?,?,?,?,?,?,?)",
                            (rid, mid, u["user_id"], gid, now(), src_chat_id, src_msg_id))
+            db.commit()
         except TelegramAPIError as e:
             log.warning("не доставлено %s: %s", rid, e)
         await asyncio.sleep(0.04)      # ~25 сообщений/сек, чтобы не упереться в лимиты Telegram
@@ -1077,6 +1228,7 @@ async def panel_cb(c: CallbackQuery):
         ids = [r["user_id"] for r in many("SELECT user_id FROM members WHERE group_id=?", (gid,))]
         notes = {i: drop_member(i, gid) for i in ids}
         run("DELETE FROM relay WHERE group_id=?", (gid,))
+        run("DELETE FROM stats WHERE group_id=?", (gid,))
         run("DELETE FROM groups WHERE id=?", (gid,))
         await edit(c, "🗑 Группа удалена.")
         if notes.get(uid):
@@ -1174,11 +1326,16 @@ async def main():
     bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     BOT_USERNAME = (await bot.get_me()).username
     await bot.set_my_commands([BotCommand(command=c, description=d) for c, d in COMMANDS])
+    await init_report_db()             # таблица reports, поле users.banned_until
     dp = Dispatcher()
     dp.include_router(router)
     asyncio.create_task(cleanup_loop())
+    asyncio.create_task(daily_cleanup_loop())
     log.info("Бот @%s запущен", BOT_USERNAME)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await adb.close()              # иначе поток aiosqlite может не дать процессу завершиться
 
 
 if __name__ == "__main__":
