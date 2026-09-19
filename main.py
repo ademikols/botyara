@@ -40,7 +40,8 @@ TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬТЕ_ТОКЕН_СЮДА")
 # ВАЖНО для хостинга с редеплоями: DB_PATH должен указывать на диск, который переживает
 # передеплой (persistent volume / persistent disk). Если оставить путь внутри папки с кодом,
 # при каждом обновлении из GitHub хостинг может пересоздавать эту папку и база будет стираться.
-DB_PATH = os.getenv("DB_PATH", "anon_groups.db")
+os.makedirs("/app/data", exist_ok=True)
+DB_PATH = os.getenv("DB_PATH", "/app/data/anon_groups.db")
 MAX_GROUPS = 10                            # максимум групп на одного человека
 TITLE_MAX = 40                             # максимальная длина названия группы
 RELAY_TTL = 3 * 24 * 3600                  # сколько хранить связку «сообщение → автор» (для модерации ответом)
@@ -56,8 +57,9 @@ ROLE_NAME = {"owner": "владелец", "moderator": "модератор", "me
 
 B_GROUP, B_GROUPS, B_MEMBERS = "👥 Группа", "🗂 Мои группы", "📋 Участники"
 B_NICK, B_PANEL = "✏️ Сменить ник", "⚙️ Управление"
+B_STATS = "📊 Статистика"
 B_HELP, B_ABOUT = "❓ Помощь", "ℹ️ О боте"
-MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_HELP, B_ABOUT}
+MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_HELP, B_ABOUT}
 
 COMMANDS = [
     ("start", "Начало / регистрация"),
@@ -65,6 +67,7 @@ COMMANDS = [
     ("groups", "Мои группы и переключение"),
     ("group", "Активная группа"),
     ("members", "Участники"),
+    ("stats", "Статистика (личная и по группе)"),
     ("nick", "Сменить ник"),
     ("leave", "Выйти из группы"),
     ("cancel", "Отменить ввод"),
@@ -92,6 +95,7 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 /groups — мои группы и переключение между ними
 /group — об активной группе
 /members — кто в группе
+/stats — статистика: сколько сообщений и медиа отправили вы и вся группа
 /nick — сменить ник
 /leave — выйти из активной группы
 /cancel — отменить ввод
@@ -126,10 +130,6 @@ ABOUT_TEXT = f"""ℹ️ <b>О боте</b>
 <b>Что хранится:</b> ник, членство в группах и связка «сообщение → автор» на {RELAY_TTL // 86400} дня (нужна, чтобы модератор мог ответом на сообщение применить /kick или /mute). Текст сообщений не хранится. Тот, кто запустил бота, технически имеет доступ к базе."""
 
 # ───────────────────────── База данных ─────────────────────────
-_db_dir = os.path.dirname(os.path.abspath(DB_PATH))
-if _db_dir:
-    os.makedirs(_db_dir, exist_ok=True)
-
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
 db.row_factory = sqlite3.Row
 db.executescript("""
@@ -158,6 +158,10 @@ CREATE TABLE IF NOT EXISTS relay(
     chat_id INTEGER, msg_id INTEGER, sender_id INTEGER, group_id INTEGER, ts INTEGER,
     src_chat_id INTEGER, src_msg_id INTEGER,   -- «оригинал»: чат и id исходного сообщения отправителя,
     PRIMARY KEY(chat_id, msg_id)               -- общий для всех копий этого сообщения у получателей
+);
+CREATE TABLE IF NOT EXISTS stats(
+    user_id INTEGER, group_id INTEGER, texts INTEGER DEFAULT 0, media INTEGER DEFAULT 0,
+    PRIMARY KEY(user_id, group_id)
 );
 """)
 
@@ -259,6 +263,29 @@ def new_token(gid: int) -> str:
     return token
 
 
+def bump_stats(uid: int, gid: int, is_media: bool):
+    """Учитывает одно отправленное сообщение — в личную и групповую статистику."""
+    run("""INSERT INTO stats(user_id, group_id, texts, media) VALUES(?,?,?,?)
+           ON CONFLICT(user_id, group_id) DO UPDATE SET
+             texts = texts + excluded.texts, media = media + excluded.media""",
+        (uid, gid, 0 if is_media else 1, 1 if is_media else 0))
+
+
+def personal_stats(uid: int, gid: int):
+    r = one("SELECT texts, media FROM stats WHERE user_id=? AND group_id=?", (uid, gid))
+    return (r["texts"], r["media"]) if r else (0, 0)
+
+
+def personal_stats_total(uid: int):
+    r = one("SELECT COALESCE(SUM(texts),0) AS t, COALESCE(SUM(media),0) AS m FROM stats WHERE user_id=?", (uid,))
+    return (r["t"], r["m"])
+
+
+def group_stats(gid: int):
+    r = one("SELECT COALESCE(SUM(texts),0) AS t, COALESCE(SUM(media),0) AS m FROM stats WHERE group_id=?", (gid,))
+    return (r["t"], r["m"])
+
+
 def drop_member(uid: int, gid: int) -> str:
     """Убирает человека из группы. Если группа была активной — выбирает новую активную.
     Возвращает пояснение для человека (пустое, если активная группа не менялась)."""
@@ -315,8 +342,9 @@ def main_kb(uid: int) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=B_GROUP), KeyboardButton(text=B_GROUPS)],
-            [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_PANEL)],
-            [KeyboardButton(text=B_NICK), KeyboardButton(text=B_HELP), KeyboardButton(text=B_ABOUT)],
+            [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_STATS)],
+            [KeyboardButton(text=B_PANEL), KeyboardButton(text=B_NICK)],
+            [KeyboardButton(text=B_HELP), KeyboardButton(text=B_ABOUT)],
         ],
         resize_keyboard=True,
         input_field_placeholder=hint[:64],
@@ -790,6 +818,33 @@ async def cmd_members(m: Message):
     await m.answer(f"📋 <b>Участники «{esc(mem['title'])}»</b>\n" + "\n".join(lines)[:3800])
 
 
+@router.message(Command("stats"))
+@router.message(F.text == B_STATS)
+async def cmd_stats(m: Message):
+    u = await reg(m)
+    if not u:
+        return
+    mem = get_member(u["user_id"])
+    if not mem:
+        await m.answer(no_group_text(u["user_id"]))
+        return
+    p_text, p_media = personal_stats(u["user_id"], mem["group_id"])
+    g_text, g_media = group_stats(mem["group_id"])
+    lines = [
+        f"📊 <b>Статистика «{esc(mem['title'])}»</b>",
+        "",
+        "👤 <b>Вы в этой группе</b>",
+        f"Текст: {p_text} · Медиа: {p_media}",
+        "",
+        "👥 <b>Вся группа</b>",
+        f"Текст: {g_text} · Медиа: {g_media}",
+    ]
+    if count_groups(u["user_id"]) > 1:
+        t_text, t_media = personal_stats_total(u["user_id"])
+        lines += ["", "🌐 <b>Вы во всех группах</b>", f"Текст: {t_text} · Медиа: {t_media}"]
+    await m.answer("\n".join(lines))
+
+
 @router.message(Command("leave"))
 async def cmd_leave(m: Message):
     u = await reg(m)
@@ -1100,6 +1155,7 @@ async def on_message(m: Message):
     elif not mem["media"]:
         await m.answer("🖼 В этой группе медиа запрещены — только текст.")
         return
+    bump_stats(u["user_id"], mem["group_id"], is_media=not bool(m.text))
     await relay(m, u, mem)
 
 
