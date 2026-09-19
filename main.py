@@ -9,6 +9,8 @@
 Как это работает: участники пишут боту в личку, бот пересылает сообщение
 всем остальным в активной группе от своего имени с ником отправителя.
 Один человек может состоять максимум в 10 группах и переключаться между ними (/groups).
+Сообщения из группы доходят только тем, у кого она сейчас активна — если человек сидит
+в другой группе, сообщения из фоновой группы к нему не приходят, пока он не переключится.
 База старой версии (одна группа на человека) обновляется автоматически при запуске.
 """
 import asyncio
@@ -35,11 +37,12 @@ from aiogram.utils.text_decorations import html_decoration
 
 # ───────────────────────── Настройки ─────────────────────────
 TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬТЕ_ТОКЕН_СЮДА")
-DB_PATH = "anon_groups.db"
+# ВАЖНО для хостинга с редеплоями: DB_PATH должен указывать на диск, который переживает
+# передеплой (persistent volume / persistent disk). Если оставить путь внутри папки с кодом,
+# при каждом обновлении из GitHub хостинг может пересоздавать эту папку и база будет стираться.
+DB_PATH = os.getenv("DB_PATH", "anon_groups.db")
 MAX_GROUPS = 10                            # максимум групп на одного человека
 TITLE_MAX = 40                             # максимальная длина названия группы
-MEDIA_LIMIT_MB = 100                       # лимит медиа на человека в сутки
-MEDIA_LIMIT = MEDIA_LIMIT_MB * 1024 * 1024
 RELAY_TTL = 3 * 24 * 3600                  # сколько хранить связку «сообщение → автор» (для модерации ответом)
 DEFAULT_MUTE_MIN = 10
 MAX_MUTE_MIN = 7 * 24 * 60
@@ -82,6 +85,7 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 
 <b>Как общаться</b>
 Просто пишите боту — сообщение уйдёт всем в активной группе под вашим ником.
+Сообщения других ваших групп при этом не приходят — переключайтесь между ними через /groups.
 
 <b>Основное</b>
 /newgroup — создать группу (название — следующим сообщением)
@@ -114,14 +118,18 @@ ABOUT_TEXT = f"""ℹ️ <b>О боте</b>
 
 • Вход только по ссылке-приглашению, ссылку можно обновить
 • До {MAX_GROUPS} групп на один аккаунт, между ними можно переключаться (/groups)
+• Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
 • Защита от пересылки и сохранения — настройка группы
-• Лимит медиа: {MEDIA_LIMIT_MB} МБ в сутки на человека (сброс в 00:00 UTC)
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
 • Правка и удаление сообщений у других участников не синхронизируются
 
 <b>Что хранится:</b> ник, членство в группах и связка «сообщение → автор» на {RELAY_TTL // 86400} дня (нужна, чтобы модератор мог ответом на сообщение применить /kick или /mute). Текст сообщений не хранится. Тот, кто запустил бота, технически имеет доступ к базе."""
 
 # ───────────────────────── База данных ─────────────────────────
+_db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
+
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
 db.row_factory = sqlite3.Row
 db.executescript("""
@@ -145,10 +153,6 @@ CREATE TABLE IF NOT EXISTS members(
     user_id INTEGER, group_id INTEGER, role TEXT DEFAULT 'member',
     muted_until INTEGER DEFAULT 0, joined INTEGER,
     PRIMARY KEY(user_id, group_id)    -- один человек может состоять в нескольких группах
-);
-CREATE TABLE IF NOT EXISTS media_usage(
-    user_id INTEGER, day TEXT, bytes INTEGER DEFAULT 0,
-    PRIMARY KEY(user_id, day)
 );
 CREATE TABLE IF NOT EXISTS relay(
     chat_id INTEGER, msg_id INTEGER, sender_id INTEGER, group_id INTEGER, ts INTEGER,
@@ -204,14 +208,6 @@ def now() -> int:
     return int(time.time())
 
 
-def today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-
-def mb(n: int) -> str:
-    return f"{n / 1048576:.1f}"
-
-
 def ensure_user(uid: int):
     run("INSERT OR IGNORE INTO users(user_id, created) VALUES(?,?)", (uid, now()))
     return one("SELECT * FROM users WHERE user_id=?", (uid,))
@@ -246,17 +242,6 @@ def count_members(gid: int) -> int:
 
 def count_groups(uid: int) -> int:
     return one("SELECT COUNT(*) AS c FROM members WHERE user_id=?", (uid,))["c"]
-
-
-def used_today(uid: int) -> int:
-    r = one("SELECT bytes FROM media_usage WHERE user_id=? AND day=?", (uid, today()))
-    return r["bytes"] if r else 0
-
-
-def add_usage(uid: int, size: int):
-    run("""INSERT INTO media_usage(user_id, day, bytes) VALUES(?,?,?)
-           ON CONFLICT(user_id, day) DO UPDATE SET bytes = bytes + excluded.bytes""",
-        (uid, today(), size))
 
 
 def new_token(gid: int) -> str:
@@ -375,7 +360,8 @@ def panel_kb(mem) -> InlineKeyboardMarkup:
 
 def groups_text(uid: int) -> str:
     return (f"🗂 <b>Мои группы</b> ({count_groups(uid)}/{MAX_GROUPS})\n"
-            "Сообщения уходят в группу с отметкой ✅. Нажмите на другую, чтобы переключиться.\n"
+            "Сообщения уходят и приходят только в группе с отметкой ✅ — остальные молчат в фоне.\n"
+            "Нажмите на другую, чтобы переключиться.\n"
             f"{ROLE_ICON['owner']} владелец · {ROLE_ICON['moderator']} модератор · {ROLE_ICON['member']} участник")
 
 
@@ -408,16 +394,22 @@ async def notify(uid: int, text: str, kb: bool = False):
         log.info("не отправлено %s: %s", uid, e)
 
 
+def active_recipients(gid: int, exclude=()) -> list:
+    """Участники группы, у которых она сейчас активна. Так сообщения и уведомления из группы
+    не «фонят» тем, кто сейчас переключён на другую группу — до тех пор, пока не вернутся в неё."""
+    rows = many("""SELECT m.user_id FROM members m JOIN users u ON u.user_id = m.user_id
+                   WHERE m.group_id=? AND u.active_group=?""", (gid, gid))
+    return [r["user_id"] for r in rows if r["user_id"] not in exclude]
+
+
 async def announce(gid: int, text: str, exclude=(), kb: bool = False):
-    """Служебное сообщение всем в группе (тем, кто в нескольких группах, — с названием группы)."""
+    """Служебное сообщение тем, у кого эта группа сейчас активна (кто переключён на другую — не отвлекаем)."""
     g = one("SELECT title FROM groups WHERE id=?", (gid,))
     if not g:
         return
-    for r in many("SELECT user_id FROM members WHERE group_id=?", (gid,)):
-        uid = r["user_id"]
-        if uid not in exclude:
-            await notify(uid, tag(uid, g["title"]) + text, kb)
-            await asyncio.sleep(0.04)
+    for uid in active_recipients(gid, exclude=exclude):
+        await notify(uid, tag(uid, g["title"]) + text, kb)
+        await asyncio.sleep(0.04)
 
 
 async def reg(m: Message):
@@ -504,15 +496,6 @@ def to_html(m: Message) -> str:
     return html_decoration.unparse(raw, ents) if raw else ""
 
 
-def media_size(m: Message) -> int:
-    if m.photo:
-        return m.photo[-1].file_size or 0
-    for obj in (m.video, m.document, m.audio, m.voice, m.animation, m.video_note, m.sticker):
-        if obj:
-            return obj.file_size or 0
-    return 0
-
-
 async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str = "") -> list:
     """Отправляет одно сообщение одному получателю, возвращает id отправленных сообщений.
     label — название группы (подставляется тем, кто состоит в нескольких группах)."""
@@ -532,13 +515,13 @@ async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str
 
 
 async def relay(m: Message, u, mem):
+    """Рассылает сообщение только тем участникам группы, у кого она сейчас активна —
+    остальные (переключённые на другую группу) сообщения из этой группы не получают."""
     protect = bool(mem["protect"])
-    gid, title = mem["group_id"], mem["title"]
-    for r in many("SELECT user_id FROM members WHERE group_id=? AND user_id!=?", (gid, u["user_id"])):
-        rid = r["user_id"]
-        label = title if count_groups(rid) > 1 else ""
+    gid = mem["group_id"]
+    for rid in active_recipients(gid, exclude=(u["user_id"],)):
         try:
-            for mid in await deliver(m, rid, u["nick"], protect, label):
+            for mid in await deliver(m, rid, u["nick"], protect):
                 db.execute("INSERT OR REPLACE INTO relay VALUES(?,?,?,?,?)",
                            (rid, mid, u["user_id"], gid, now()))
         except TelegramAPIError as e:
@@ -744,7 +727,6 @@ async def cmd_group(m: Message):
         f"Участников: {count_members(mem['group_id'])}\n"
         f"Защита от пересылки: {'вкл' if mem['protect'] else 'выкл'}\n"
         f"Медиа: {'разрешены' if mem['media'] else 'запрещены'}\n"
-        f"Ваш лимит медиа сегодня: {mb(used_today(u['user_id']))} / {MEDIA_LIMIT_MB} МБ\n"
         f"Ваших групп: {count_groups(u['user_id'])} из {MAX_GROUPS} — переключение: /groups")
 
 
@@ -1076,18 +1058,9 @@ async def on_message(m: Message):
         if len(m.text) > MAX_TEXT_LEN:
             await m.answer(f"✂️ Слишком длинное сообщение (максимум {MAX_TEXT_LEN} символов).")
             return
-    else:
-        if not mem["media"]:
-            await m.answer("🖼 В этой группе медиа запрещены — только текст.")
-            return
-        size, used = media_size(m), used_today(u["user_id"])
-        if used + size > MEDIA_LIMIT:
-            left = max(0, MEDIA_LIMIT - used)
-            await m.answer(f"📦 Дневной лимит медиа — {MEDIA_LIMIT_MB} МБ. "
-                           f"Осталось {mb(left)} МБ, файл весит {mb(size)} МБ. "
-                           "Лимит сбрасывается в 00:00 UTC.")
-            return
-        add_usage(u["user_id"], size)
+    elif not mem["media"]:
+        await m.answer("🖼 В этой группе медиа запрещены — только текст.")
+        return
     await relay(m, u, mem)
 
 
@@ -1095,7 +1068,6 @@ async def on_message(m: Message):
 async def cleanup_loop():
     while True:
         run("DELETE FROM relay WHERE ts<?", (now() - RELAY_TTL,))
-        run("DELETE FROM media_usage WHERE day<?", (today(),))
         await asyncio.sleep(3600)
 
 
