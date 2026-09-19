@@ -49,6 +49,16 @@ DEFAULT_MUTE_MIN = 10
 MAX_MUTE_MIN = 7 * 24 * 60
 MAX_TEXT_LEN = 3500
 
+# ── жалобы (/report) ──
+REPORT_MIN_DIALOG_SEC = 60             # нельзя жаловаться на сообщение младше 1 минуты
+REPORT_SAME_TARGET_COOLDOWN = 3600     # на одного и того же не чаще раза в час
+REPORT_MAX_PER_DAY = 3                 # максимум жалоб от одного человека в сутки
+REPORT_WINDOW_SEC = 24 * 3600          # окно подсчёта жалоб для бана
+REPORT_TTL = 7 * 24 * 3600             # сколько хранить жалобы
+BAN_THRESHOLD_SHORT, BAN_SHORT_SEC = 5, 3600           # 5–9 жалоб → бан на 1 час
+BAN_THRESHOLD_LONG, BAN_LONG_SEC = 10, 24 * 3600        # 10+ жалоб → бан на 24 часа
+BAN_MESSAGE = "🚫 Вы забанены за спам/оскорбления."
+
 NICK_RE = re.compile(r"[\w-]{3,20}")
 CAPTION_TYPES = ("photo", "video", "document", "audio", "voice", "animation")
 ALLOWED_TYPES = CAPTION_TYPES + ("text", "sticker", "video_note")
@@ -71,6 +81,7 @@ COMMANDS = [
     ("nick", "Сменить ник"),
     ("leave", "Выйти из группы"),
     ("cancel", "Отменить ввод"),
+    ("report", "Пожаловаться на сообщение (ответом)"),
     ("panel", "Управление группой (модератор)"),
     ("rename", "Сменить название группы (владелец)"),
     ("kick", "Исключить (модератор)"),
@@ -99,6 +110,7 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 /nick — сменить ник
 /leave — выйти из активной группы
 /cancel — отменить ввод
+/report — свайпните на сообщение нарушителя и отправьте эту команду
 
 Состоять можно максимум в {MAX_GROUPS} группах.
 
@@ -125,9 +137,7 @@ ABOUT_TEXT = f"""ℹ️ <b>О боте</b>
 • Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
 • Защита от пересылки и сохранения — настройка группы
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
-• Правка и удаление сообщений у других участников не синхронизируются
-
-<b>Что хранится:</b> ник, членство в группах и связка «сообщение → автор» на {RELAY_TTL // 86400} дня (нужна, чтобы модератор мог ответом на сообщение применить /kick или /mute). Текст сообщений не хранится. Тот, кто запустил бота, технически имеет доступ к базе."""
+• Правка и удаление сообщений у других участников не синхронизируются"""
 
 # ───────────────────────── База данных ─────────────────────────
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -140,6 +150,7 @@ CREATE TABLE IF NOT EXISTS users(
     state TEXT DEFAULT '',            -- '' | 'nick' | 'newgroup' | 'rename:<id группы>'
     pending TEXT DEFAULT '',          -- токен приглашения, ждущий регистрации
     active_group INTEGER DEFAULT 0,   -- группа, в которую уходят сообщения
+    banned_until INTEGER DEFAULT 0,   -- до какого времени (unix) человек в бане за жалобы
     created INTEGER
 );
 CREATE TABLE IF NOT EXISTS groups(
@@ -163,6 +174,12 @@ CREATE TABLE IF NOT EXISTS stats(
     user_id INTEGER, group_id INTEGER, texts INTEGER DEFAULT 0, media INTEGER DEFAULT 0,
     PRIMARY KEY(user_id, group_id)
 );
+CREATE TABLE IF NOT EXISTS reports(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id INTEGER, offender_id INTEGER, group_id INTEGER, date INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_reports_offender ON reports(offender_id);
+CREATE INDEX IF NOT EXISTS ix_reports_date ON reports(date);
 """)
 
 
@@ -170,6 +187,16 @@ def migrate():
     """Обновляет базу старой версии (одна группа на человека) до текущей схемы."""
     if "active_group" not in {r["name"] for r in db.execute("PRAGMA table_info(users)")}:
         db.execute("ALTER TABLE users ADD COLUMN active_group INTEGER DEFAULT 0")
+    if "banned_until" not in {r["name"] for r in db.execute("PRAGMA table_info(users)")}:
+        db.execute("ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0")
+    db.executescript("""
+    CREATE TABLE IF NOT EXISTS reports(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_id INTEGER, offender_id INTEGER, group_id INTEGER, date INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS ix_reports_offender ON reports(offender_id);
+    CREATE INDEX IF NOT EXISTS ix_reports_date ON reports(date);
+    """)
     pk = [r["name"] for r in db.execute("PRAGMA table_info(members)") if r["pk"]]
     if pk == ["user_id"]:              # старая схема: PRIMARY KEY только по user_id
         db.executescript("""
@@ -284,6 +311,16 @@ def personal_stats_total(uid: int):
 def group_stats(gid: int):
     r = one("SELECT COALESCE(SUM(texts),0) AS t, COALESCE(SUM(media),0) AS m FROM stats WHERE group_id=?", (gid,))
     return (r["t"], r["m"])
+
+
+def is_banned(u) -> bool:
+    return bool(u["banned_until"]) and u["banned_until"] > now()
+
+
+def ban_user(uid: int, seconds: int):
+    """Продлевает бан минимум до now()+seconds (никогда не сокращает уже действующий бан)."""
+    until = now() + seconds
+    run("UPDATE users SET banned_until=MAX(banned_until, ?) WHERE user_id=?", (until, uid))
 
 
 def drop_member(uid: int, gid: int) -> str:
@@ -1020,6 +1057,88 @@ async def cmd_newlink(m: Message):
         await m.answer("♻️ Ссылка обновлена, старая больше не работает.\n\n" + link_text(token, mem["title"]))
 
 
+# ───────────────────────── Жалобы (/report) ─────────────────────────
+def reports_last_24h_on(offender_id: int) -> int:
+    return one("SELECT COUNT(*) AS c FROM reports WHERE offender_id=? AND date>?",
+               (offender_id, now() - REPORT_WINDOW_SEC))["c"]
+
+
+def reports_last_24h_by(reporter_id: int) -> int:
+    return one("SELECT COUNT(*) AS c FROM reports WHERE reporter_id=? AND date>?",
+               (reporter_id, now() - REPORT_WINDOW_SEC))["c"]
+
+
+def recent_report_on_same_target(reporter_id: int, offender_id: int) -> bool:
+    return one("SELECT 1 FROM reports WHERE reporter_id=? AND offender_id=? AND date>?",
+               (reporter_id, offender_id, now() - REPORT_SAME_TARGET_COOLDOWN)) is not None
+
+
+def reciprocal_report_exists(reporter_id: int, offender_id: int) -> bool:
+    """Верно, если offender уже раньше пожаловался на reporter (взаимные жалобы)."""
+    return one("SELECT 1 FROM reports WHERE reporter_id=? AND offender_id=?",
+               (offender_id, reporter_id)) is not None
+
+
+def discard_mutual_reports(reporter_id: int, offender_id: int):
+    """Удаляет все жалобы между этими двумя людьми друг на друга (в обе стороны)."""
+    run("""DELETE FROM reports WHERE (reporter_id=? AND offender_id=?)
+           OR (reporter_id=? AND offender_id=?)""",
+        (reporter_id, offender_id, offender_id, reporter_id))
+
+
+@router.message(Command("report"))
+async def cmd_report(m: Message):
+    u = await reg(m)
+    if not u:
+        return
+    if is_banned(u):
+        return
+    if not m.reply_to_message:
+        await m.answer("Свайпните на сообщение нарушителя и напишите /report")
+        return
+
+    r = one("SELECT sender_id, group_id, ts FROM relay WHERE chat_id=? AND msg_id=?",
+            (m.chat.id, m.reply_to_message.message_id))
+    if not r:
+        await m.answer("Свайпните на сообщение нарушителя и напишите /report")
+        return
+
+    reporter_id = u["user_id"]
+    offender_id, gid, msg_ts = r["sender_id"], r["group_id"], r["ts"]
+
+    if offender_id == reporter_id:
+        await m.answer("🙂 Нельзя пожаловаться на собственное сообщение.")
+        return
+    if now() - msg_ts < REPORT_MIN_DIALOG_SEC:
+        await m.answer("⏳ Пока рано — подождите немного перед тем, как жаловаться на это сообщение.")
+        return
+    if reports_last_24h_by(reporter_id) >= REPORT_MAX_PER_DAY:
+        await m.answer("🚫 Вы уже подали максимум жалоб за сутки.")
+        return
+    if recent_report_on_same_target(reporter_id, offender_id):
+        await m.answer("Вы уже недавно жаловались на этого участника — попробуйте позже.")
+        return
+
+    run("INSERT INTO reports(reporter_id, offender_id, group_id, date) VALUES(?,?,?,?)",
+        (reporter_id, offender_id, gid, now()))
+
+    if reciprocal_report_exists(reporter_id, offender_id):
+        # оба пожаловались друг на друга — обе жалобы аннулируются и не считаются
+        discard_mutual_reports(reporter_id, offender_id)
+        await m.answer("Жалоба отправлена")
+        return
+
+    await m.answer("Жалоба отправлена")
+
+    cnt = reports_last_24h_on(offender_id)
+    if cnt >= BAN_THRESHOLD_LONG:
+        ban_user(offender_id, BAN_LONG_SEC)
+        await notify(offender_id, BAN_MESSAGE)
+    elif cnt >= BAN_THRESHOLD_SHORT:
+        ban_user(offender_id, BAN_SHORT_SEC)
+        await notify(offender_id, BAN_MESSAGE)
+
+
 # ───────────────────────── Панель управления ─────────────────────────
 @router.message(Command("panel"))
 @router.message(F.text == B_PANEL)
@@ -1132,6 +1251,8 @@ async def on_message(m: Message):
     u = await reg(m)
     if not u:
         return
+    if is_banned(u):                   # в бане за жалобы — молча игнорируем любые сообщения
+        return
     if u["state"]:                     # ждём текст (ник / название), а прислали не текст
         what = "ник" if u["state"] == "nick" else "название группы"
         await m.answer(f"✍️ Сейчас я жду {what} текстом. Отмена — /cancel")
@@ -1164,6 +1285,7 @@ async def on_message(m: Message):
 async def cleanup_loop():
     while True:
         run("DELETE FROM relay WHERE ts<?", (now() - RELAY_TTL,))
+        run("DELETE FROM reports WHERE date<?", (now() - REPORT_TTL,))
         await asyncio.sleep(3600)
 
 
