@@ -77,6 +77,10 @@ DEFAULT_MUTE_MIN = 10
 MAX_MUTE_MIN = 7 * 24 * 60
 MAX_TEXT_LEN = 3500
 
+# ── смена ника ──
+NICK_CHANGES_PER_DAY = 3                   # сколько раз можно сменить ник за окно (меняется в /admin → ⚙️ Настройки)
+NICK_CHANGE_WINDOW = 24 * 3600             # окно подсчёта — 24 часа (скользящее)
+
 # ── неактивные группы ──
 INACTIVE_DAYS = 7                          # группа без сообщений столько дней удаляется
 INACTIVE_TTL = INACTIVE_DAYS * 24 * 3600
@@ -133,6 +137,7 @@ SETTINGS = {
     "MAX_GROUPS": Setting(MAX_GROUPS, 1, 100, "Лимит групп на одного человека", "Групп на человека"),
     "MAX_MEMBERS": Setting(MAX_MEMBERS, 2, 5000, "Максимум участников в группе", "Участников в группе"),
     "INACTIVE_DAYS": Setting(INACTIVE_DAYS, 1, 365, "Дней без сообщений до автоудаления группы", "Автоудаление, дней"),
+    "NICK_CHANGES_PER_DAY": Setting(NICK_CHANGES_PER_DAY, 1, 50, "Смен ника за 24 часа", "Смен ника / сутки"),
     "REG_OPEN": Setting(1, 0, 1, "Регистрация новых пользователей", "Регистрация", "bool"),
     "NEWGROUP_OPEN": Setting(1, 0, 1, "Создание новых групп", "Создание групп", "bool"),
     "RELAY_ON": Setting(1, 0, 1, "Пересылка сообщений (выкл = пауза)", "Пересылка", "bool"),
@@ -224,7 +229,7 @@ def help_text() -> str:
 /stats — статистика: сколько сообщений и медиа отправили вы и вся группа
 /catalog — каталог публичных групп
 /search_group название — поиск группы по названию или описанию
-/nick — сменить ник
+/nick — сменить ник (не больше {NICK_CHANGES_PER_DAY} смен за 24 часа)
 /leave — выйти из активной группы
 /cancel — отменить ввод
 /report — свайпните на сообщение нарушителя и отправьте эту команду
@@ -334,6 +339,11 @@ CREATE INDEX IF NOT EXISTS ix_support_user ON support(user_id, date);
 CREATE TABLE IF NOT EXISTS settings(              -- значения, изменённые администратором в боте
     key TEXT PRIMARY KEY, value TEXT
 );
+CREATE TABLE IF NOT EXISTS nick_changes(          -- журнал смен ника (для лимита «N раз за 24 часа»)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER, date INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_nick_changes_user ON nick_changes(user_id, date);
 """)
 
 
@@ -1107,14 +1117,44 @@ async def relay(m: Message, u, mem):
 
 
 # ───────────────────────── Регистрация и ник ─────────────────────────
+def nick_changes_recent(uid: int) -> list:
+    """Времена смен ника за последние 24 часа (по возрастанию)."""
+    return [r["date"] for r in many("SELECT date FROM nick_changes WHERE user_id=? AND date>? ORDER BY date",
+                                    (uid, now() - NICK_CHANGE_WINDOW))]
+
+
+def nick_wait(uid: int) -> int:
+    """Сколько секунд до следующей смены ника (0 — можно менять сейчас)."""
+    ts = nick_changes_recent(uid)
+    if len(ts) < NICK_CHANGES_PER_DAY:
+        return 0
+    # место освободится, когда из окна выйдет нужная по счёту старая смена
+    return max(1, ts[len(ts) - NICK_CHANGES_PER_DAY] + NICK_CHANGE_WINDOW - now())
+
+
+def nick_limit_text(left: int) -> str:
+    return (f"⏳ Ник можно менять не больше {NICK_CHANGES_PER_DAY} раз(а) за 24 часа — лимит исчерпан. "
+            f"Следующая смена — через {fmt_left(left)}.")
+
+
 async def finish_nick(m: Message, u, text: str):
     if not u["nick"] and not REG_OPEN and not is_admin(u["user_id"]):
         run("UPDATE users SET state='' WHERE user_id=?", (u["user_id"],))
         await m.answer("🔒 Регистрация новых пользователей временно закрыта. Загляните позже.")
         return
+    if u["nick"]:                      # первый ник лимитом не считается — только смены
+        left = nick_wait(u["user_id"])
+        if left:
+            run("UPDATE users SET state='' WHERE user_id=?", (u["user_id"],))
+            await m.answer(nick_limit_text(left))
+            return
     nick = text.strip().lstrip("@")
     if not NICK_RE.fullmatch(nick):
         await m.answer("❌ Ник: 3–20 символов, только буквы, цифры, _ и -. Попробуйте ещё раз.")
+        return
+    if u["nick"] == nick:              # тот же ник — не смена, лимит не тратим
+        run("UPDATE users SET state='' WHERE user_id=?", (u["user_id"],))
+        await m.answer("Это и так ваш ник.", reply_markup=main_kb(u["user_id"]))
         return
     if one("SELECT 1 FROM users WHERE nick_lc=? AND user_id!=?", (nick.lower(), u["user_id"])):
         await m.answer("❌ Этот ник занят. Придумайте другой.")
@@ -1123,7 +1163,10 @@ async def finish_nick(m: Message, u, text: str):
     run("UPDATE users SET nick=?, nick_lc=?, state='', pending='' WHERE user_id=?",
         (nick, nick.lower(), uid))
     if old:
-        await m.answer(f"✅ Ник изменён: <b>{esc(nick)}</b>", reply_markup=main_kb(uid))
+        run("INSERT INTO nick_changes(user_id, date) VALUES(?,?)", (uid, now()))
+        spare = max(0, NICK_CHANGES_PER_DAY - len(nick_changes_recent(uid)))
+        await m.answer(f"✅ Ник изменён: <b>{esc(nick)}</b>\nСмен ника осталось за ближайшие 24 часа: {spare}",
+                       reply_markup=main_kb(uid))
         for r in many("SELECT group_id FROM members WHERE user_id=?", (uid,)):   # ник общий для всех групп
             await announce(r["group_id"], f"✏️ <i>{esc(old)} теперь {esc(nick)}</i>", exclude=(uid,))
         return
@@ -1200,12 +1243,18 @@ async def cmd_start(m: Message, command: CommandObject):
 @router.message(F.text == B_NICK)
 async def cmd_nick(m: Message, command: Optional[CommandObject] = None):
     u = ensure_user(m.from_user.id)
+    if u["nick"]:
+        left = nick_wait(u["user_id"])
+        if left:                       # лимит исчерпан — не просим вводить ник впустую
+            await m.answer(nick_limit_text(left))
+            return
     if command and command.args:
         await finish_nick(m, u, command.args)
         return
     run("UPDATE users SET state='nick' WHERE user_id=?", (u["user_id"],))
     await m.answer("✏️ Отправьте новый ник: 3–20 символов, буквы, цифры, _ и -."
-                   + ("\nОтмена — /cancel" if u["nick"] else ""))
+                   + (f"\nСменить ник можно не больше {NICK_CHANGES_PER_DAY} раз(а) за 24 часа.\nОтмена — /cancel"
+                      if u["nick"] else ""))
 
 
 @router.message(Command("cancel"))
@@ -3235,6 +3284,7 @@ async def cleanup_loop():
             run("DELETE FROM relay WHERE ts<?", (t - RELAY_TTL,))
             run("DELETE FROM reports WHERE date<?", (t - REPORT_TTL,))
             run("DELETE FROM support WHERE date<?", (t - SUPPORT_TTL,))
+            run("DELETE FROM nick_changes WHERE date<?", (t - NICK_CHANGE_WINDOW,))
             _seen_cache.clear()
             # группы без сообщений INACTIVE_DAYS дней удаляются вместе с участниками
             for g in many("SELECT id FROM groups WHERE COALESCE(last_active,0)<?", (t - INACTIVE_TTL,)):
