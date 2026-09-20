@@ -17,7 +17,7 @@
 → модератор → участник; администратор обладает всеми правами владельца, кроме удаления группы
 и передачи владения. Владелец может передать группу другому участнику: /transfer ник
 (или кнопка «Передать владение» в /panel) — бывший владелец становится администратором.
-Ссылки и @юзернеймы в сообщениях обезвреживаются (дефанг): текст остаётся, но некликабелен.
+Ссылки, e-mail и @юзернеймы в сообщениях обезвреживаются (дефанг): текст остаётся, но некликабелен.
 Группы без сообщений INACTIVE_DAYS дней удаляются автоматически.
 /rules — правила, /support — связь с администрацией (раз в сутки, 30–500 символов).
 
@@ -38,6 +38,7 @@ import os
 import re
 import secrets
 import sqlite3
+import struct
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -264,7 +265,7 @@ def about_text() -> str:
 • До {MAX_MEMBERS} участников в одной группе
 • Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
 • Защита от пересылки и сохранения — настройка группы
-• Ссылки и @юзернеймы в сообщениях обезвреживаются: текст виден, но нажать на него нельзя
+• Ссылки, почта и @юзернеймы в сообщениях обезвреживаются: текст виден, но нажать на него нельзя
 • Группы без сообщений {INACTIVE_DAYS} дней удаляются
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
 • Правка и удаление сообщений у других участников не синхронизируются
@@ -578,40 +579,72 @@ def wipe_group(gid: int):
     run("DELETE FROM groups WHERE id=?", (gid,))
 
 
-# ───────────────────────── Дефанг ссылок и юзернеймов ─────────────────────────
-# Ссылки (http/https/ftp/tg://, t.me/…, www.…, домены с популярными зонами) и @юзернеймы
-# не удаляются, а «обезвреживаются»: https://t.me/bot → hxxps[:]//t[.]me/bot, @bot → [@]bot.
+# ───────────────────────── Дефанг ссылок, e-mail и юзернеймов ─────────────────────────
+# Ссылки, домены, IP, e-mail и @юзернеймы не удаляются, а «обезвреживаются»:
+#   https://t.me/bot → hxxps[:]//t[.]me/bot,  @bot → [@]bot,  a@b.com → a[@]b[.]com.
 # Telegram такой текст не превращает в кликабельные ссылки.
-_TLDS = ("com|net|org|ru|su|me|io|co|to|gg|ly|xyz|info|biz|site|online|club|top|link|cc|tv|ua|by|kz|"
-         "pro|app|dev|ai|store|shop|live|life|world|fun|vip|one")
-URL_RE = re.compile(
-    r"(?i)(?<![\w@.\-])(?:"
-    r"(?:https?|ftp|tg)://[^\s<>\"']+"
-    r"|(?:www\.|(?:t|telegram)\.(?:me|dog)/)[^\s<>\"']+"
-    r"|(?:[a-z0-9\-]+\.)+(?:" + _TLDS + r")\b(?:/[^\s<>\"']*)?"
-    r")"
+DEFANG_ANY_TLD = False   # True — ломать вообще любое «слово.слово» (надёжнее, но заденет и опечатки без пробела)
+
+_TLDS = ("com|net|org|info|biz|xyz|top|site|online|club|link|store|shop|live|life|world|fun|vip|app|dev|"
+         "pro|one|tech|cloud|space|website|click|download|games|today|news|blog|wiki|art|network|agency|"
+         "media|team|zone|works|page|ink|icu|host|press|email|chat|social|group|lol|wtf|xxx|"
+         "рф|онлайн|сайт")
+_TLD_PART = r"[a-z]{2,24}" if DEFANG_ANY_TLD else r"(?:" + _TLDS + r"|[a-z]{2})"
+_PATH = r"(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?"
+_URL = (r"(?:(?:https?|ftp|tg|ton)://[^\s<>\"']+"                          # со схемой
+        r"|(?:[\w\-]+\.)+" + _TLD_PART + r"(?![\w\-])" + _PATH +           # домен.зона[/путь]
+        r"|\d{1,3}(?:\.\d{1,3}){3}(?![\w\-])" + _PATH + r")")              # IPv4
+_ANY_RE = re.compile(
+    r"(?i)(?P<email>(?<![\w.+\-])[\w.+\-]+@(?:[\w\-]+\.)+[\w\-]{2,})"
+    r"|(?P<url>(?<![\w.\-])" + _URL + r")"
+    r"|(?P<mention>(?<![\w@])@(?=[A-Za-z]))"
 )
-MENTION_RE = re.compile(r"(?<![\w@])@(?=[A-Za-z])")
 _TRAIL_PUNCT = ".,;:!?)»…"
 
 
-def _defang_url(mo) -> str:
-    s = mo.group(0)
-    tail = ""
-    while s and s[-1] in _TRAIL_PUNCT:          # хвостовая пунктуация — не часть ссылки
-        tail = s[-1] + tail
-        s = s[:-1]
-    s = re.sub(r"(?i)^http", "hxxp", s)
-    s = re.sub(r"(?i)^ftp", "fxp", s)
-    s = s.replace("://", "[:]//").replace(".", "[.]")
-    return s + tail
+def _plan(text: str) -> list:
+    """chunks[i] — то, на что заменяется i-й символ текста (обычно он сам)."""
+    chunks = list(text)
+    for mo in _ANY_RE.finditer(text):
+        a, b = mo.span()
+        if mo.lastgroup == "mention":
+            chunks[a] = "[@]"
+            continue
+        while b > a and text[b - 1] in _TRAIL_PUNCT:      # хвостовая пунктуация — не часть ссылки
+            b -= 1
+        seg = text[a:b]
+        sch = re.match(r"(?i)(https?|ftp)://", seg)
+        if sch:
+            if sch.group(1).lower() == "ftp":
+                chunks[a + 1] = "x"
+            else:
+                chunks[a + 1] = chunks[a + 2] = "x"
+        k = seg.find("://")
+        if k >= 0:
+            chunks[a + k] = "[:]"
+        for i in range(a, b):
+            if text[i] == ".":
+                chunks[i] = "[.]"
+            elif text[i] == "@":                          # @ внутри ссылки/почты тоже ломаем
+                chunks[i] = "[@]"
+    return chunks
+
+
+def defang_map(text: str):
+    """Возвращает (новый_текст, pos): pos[i] — где в новом тексте оказался i-й символ исходного
+    (pos[len(text)] — конец). Нужно, чтобы сдвинуть форматирование (жирный, код и т.д.)."""
+    chunks = _plan(text)
+    pos, acc = [], 0
+    for ch in chunks:
+        pos.append(acc)
+        acc += len(ch)
+    pos.append(acc)
+    return "".join(chunks), pos
 
 
 def defang(text: str) -> str:
-    """Обезвреживает ссылки и @юзернеймы в тексте (текст сохраняется, но не кликается)."""
-    if not text:
-        return text
-    return MENTION_RE.sub("[@]", URL_RE.sub(_defang_url, text))
+    """Обезвреживает ссылки, e-mail и @юзернеймы в тексте (текст сохраняется, но не кликается)."""
+    return defang_map(text)[0] if text else text
 
 
 def parse_title(raw: str):
@@ -970,14 +1003,34 @@ async def mod_ctx(m: Message, command: CommandObject, owner_only: bool = False):
 LINK_ENTITY_TYPES = ("url", "text_link", "mention", "text_mention")
 
 
+def _to_units(s: str) -> str:
+    """Строка, где каждый символ = одна UTF-16-единица (как считает Telegram в offset/length)."""
+    b = s.encode("utf-16-le")
+    return "".join(map(chr, struct.unpack(f"<{len(b) // 2}H", b)))
+
+
+def _from_units(s: str) -> str:
+    return s.encode("utf-16-le", "surrogatepass").decode("utf-16-le")
+
+
 def to_html(m: Message) -> str:
-    """Текст (или подпись) сообщения в HTML-разметке с обезвреженными ссылками и @юзернеймами."""
+    """Текст (или подпись) сообщения в HTML-разметке с обезвреженными ссылками, почтой и @юзернеймами.
+    Дефанг делается по ПРОСТОМУ тексту, а не по готовому HTML: иначе <b>t</b>.me/x проскакивал бы —
+    теги разрезали ссылку, а Telegram ищет ссылки именно в простом тексте. Форматирование
+    (offset/length) при этом пересчитывается под удлинившийся текст."""
     raw = m.text or m.caption or ""
     if not raw:
         return ""
-    ents = [e for e in (m.entities or m.caption_entities or [])
-            if str(getattr(e.type, "value", e.type)) not in LINK_ENTITY_TYPES]
-    return defang(html_decoration.unparse(raw, ents))
+    text = _to_units(raw)
+    new_text, pos = defang_map(text)
+    ents = []
+    for e in (m.entities or m.caption_entities or []):
+        if str(getattr(e.type, "value", e.type)) in LINK_ENTITY_TYPES:
+            continue
+        start = min(e.offset, len(text))
+        end = min(e.offset + e.length, len(text))
+        ents.append(e.model_copy(update={"offset": pos[start], "length": pos[end] - pos[start]}))
+    return html_decoration.unparse(_from_units(new_text), ents)
 
 
 async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str = "",
