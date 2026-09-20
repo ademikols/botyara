@@ -4,16 +4,22 @@
 Запуск:
     pip install -U aiogram
     export BOT_TOKEN="123456:ABC..."      # токен от @BotFather
+    export ADMIN_IDS="111111,222222"      # Telegram ID администраторов бота (через запятую)
     python anon_groups_bot.py
 
 Как это работает: участники пишут боту в личку, бот пересылает сообщение
 всем остальным в активной группе от своего имени с ником отправителя.
-Один человек может состоять максимум в 10 группах и переключаться между ними (/groups).
+Один человек может состоять максимум в 5 группах и переключаться между ними (/groups).
 Сообщения из группы доходят только тем, у кого она сейчас активна — если человек сидит
 в другой группе, сообщения из фоновой группы к нему не приходят, пока он не переключится.
 В группе не может быть больше MAX_MEMBERS участников. Группы можно делать публичными —
 такие видны всем в каталоге /catalog и через /search_group. Роли: владелец → администратор
 → модератор → участник; администратор обладает всеми правами владельца, кроме удаления группы.
+Ссылки и @юзернеймы в сообщениях обезвреживаются (дефанг): текст остаётся, но некликабелен.
+Группы без сообщений 7 дней удаляются автоматически. /rules — правила, /support — связь с
+администрацией (раз в сутки, 30–500 символов).
+Скрытая админ-панель бота (/admin, /statistics, /ban, /unban, /find, /groups_list) доступна только
+ID из ADMIN_IDS; остальным эти команды не отвечают ничем. В BotFather их регистрировать не нужно.
 База старой версии (одна группа на человека / без каталога и ролей) обновляется автоматически
 при запуске.
 """
@@ -46,7 +52,7 @@ TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬТЕ_ТОКЕН_СЮДА")
 # при каждом обновлении из GitHub хостинг может пересоздавать эту папку и база будет стираться.
 os.makedirs("/app/data", exist_ok=True)
 DB_PATH = os.getenv("DB_PATH", "/app/data/anon_groups.db")
-MAX_GROUPS = 10                            # максимум групп на одного человека
+MAX_GROUPS = 5                             # максимум групп на одного человека
 MAX_MEMBERS = 50                           # максимум участников в одной группе
 TITLE_MAX = 40                             # максимальная длина названия группы
 DESC_MAX = 200                             # максимальная длина описания группы
@@ -55,6 +61,30 @@ RELAY_TTL = 3 * 24 * 3600                  # сколько хранить св�
 DEFAULT_MUTE_MIN = 10
 MAX_MUTE_MIN = 7 * 24 * 60
 MAX_TEXT_LEN = 3500
+
+# ── неактивные группы ──
+INACTIVE_DAYS = 7                          # группа без сообщений столько дней удаляется
+INACTIVE_TTL = INACTIVE_DAYS * 24 * 3600
+
+# ── /support ──
+SUPPORT_MIN, SUPPORT_MAX = 30, 500         # длина обращения в символах
+SUPPORT_COOLDOWN = 24 * 3600               # не чаще одного обращения в сутки
+SUPPORT_TTL = 30 * 24 * 3600               # сколько хранить записи об обращениях
+
+# ── скрытая админ-панель ──
+def _parse_admin_ids() -> set:
+    ids = set()
+    for part in os.getenv("ADMIN_IDS", "").replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+ADMIN_IDS = _parse_admin_ids()
+FOREVER = 4102444800                       # «навсегда» (2100 год)
+MAX_BAN_HOURS = 24 * 365
+ADMIN_PAGE_SIZE = 5                        # групп на страницу в /groups_list
 
 # ── жалобы (/report) ──
 REPORT_MIN_DIALOG_SEC = 60             # нельзя жаловаться на сообщение младше 1 минуты
@@ -85,6 +115,8 @@ B_CATALOG = "📂 Каталог"
 B_HELP, B_ABOUT = "❓ Помощь", "ℹ️ О боте"
 MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT}
 
+# Только публичные команды. Админские (/admin, /statistics, /ban, /unban, /find, /groups_list)
+# сюда НЕ добавляются — они скрыты и работают только для ADMIN_IDS.
 COMMANDS = [
     ("start", "Начало / регистрация"),
     ("newgroup", "Создать группу"),
@@ -98,6 +130,8 @@ COMMANDS = [
     ("leave", "Выйти из группы"),
     ("cancel", "Отменить ввод"),
     ("report", "Пожаловаться на сообщение (ответом)"),
+    ("rules", "Правила бота"),
+    ("support", "Написать администрации"),
     ("panel", "Управление группой (модератор)"),
     ("rename", "Сменить название группы (администратор)"),
     ("description", "Сменить описание группы (администратор)"),
@@ -115,6 +149,17 @@ COMMANDS = [
     ("help", "Помощь"),
     ("about", "О боте"),
 ]
+
+RULES_TEXT = f"""📜 <b>Правила бота:</b>
+
+1. Уважай собеседников — без мата, оскорблений и травли.
+2. Не спамь и не рекламируй — ссылки, каналы, боты запрещены.
+3. Без 18+ — порно, жестокость, шок-контент = бан навсегда.
+4. Жалоба — свайп на сообщение + /report. Ложные жалобы наказуемы.
+5. Максимум {MAX_MEMBERS} человек в группе, лимит {MAX_GROUPS} групп.
+6. Неактивные группы ({INACTIVE_DAYS} дней) удаляются.
+7. Связь с администрацией — команда /support. Лимит: 1 сообщение в день, от {SUPPORT_MIN} до {SUPPORT_MAX} символов.
+8. Администрация может изменять правила без предупреждения. Незнание правил не освобождает от бана."""
 
 HELP_TEXT = f"""❓ <b>Помощь</b>
 
@@ -134,8 +179,11 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 /leave — выйти из активной группы
 /cancel — отменить ввод
 /report — свайпните на сообщение нарушителя и отправьте эту команду
+/rules — правила бота
+/support — написать администрации бота ({SUPPORT_MIN}–{SUPPORT_MAX} символов, раз в сутки)
 
 Состоять можно максимум в {MAX_GROUPS} группах, участников в одной группе — максимум {MAX_MEMBERS}.
+Группы без сообщений {INACTIVE_DAYS} дней удаляются автоматически.
 
 <b>Модераторы</b> (ответьте командой на сообщение или укажите ник)
 /kick ник — исключить
@@ -166,8 +214,12 @@ ABOUT_TEXT = f"""ℹ️ <b>О боте</b>
 • До {MAX_MEMBERS} участников в одной группе
 • Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
 • Защита от пересылки и сохранения — настройка группы
+• Ссылки и @юзернеймы в сообщениях обезвреживаются: текст виден, но нажать на него нельзя
+• Группы без сообщений {INACTIVE_DAYS} дней удаляются
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
-• Правка и удаление сообщений у других участников не синхронизируются"""
+• Правка и удаление сообщений у других участников не синхронизируются
+
+Правила — /rules · Связь с администрацией — /support"""
 
 # ───────────────────────── База данных ─────────────────────────
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -177,10 +229,10 @@ PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS users(
     user_id INTEGER PRIMARY KEY,
     nick TEXT, nick_lc TEXT UNIQUE,
-    state TEXT DEFAULT '',            -- '' | 'nick' | 'newgroup' | 'rename:<id>' | 'desc:<id>'
+    state TEXT DEFAULT '',            -- '' | 'nick' | 'newgroup' | 'support' | 'rename:<id>' | 'desc:<id>' | 'adm:<действие>'
     pending TEXT DEFAULT '',          -- токен приглашения, ждущий регистрации
     active_group INTEGER DEFAULT 0,   -- группа, в которую уходят сообщения
-    banned_until INTEGER DEFAULT 0,   -- до какого времени (unix) человек в бане за жалобы
+    banned_until INTEGER DEFAULT 0,   -- до какого времени (unix) человек в бане
     created INTEGER
 );
 CREATE TABLE IF NOT EXISTS groups(
@@ -191,7 +243,8 @@ CREATE TABLE IF NOT EXISTS groups(
     is_public INTEGER DEFAULT 0,      -- видна ли группа в каталоге /catalog
     is_closed INTEGER DEFAULT 0,      -- закрыт ли вход новым участникам
     description TEXT DEFAULT '',      -- описание для каталога
-    created INTEGER
+    created INTEGER,
+    last_active INTEGER DEFAULT 0     -- время последнего сообщения (для автоудаления неактивных групп)
 );
 CREATE TABLE IF NOT EXISTS members(
     user_id INTEGER, group_id INTEGER, role TEXT DEFAULT 'member',
@@ -213,6 +266,11 @@ CREATE TABLE IF NOT EXISTS reports(
 );
 CREATE INDEX IF NOT EXISTS ix_reports_offender ON reports(offender_id);
 CREATE INDEX IF NOT EXISTS ix_reports_date ON reports(date);
+CREATE TABLE IF NOT EXISTS support(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER, text TEXT, date INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_support_user ON support(user_id, date);
 """)
 
 
@@ -232,6 +290,10 @@ def migrate():
         db.execute("ALTER TABLE groups ADD COLUMN is_closed INTEGER DEFAULT 0")
     if "description" not in gcols:
         db.execute("ALTER TABLE groups ADD COLUMN description TEXT DEFAULT ''")
+    if "last_active" not in gcols:
+        db.execute("ALTER TABLE groups ADD COLUMN last_active INTEGER DEFAULT 0")
+    # Старым группам ставим «активность = сейчас», чтобы они не удалились сразу после обновления.
+    db.execute("UPDATE groups SET last_active=? WHERE COALESCE(last_active,0)=0", (int(time.time()),))
 
     db.executescript("""
     CREATE TABLE IF NOT EXISTS reports(
@@ -267,6 +329,7 @@ def migrate():
     CREATE INDEX IF NOT EXISTS ix_groups_public ON groups(is_public);
     CREATE INDEX IF NOT EXISTS ix_groups_closed ON groups(is_closed);
     CREATE INDEX IF NOT EXISTS ix_groups_title ON groups(title);
+    CREATE INDEX IF NOT EXISTS ix_groups_active ON groups(last_active);
     UPDATE users SET active_group = (SELECT group_id FROM members WHERE members.user_id = users.user_id)
      WHERE COALESCE(active_group, 0) = 0
        AND (SELECT COUNT(*) FROM members WHERE members.user_id = users.user_id) = 1;
@@ -386,9 +449,46 @@ def drop_member(uid: int, gid: int) -> str:
     return "\n\nВы больше не состоите ни в одной группе. Создать новую: /newgroup"
 
 
+# ───────────────────────── Дефанг ссылок и юзернеймов ─────────────────────────
+# Ссылки (http/https/ftp/tg://, t.me/…, www.…, домены с популярными зонами) и @юзернеймы
+# не удаляются, а «обезвреживаются»: https://t.me/bot → hxxps[:]//t[.]me/bot, @bot → [@]bot.
+# Telegram такой текст не превращает в кликабельные ссылки.
+_TLDS = ("com|net|org|ru|su|me|io|co|to|gg|ly|xyz|info|biz|site|online|club|top|link|cc|tv|ua|by|kz|"
+         "pro|app|dev|ai|store|shop|live|life|world|fun|vip|one")
+URL_RE = re.compile(
+    r"(?i)(?<![\w@.\-])(?:"
+    r"(?:https?|ftp|tg)://[^\s<>\"']+"
+    r"|(?:www\.|(?:t|telegram)\.(?:me|dog)/)[^\s<>\"']+"
+    r"|(?:[a-z0-9\-]+\.)+(?:" + _TLDS + r")\b(?:/[^\s<>\"']*)?"
+    r")"
+)
+MENTION_RE = re.compile(r"(?<![\w@])@(?=[A-Za-z])")
+_TRAIL_PUNCT = ".,;:!?)»…"
+
+
+def _defang_url(mo) -> str:
+    s = mo.group(0)
+    tail = ""
+    while s and s[-1] in _TRAIL_PUNCT:          # хвостовая пунктуация — не часть ссылки
+        tail = s[-1] + tail
+        s = s[:-1]
+    s = re.sub(r"(?i)^http", "hxxp", s)
+    s = re.sub(r"(?i)^ftp", "fxp", s)
+    s = s.replace("://", "[:]//").replace(".", "[.]")
+    return s + tail
+
+
+def defang(text: str) -> str:
+    """Обезвреживает ссылки и @юзернеймы в тексте (текст сохраняется, но не кликается)."""
+    if not text:
+        return text
+    return MENTION_RE.sub("[@]", URL_RE.sub(_defang_url, text))
+
+
 def parse_title(raw: str):
-    """Название группы: схлопывает пробелы и переводы строк, без эмодзи. Возвращает (название, ошибка)."""
-    title = " ".join((raw or "").split())
+    """Название группы: схлопывает пробелы и переводы строк, без эмодзи, ссылки обезврежены.
+    Возвращает (название, ошибка)."""
+    title = defang(" ".join((raw or "").split()))
     if not title:
         return "", "❌ Название не может быть пустым."
     if EMOJI_RE.search(title):
@@ -399,8 +499,9 @@ def parse_title(raw: str):
 
 
 def parse_desc(raw: str):
-    """Описание группы (для каталога): схлопывает пробелы, может быть пустым. Возвращает (текст, ошибка)."""
-    desc = " ".join((raw or "").split())
+    """Описание группы (для каталога): схлопывает пробелы, ссылки обезврежены, может быть пустым.
+    Возвращает (текст, ошибка)."""
+    desc = defang(" ".join((raw or "").split()))
     if len(desc) > DESC_MAX:
         return "", f"✂️ Слишком длинное описание: максимум {DESC_MAX} символов, у вас {len(desc)}."
     return desc, None
@@ -608,6 +709,22 @@ async def announce(gid: int, text: str, exclude=(), kb: bool = False):
         await asyncio.sleep(0.04)
 
 
+async def purge_group(gid: int, reason: str):
+    """Полностью удаляет группу (участники, статистика, связки сообщений) и сообщает участникам.
+    reason — продолжение фразы «Группа «…» …», например «удалена администрацией»."""
+    g = one("SELECT title FROM groups WHERE id=?", (gid,))
+    if not g:
+        return
+    ids = [r["user_id"] for r in many("SELECT user_id FROM members WHERE group_id=?", (gid,))]
+    notes = {i: drop_member(i, gid) for i in ids}
+    run("DELETE FROM relay WHERE group_id=?", (gid,))
+    run("DELETE FROM stats WHERE group_id=?", (gid,))
+    run("DELETE FROM groups WHERE id=?", (gid,))
+    for i in ids:
+        await notify(i, f"🗑 Группа «{esc(g['title'])}» {reason}." + notes[i], kb=True)
+        await asyncio.sleep(0.04)
+
+
 async def reg(m: Message):
     """Вернёт пользователя, если у него есть ник, иначе попросит придумать."""
     u = ensure_user(m.from_user.id)
@@ -689,10 +806,19 @@ async def mod_ctx(m: Message, command: CommandObject, owner_only: bool = False):
 
 
 # ───────────────────────── Рассылка сообщений ─────────────────────────
+# Сущности, которые делают текст кликабельным: ссылки, ссылки-«под текстом», @упоминания.
+# Они отбрасываются (видимый текст остаётся), а сам текст дополнительно проходит через defang().
+LINK_ENTITY_TYPES = ("url", "text_link", "mention", "text_mention")
+
+
 def to_html(m: Message) -> str:
+    """Текст (или подпись) сообщения в HTML-разметке с обезвреженными ссылками и @юзернеймами."""
     raw = m.text or m.caption or ""
-    ents = m.entities or m.caption_entities or []
-    return html_decoration.unparse(raw, ents) if raw else ""
+    if not raw:
+        return ""
+    ents = [e for e in (m.entities or m.caption_entities or [])
+            if str(getattr(e.type, "value", e.type)) not in LINK_ENTITY_TYPES]
+    return defang(html_decoration.unparse(raw, ents))
 
 
 async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str = "",
@@ -715,9 +841,16 @@ async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str
         r = await bot.copy_message(chat_id, m.chat.id, m.message_id, caption=text, protect_content=protect,
                                    reply_parameters=rp)
         return [r.message_id]
-    h = await bot.send_message(chat_id, f"{head}:", protect_content=protect,
-                               reply_parameters=rp)         # стикеры/кружки: ник отдельной строкой, реплай — на неё
-    r = await bot.copy_message(chat_id, m.chat.id, m.message_id, protect_content=protect)
+    # Стикеры/кружки (или слишком длинная подпись): ник — отдельным сообщением, реплай — на него.
+    # Подпись медиа при этом тоже идёт через to_html(), а у скопированного медиа оригинальная
+    # подпись убирается (caption=""), иначе ссылки из неё остались бы кликабельными.
+    is_cap = ctype in CAPTION_TYPES
+    h = await bot.send_message(chat_id, f"{head}:" + (f"\n{cap}" if cap and is_cap else ""),
+                               protect_content=protect, reply_parameters=rp)
+    if is_cap:
+        r = await bot.copy_message(chat_id, m.chat.id, m.message_id, caption="", protect_content=protect)
+    else:
+        r = await bot.copy_message(chat_id, m.chat.id, m.message_id, protect_content=protect)
     return [h.message_id, r.message_id]
 
 
@@ -780,6 +913,7 @@ async def finish_nick(m: Message, u, text: str):
                    "Создайте группу: /newgroup\n"
                    "Посмотрите каталог: /catalog\n"
                    "или откройте ссылку-приглашение от владельца группы.\n"
+                   "Правила бота — /rules\n"
                    "Меню — внизу 👇", reply_markup=main_kb(uid))
     if token:
         await join_group(m, token)
@@ -820,7 +954,8 @@ async def cmd_start(m: Message, command: CommandObject):
     token = arg[2:] if arg.startswith("g_") else ""
     if not u["nick"]:
         run("UPDATE users SET state='nick', pending=? WHERE user_id=?", (token, u["user_id"]))
-        await m.answer("👋 <b>Добро пожаловать!</b>\nЭто бот анонимных групп: в группах вас видят только под ником.\n\n"
+        await m.answer("👋 <b>Добро пожаловать!</b>\nЭто бот анонимных групп: в группах вас видят только под ником. "
+                       "Правила — /rules\n\n"
                        "✏️ Придумайте ник — отправьте его сообщением (3–20 символов: буквы, цифры, _ и -).")
         return
     run("UPDATE users SET state='' WHERE user_id=?", (u["user_id"],))
@@ -885,8 +1020,8 @@ async def create_group(m: Message, u, raw_title: str):
         await m.answer(f"{err}\nНапишите название ещё раз или /cancel.")
         return
     token = secrets.token_urlsafe(9)
-    gid = run("INSERT INTO groups(title, owner_id, token, created) VALUES(?,?,?,?)",
-              (title, uid, token, now())).lastrowid
+    gid = run("INSERT INTO groups(title, owner_id, token, created, last_active) VALUES(?,?,?,?,?)",
+              (title, uid, token, now(), now())).lastrowid
     run("INSERT INTO members(user_id, group_id, role, joined) VALUES(?,?,'owner',?)", (uid, gid, now()))
     run("UPDATE users SET active_group=?, state='' WHERE user_id=?", (gid, uid))
     await m.answer(f"🎉 Группа «{esc(title)}» создана — сообщения теперь идут в неё.\n\n"
@@ -1609,7 +1744,7 @@ async def panel_cb(c: CallbackQuery):
     await c.answer()
 
 
-# ───────────────────────── Помощь и информация ─────────────────────────
+# ───────────────────────── Помощь, правила, информация ─────────────────────────
 @router.message(Command("help"))
 @router.message(F.text == B_HELP)
 async def cmd_help(m: Message):
@@ -1620,6 +1755,81 @@ async def cmd_help(m: Message):
 @router.message(F.text == B_ABOUT)
 async def cmd_about(m: Message):
     await m.answer(ABOUT_TEXT)
+
+
+@router.message(Command("rules"))
+async def cmd_rules(m: Message):
+    await m.answer(RULES_TEXT)
+
+
+# ───────────────────────── Связь с администрацией (/support) ─────────────────────────
+def support_wait(uid: int) -> int:
+    """Сколько секунд осталось до следующего обращения (0 — можно писать)."""
+    r = one("SELECT MAX(date) AS d FROM support WHERE user_id=?", (uid,))
+    if r and r["d"]:
+        return max(0, r["d"] + SUPPORT_COOLDOWN - now())
+    return 0
+
+
+def fmt_left(sec: int) -> str:
+    h, mnt = sec // 3600, (sec % 3600 + 59) // 60
+    if mnt == 60:
+        h, mnt = h + 1, 0
+    if h and mnt:
+        return f"{h} ч {mnt} мин"
+    return f"{h} ч" if h else f"{max(1, mnt)} мин"
+
+
+async def finish_support(m: Message, u, raw: str):
+    uid = u["user_id"]
+    text = (raw or "").strip()
+    n = len(text)
+    if n < SUPPORT_MIN or n > SUPPORT_MAX:     # остаёмся в режиме ввода — можно прислать другой текст
+        run("UPDATE users SET state='support' WHERE user_id=?", (uid,))
+        await m.answer(f"✍️ Обращение должно быть от {SUPPORT_MIN} до {SUPPORT_MAX} символов, у вас {n}. "
+                       "Напишите ещё раз или /cancel.")
+        return
+    left = support_wait(uid)
+    if left:
+        run("UPDATE users SET state='' WHERE user_id=?", (uid,))
+        await m.answer(f"⏳ Вы уже писали администрации. Следующее обращение — через {fmt_left(left)}.")
+        return
+    run("UPDATE users SET state='' WHERE user_id=?", (uid,))
+    sid = run("INSERT INTO support(user_id, text, date) VALUES(?,?,?)", (uid, text, now())).lastrowid
+    delivered = 0
+    for aid in ADMIN_IDS:
+        try:
+            await bot.send_message(aid, f"📩 <b>Обращение #{sid}</b>\n"
+                                        f"От: <b>{esc(u['nick'])}</b> · ID <code>{uid}</code>\n\n{esc(text)}")
+            delivered += 1
+        except TelegramAPIError as e:
+            log.warning("обращение не доставлено админу %s: %s", aid, e)
+    if not delivered:                  # никому не дошло — лимит не тратим
+        run("DELETE FROM support WHERE id=?", (sid,))
+        await m.answer("😔 Не удалось передать обращение. Попробуйте позже.")
+        return
+    await m.answer("✅ Обращение отправлено администрации. Следующее можно будет отправить через сутки.",
+                   reply_markup=main_kb(uid))
+
+
+@router.message(Command("support"))
+async def cmd_support(m: Message, command: CommandObject):
+    u = await reg(m)
+    if not u:
+        return
+    if not ADMIN_IDS:
+        await m.answer("📩 Связь с администрацией сейчас недоступна.")
+        return
+    left = support_wait(u["user_id"])
+    if left:
+        await m.answer(f"⏳ Вы уже писали администрации. Следующее обращение — через {fmt_left(left)}.")
+        return
+    if (command.args or "").strip():
+        await finish_support(m, u, command.args)       # можно и сразу: /support текст обращения
+        return
+    run("UPDATE users SET state='support' WHERE user_id=?", (u["user_id"],))
+    await m.answer(f"📩 Опишите проблему или идею одним сообщением ({SUPPORT_MIN}–{SUPPORT_MAX} символов).\n"
+                   "Администрация увидит ваш ник и ID. Писать можно 1 раз в сутки.\nОтмена — /cancel")
 
 
 # ───────────────────────── Ввод ника / названия / описания и обычные сообщения ─────────────────────────
@@ -1636,6 +1846,8 @@ async def on_input_text(m: Message):
         await finish_nick(m, u, m.text)
     elif st == "newgroup":
         await create_group(m, u, m.text)
+    elif st == "support":
+        await finish_support(m, u, m.text)
     elif st.startswith("rename:"):
         await finish_rename(m, u, int(st[7:]), m.text)
     elif st.startswith("desc:"):
@@ -1652,17 +1864,22 @@ async def on_message(m: Message):
     u = await reg(m)
     if not u:
         return
-    if is_banned(u):                   # в бане за жалобы — молча игнорируем любые сообщения
+    if is_banned(u):                   # в бане — молча игнорируем любые сообщения
         return
-    if u["state"]:                     # ждём текст (ник / название / описание), а прислали не текст
-        if u["state"] == "nick":
+    st = u["state"]
+    if st:                             # ждём текст (ник / название / описание / обращение), а прислали не текст
+        if st == "nick":
             what = "ник"
-        elif u["state"] == "newgroup":
+        elif st == "newgroup":
             what = "название группы"
-        elif u["state"].startswith("rename:"):
+        elif st == "support":
+            what = "текст обращения"
+        elif st.startswith("rename:"):
             what = "новое название группы"
-        else:
+        elif st.startswith("desc:"):
             what = "описание группы"
+        else:
+            what = "ответ текстом"
         await m.answer(f"✍️ Сейчас я жду {what} текстом. Отмена — /cancel")
         return
     mem = get_member(u["user_id"])
@@ -1686,14 +1903,398 @@ async def on_message(m: Message):
         await m.answer("🖼 В этой группе медиа запрещены — только текст.")
         return
     bump_stats(u["user_id"], mem["group_id"], is_media=not bool(m.text))
+    run("UPDATE groups SET last_active=? WHERE id=?", (now(), mem["group_id"]))   # для автоудаления неактивных
     await relay(m, u, mem)
+
+
+# ───────────────────────── Скрытая админ-панель ─────────────────────────
+# Команды НЕ регистрируются в BotFather и не входят в COMMANDS. Доступ — только ID из ADMIN_IDS.
+# Если команду пишет не админ, бот молчит: ни «нет доступа», ни «неизвестная команда».
+# admin_router подключается в диспетчер ПЕРВЫМ, поэтому перехватывает эти команды раньше основного роутера.
+admin_router = Router()
+admin_router.message.filter(F.chat.type == "private")
+HIDDEN_CMDS = ("admin", "statistics", "ban", "unban", "find", "groups_list")
+ADMIN_TITLE = "🛠 <b>Админ-панель</b>"
+
+
+def is_admin(uid) -> bool:
+    return uid in ADMIN_IDS
+
+
+def _not_admin(m: Message) -> bool:
+    return not (m.from_user and is_admin(m.from_user.id))
+
+
+def _admin_state(uid: int) -> str:
+    r = one("SELECT state FROM users WHERE user_id=?", (uid,))
+    return (r["state"] or "") if r else ""
+
+
+def admin_in_state(m: Message) -> bool:
+    return bool(m.from_user and is_admin(m.from_user.id) and _admin_state(m.from_user.id).startswith("adm:"))
+
+
+def admin_input_filter(m: Message) -> bool:
+    return bool(m.text) and not m.text.startswith("/") and admin_in_state(m)
+
+
+def set_state(uid: int, state: str):
+    ensure_user(uid)
+    run("UPDATE users SET state=? WHERE user_id=?", (state, uid))
+
+
+def _arg_id(command: CommandObject) -> Optional[int]:
+    args = (command.args or "").split()
+    if args and re.fullmatch(r"\d{1,15}", args[0]):
+        return int(args[0])
+    return None
+
+
+def fmt_ts(ts: int) -> str:
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%d.%m.%Y %H:%M") + " UTC"
+
+
+def fmt_ban(u) -> str:
+    if not is_banned(u):
+        return "нет"
+    if u["banned_until"] >= FOREVER:
+        return "навсегда"
+    return f"до {fmt_ts(u['banned_until'])}"
+
+
+def admin_menu_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="adm:stats")],
+        [InlineKeyboardButton(text="🚫 Бан по ID", callback_data="adm:ban")],
+        [InlineKeyboardButton(text="✅ Разбан", callback_data="adm:unban")],
+        [InlineKeyboardButton(text="👥 Найти юзера по ID", callback_data="adm:find")],
+        [InlineKeyboardButton(text="🗂 Список групп", callback_data="adm:gl:0")],
+        [InlineKeyboardButton(text="📋 Жалобы (последние 20)", callback_data="adm:rep")],
+    ])
+
+
+def admin_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ Меню", callback_data="adm:menu")]])
+
+
+def admin_ban_kb(target: int, with_unban: bool = False) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text="♾ Навсегда", callback_data=f"adm:b:{target}:0"),
+             InlineKeyboardButton(text="⏱ 1 час", callback_data=f"adm:b:{target}:1"),
+             InlineKeyboardButton(text="📅 24 часа", callback_data=f"adm:b:{target}:24")]]
+    if with_unban:
+        rows.append([InlineKeyboardButton(text="✅ Разбанить", callback_data=f"adm:ub:{target}")])
+    rows.append([InlineKeyboardButton(text="◀️ Меню", callback_data="adm:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _count(sql: str, *args) -> int:
+    return one(sql, args)["c"]
+
+
+def admin_stats_text() -> str:
+    t = now()
+    day = t - 86400
+    users = _count("SELECT COUNT(*) AS c FROM users")
+    nicked = _count("SELECT COUNT(*) AS c FROM users WHERE COALESCE(nick, '') != ''")
+    banned = _count("SELECT COUNT(*) AS c FROM users WHERE banned_until>?", t)
+    groups = _count("SELECT COUNT(*) AS c FROM groups")
+    public = _count("SELECT COUNT(*) AS c FROM groups WHERE is_public=1")
+    closed = _count("SELECT COUNT(*) AS c FROM groups WHERE is_closed=1")
+    dialogs = _count("SELECT COUNT(*) AS c FROM groups WHERE last_active>?", day)
+    reports = _count("SELECT COUNT(*) AS c FROM reports WHERE date>?", day)
+    msgs = one("SELECT COALESCE(SUM(texts),0) AS t, COALESCE(SUM(media),0) AS m FROM stats")
+    return (
+        "📊 <b>Статистика</b>\n\n"
+        f"👤 Юзеров: {users} (с ником: {nicked})\n"
+        f"🚫 Сейчас в бане: {banned}\n"
+        f"🗂 Групп: {groups} (публичных: {public}, с закрытым входом: {closed})\n"
+        f"💬 Диалогов за сутки (групп, где писали): {dialogs}\n"
+        f"✉️ Сообщений всего: {msgs['t']} текст · {msgs['m']} медиа\n"
+        f"📋 Жалоб за сутки: {reports}"
+    )
+
+
+def admin_profile(uid: int):
+    """Профиль пользователя для админа: (текст, клавиатура) или None, если такого ID нет в базе."""
+    u = one("SELECT * FROM users WHERE user_id=?", (uid,))
+    if not u:
+        return None
+    tt, tm = personal_stats_total(uid)
+    grp = many("""SELECT m.group_id, m.role, g.title FROM members m JOIN groups g ON g.id = m.group_id
+                  WHERE m.user_id=? ORDER BY m.joined, m.group_id""", (uid,))
+    lines = [
+        f"👤 <b>Профиль</b> <code>{uid}</code>",
+        f"Ник: {('<b>' + esc(u['nick']) + '</b>') if u['nick'] else '— (не задан)'}",
+        f"Регистрация: {fmt_ts(u['created']) if u['created'] else '—'}",
+        f"Бан: {fmt_ban(u)}",
+        f"Сообщений: {tt} текст · {tm} медиа",
+        f"Жалоб на него: {reports_last_24h_on(uid)} за сутки · "
+        f"{_count('SELECT COUNT(*) AS c FROM reports WHERE offender_id=?', uid)} за неделю",
+        f"Жалоб от него: {_count('SELECT COUNT(*) AS c FROM reports WHERE reporter_id=?', uid)} за неделю",
+        f"Групп: {len(grp)}/{MAX_GROUPS}",
+    ]
+    for r in grp:
+        mark = " ✅" if r["group_id"] == u["active_group"] else ""
+        lines.append(f"  {ROLE_ICON[r['role']]} <b>#{r['group_id']}</b> «{esc(r['title'])}» — {ROLE_NAME[r['role']]}{mark}")
+    return "\n".join(lines), admin_ban_kb(uid, with_unban=True)
+
+
+def ban_precheck(admin_id: int, target: int) -> Optional[str]:
+    if target == admin_id:
+        return "🙂 Нельзя забанить себя."
+    if is_admin(target):
+        return "🚫 Нельзя забанить другого администратора бота."
+    if not one("SELECT 1 FROM users WHERE user_id=?", (target,)):
+        return f"❌ Пользователь <code>{target}</code> не найден в базе."
+    return None
+
+
+async def do_ban(admin_id: int, target: int, hours: Optional[int]) -> str:
+    """Бан по ID. hours=None — навсегда. Возвращает текст-результат для админа."""
+    err = ban_precheck(admin_id, target)
+    if err:
+        return err
+    until = FOREVER if hours is None else now() + hours * 3600
+    run("UPDATE users SET banned_until=? WHERE user_id=?", (until, target))
+    term = "навсегда" if hours is None else f"на {hours} ч"
+    nick = one("SELECT nick FROM users WHERE user_id=?", (target,))["nick"]
+    await notify(target, f"🚫 Вы забанены администрацией {term}. Если это ошибка — напишите в /support.")
+    return f"🚫 <b>{esc(nick or '—')}</b> (<code>{target}</code>) забанен {term}."
+
+
+async def do_unban(target: int) -> str:
+    u = one("SELECT nick, banned_until FROM users WHERE user_id=?", (target,))
+    if not u:
+        return f"❌ Пользователь <code>{target}</code> не найден в базе."
+    was = bool(u["banned_until"]) and u["banned_until"] > now()
+    run("UPDATE users SET banned_until=0 WHERE user_id=?", (target,))
+    run("DELETE FROM reports WHERE offender_id=?", (target,))     # чтобы старые жалобы не вернули бан сразу
+    if was:
+        await notify(target, "✅ Администрация сняла с вас бан. Пожалуйста, соблюдайте правила — /rules")
+    return (f"✅ <b>{esc(u['nick'] or '—')}</b> (<code>{target}</code>) разбанен."
+            if was else f"ℹ️ <code>{target}</code> и так не в бане (жалобы на него сброшены).")
+
+
+def admin_groups_view(offset: int):
+    """Страница списка групп: (текст, клавиатура)."""
+    total = _count("SELECT COUNT(*) AS c FROM groups")
+    if not total:
+        return "🗂 Групп пока нет.", admin_back_kb()
+    offset = min(max(0, offset), ((total - 1) // ADMIN_PAGE_SIZE) * ADMIN_PAGE_SIZE)
+    rows = many("""SELECT g.id, g.title, g.is_public, g.is_closed, g.last_active, g.owner_id, u.nick AS owner_nick
+                   FROM groups g LEFT JOIN users u ON u.user_id = g.owner_id
+                   ORDER BY g.id DESC LIMIT ? OFFSET ?""", (ADMIN_PAGE_SIZE, offset))
+    lines = [f"🗂 <b>Группы</b> ({total})", ""]
+    kb = []
+    for r in rows:
+        idle = (now() - (r["last_active"] or 0)) // 86400
+        flags = ("🌐 в каталоге · " if r["is_public"] else "") + ("🔒 вход закрыт · " if r["is_closed"] else "")
+        lines.append(f"<b>#{r['id']}</b> «{esc(r['title'])}» — {count_members(r['id'])}/{MAX_MEMBERS}\n"
+                     f"{flags}владелец: {esc(r['owner_nick'] or '—')} (<code>{r['owner_id']}</code>) · "
+                     f"без сообщений: {idle} дн.")
+        kb.append([
+            InlineKeyboardButton(text=f"{'🔓 Открыть' if r['is_closed'] else '🔒 Закрыть'} #{r['id']}",
+                                 callback_data=f"adm:gc:{r['id']}:{offset}"),
+            InlineKeyboardButton(text=f"🗑 Удалить #{r['id']}", callback_data=f"adm:gd:{r['id']}:{offset}")])
+    nav = []
+    if offset > 0:
+        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"adm:gl:{max(0, offset - ADMIN_PAGE_SIZE)}"))
+    if offset + ADMIN_PAGE_SIZE < total:
+        nav.append(InlineKeyboardButton(text="Дальше ▶️", callback_data=f"adm:gl:{offset + ADMIN_PAGE_SIZE}"))
+    if nav:
+        kb.append(nav)
+    kb.append([InlineKeyboardButton(text="◀️ Меню", callback_data="adm:menu")])
+    return "\n\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def admin_reports_text() -> str:
+    rows = many("""SELECT r.id, r.date, r.reporter_id, r.offender_id, r.group_id,
+                          ur.nick AS rnick, uo.nick AS onick, g.title
+                   FROM reports r
+                   LEFT JOIN users ur ON ur.user_id = r.reporter_id
+                   LEFT JOIN users uo ON uo.user_id = r.offender_id
+                   LEFT JOIN groups g ON g.id = r.group_id
+                   ORDER BY r.id DESC LIMIT 20""")
+    if not rows:
+        return "📋 Жалоб пока нет."
+    lines = ["📋 <b>Последние жалобы</b> (до 20)", ""]
+    for r in rows:
+        when = datetime.fromtimestamp(r["date"], timezone.utc).strftime("%d.%m %H:%M")
+        grp = f"«{esc(r['title'])}»" if r["title"] else f"#{r['group_id']} (удалена)"
+        lines.append(f"<b>#{r['id']}</b> · {when} UTC\n"
+                     f"{esc(r['rnick'] or '—')} (<code>{r['reporter_id']}</code>) → "
+                     f"{esc(r['onick'] or '—')} (<code>{r['offender_id']}</code>) · {grp}")
+    return "\n\n".join(lines)[:4000]
+
+
+# ── тихий отказ для не-админов: обработчик «съедает» команду, ничего не отвечая ──
+@admin_router.message(Command(*HIDDEN_CMDS, ignore_case=True), _not_admin)
+async def admin_silent(m: Message):
+    return
+
+
+@admin_router.message(Command("cancel"), admin_in_state)
+async def adm_cancel(m: Message):
+    set_state(m.from_user.id, "")
+    await m.answer("Отменено.", reply_markup=admin_back_kb())
+
+
+@admin_router.message(F.text, admin_input_filter)
+async def adm_input(m: Message):
+    """Админ прислал ID после нажатия «Бан / Разбан / Найти» в меню."""
+    uid = m.from_user.id
+    st = _admin_state(uid)
+    raw = m.text.strip()
+    if not re.fullmatch(r"\d{1,15}", raw):
+        await m.answer("❌ Нужен числовой ID пользователя. Отправьте ещё раз или /cancel.")
+        return
+    target = int(raw)
+    set_state(uid, "")
+    if st == "adm:ban":
+        err = ban_precheck(uid, target)
+        if err:
+            await m.answer(err, reply_markup=admin_back_kb())
+        else:
+            await m.answer(f"На какой срок забанить <code>{target}</code>?", reply_markup=admin_ban_kb(target))
+    elif st == "adm:unban":
+        await m.answer(await do_unban(target), reply_markup=admin_back_kb())
+    elif st == "adm:find":
+        prof = admin_profile(target)
+        if prof:
+            await m.answer(prof[0], reply_markup=prof[1])
+        else:
+            await m.answer(f"❌ Пользователь <code>{target}</code> не найден в базе.", reply_markup=admin_back_kb())
+
+
+@admin_router.message(Command("admin", ignore_case=True))
+async def adm_menu(m: Message):
+    set_state(m.from_user.id, "")
+    await m.answer(ADMIN_TITLE, reply_markup=admin_menu_kb())
+
+
+@admin_router.message(Command("statistics", ignore_case=True))
+async def adm_statistics(m: Message):
+    set_state(m.from_user.id, "")
+    await m.answer(admin_stats_text(), reply_markup=admin_back_kb())
+
+
+@admin_router.message(Command("ban", ignore_case=True))
+async def adm_ban_cmd(m: Message, command: CommandObject):
+    set_state(m.from_user.id, "")
+    args = (command.args or "").split()
+    target = _arg_id(command)
+    hours = None
+    if len(args) > 1:
+        if not args[1].isdigit() or int(args[1]) < 1:
+            target = None
+        else:
+            hours = min(int(args[1]), MAX_BAN_HOURS)
+    if target is None:
+        await m.answer("Использование: <code>/ban ID [часы]</code> — без часов бан навсегда.")
+        return
+    await m.answer(await do_ban(m.from_user.id, target, hours))
+
+
+@admin_router.message(Command("unban", ignore_case=True))
+async def adm_unban_cmd(m: Message, command: CommandObject):
+    set_state(m.from_user.id, "")
+    target = _arg_id(command)
+    if target is None:
+        await m.answer("Использование: <code>/unban ID</code>")
+        return
+    await m.answer(await do_unban(target))
+
+
+@admin_router.message(Command("find", ignore_case=True))
+async def adm_find_cmd(m: Message, command: CommandObject):
+    set_state(m.from_user.id, "")
+    target = _arg_id(command)
+    if target is None:
+        await m.answer("Использование: <code>/find ID</code>")
+        return
+    prof = admin_profile(target)
+    if prof:
+        await m.answer(prof[0], reply_markup=prof[1])
+    else:
+        await m.answer(f"❌ Пользователь <code>{target}</code> не найден в базе.")
+
+
+@admin_router.message(Command("groups_list", ignore_case=True))
+async def adm_groups_cmd(m: Message):
+    set_state(m.from_user.id, "")
+    text, kb = admin_groups_view(0)
+    await m.answer(text, reply_markup=kb)
+
+
+@admin_router.callback_query(F.data.startswith("adm:"))
+async def adm_cb(c: CallbackQuery):
+    uid = c.from_user.id
+    if not is_admin(uid):              # не админ — молча ничего не делаем
+        await c.answer()
+        return
+    parts = c.data.split(":")
+    act = parts[1] if len(parts) > 1 else ""
+    try:
+        if act == "menu":
+            set_state(uid, "")
+            await edit(c, ADMIN_TITLE, admin_menu_kb())
+        elif act == "stats":
+            await edit(c, admin_stats_text(), admin_back_kb())
+        elif act in ("ban", "unban", "find"):
+            set_state(uid, f"adm:{act}")
+            what = {"ban": "забанить", "unban": "разбанить", "find": "найти"}[act]
+            await c.message.answer(f"Отправьте ID пользователя, которого нужно {what}. Отмена — /cancel")
+        elif act == "b":
+            hours = int(parts[3]) or None
+            await edit(c, await do_ban(uid, int(parts[2]), hours), admin_back_kb())
+        elif act == "ub":
+            await edit(c, await do_unban(int(parts[2])), admin_back_kb())
+        elif act == "gl":
+            text, kb = admin_groups_view(int(parts[2]))
+            await edit(c, text, kb)
+        elif act == "gc":                                   # открыть / закрыть вход
+            gid, off = int(parts[2]), int(parts[3])
+            run("UPDATE groups SET is_closed=1-is_closed WHERE id=?", (gid,))
+            text, kb = admin_groups_view(off)
+            await edit(c, text, kb)
+        elif act == "gd":                                   # удаление — сначала подтверждение
+            gid, off = int(parts[2]), int(parts[3])
+            g = one("SELECT title FROM groups WHERE id=?", (gid,))
+            if not g:
+                text, kb = admin_groups_view(off)
+                await edit(c, text, kb)
+            else:
+                kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"adm:gdy:{gid}:{off}"),
+                    InlineKeyboardButton(text="↩️ Отмена", callback_data=f"adm:gl:{off}")]])
+                await edit(c, f"🗑 Удалить группу <b>#{gid}</b> «{esc(g['title'])}»? "
+                              f"Участников: {count_members(gid)}. Все они будут исключены. Это необратимо.", kb)
+        elif act == "gdy":
+            gid, off = int(parts[2]), int(parts[3])
+            await purge_group(gid, "удалена администрацией бота")
+            text, kb = admin_groups_view(off)
+            await edit(c, text, kb)
+        elif act == "rep":
+            await edit(c, admin_reports_text(), admin_back_kb())
+    except (ValueError, IndexError):
+        await c.answer("Кнопка устарела — откройте /admin заново", show_alert=True)
+        return
+    await c.answer()
 
 
 # ───────────────────────── Запуск ─────────────────────────
 async def cleanup_loop():
     while True:
-        run("DELETE FROM relay WHERE ts<?", (now() - RELAY_TTL,))
-        run("DELETE FROM reports WHERE date<?", (now() - REPORT_TTL,))
+        try:
+            t = now()
+            run("DELETE FROM relay WHERE ts<?", (t - RELAY_TTL,))
+            run("DELETE FROM reports WHERE date<?", (t - REPORT_TTL,))
+            run("DELETE FROM support WHERE date<?", (t - SUPPORT_TTL,))
+            # группы без сообщений INACTIVE_DAYS дней удаляются вместе с участниками
+            for g in many("SELECT id FROM groups WHERE COALESCE(last_active,0)<?", (t - INACTIVE_TTL,)):
+                await purge_group(g["id"], f"удалена из-за неактивности ({INACTIVE_DAYS} дней без сообщений)")
+        except Exception:
+            log.exception("ошибка в cleanup_loop")
         await asyncio.sleep(3600)
 
 
@@ -1706,9 +2307,12 @@ async def main():
     BOT_USERNAME = (await bot.get_me()).username
     await bot.set_my_commands([BotCommand(command=c, description=d) for c, d in COMMANDS])
     dp = Dispatcher()
+    dp.include_router(admin_router)     # первым: скрытые админ-команды перехватываются раньше основных
     dp.include_router(router)
     asyncio.create_task(cleanup_loop())
-    log.info("Бот @%s запущен", BOT_USERNAME)
+    if not ADMIN_IDS:
+        log.warning("ADMIN_IDS не задан — админ-панель и /support недоступны")
+    log.info("Бот @%s запущен (админов: %d)", BOT_USERNAME, len(ADMIN_IDS))
     await dp.start_polling(bot)
 
 
