@@ -11,7 +11,11 @@
 Один человек может состоять максимум в 10 группах и переключаться между ними (/groups).
 Сообщения из группы доходят только тем, у кого она сейчас активна — если человек сидит
 в другой группе, сообщения из фоновой группы к нему не приходят, пока он не переключится.
-База старой версии (одна группа на человека) обновляется автоматически при запуске.
+В группе не может быть больше MAX_MEMBERS участников. Группы можно делать публичными —
+такие видны всем в каталоге /catalog и через /search_group. Роли: владелец → администратор
+→ модератор → участник; администратор обладает всеми правами владельца, кроме удаления группы.
+База старой версии (одна группа на человека / без каталога и ролей) обновляется автоматически
+при запуске.
 """
 import asyncio
 import logging
@@ -43,7 +47,10 @@ TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬТЕ_ТОКЕН_СЮДА")
 os.makedirs("/app/data", exist_ok=True)
 DB_PATH = os.getenv("DB_PATH", "/app/data/anon_groups.db")
 MAX_GROUPS = 10                            # максимум групп на одного человека
+MAX_MEMBERS = 50                           # максимум участников в одной группе
 TITLE_MAX = 40                             # максимальная длина названия группы
+DESC_MAX = 200                             # максимальная длина описания группы
+CATALOG_PAGE_SIZE = 5                      # групп на страницу каталога
 RELAY_TTL = 3 * 24 * 3600                  # сколько хранить связку «сообщение → автор» (для модерации ответом)
 DEFAULT_MUTE_MIN = 10
 MAX_MUTE_MIN = 7 * 24 * 60
@@ -60,16 +67,23 @@ BAN_THRESHOLD_LONG, BAN_LONG_SEC = 10, 24 * 3600        # 10+ жалоб → б�
 BAN_MESSAGE = "🚫 Вы забанены за спам/оскорбления."
 
 NICK_RE = re.compile(r"[\w-]{3,20}")
+# Простая проверка «эмодзи» для названий групп: основные эмодзи-блоки + вариационный селектор.
+EMOJI_RE = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "\u2190-\u21FF\u2300-\u23FF\u2B00-\u2BFF\uFE0F]+"
+)
 CAPTION_TYPES = ("photo", "video", "document", "audio", "voice", "animation")
 ALLOWED_TYPES = CAPTION_TYPES + ("text", "sticker", "video_note")
-ROLE_ICON = {"owner": "👑", "moderator": "🛡", "member": "•"}
-ROLE_NAME = {"owner": "владелец", "moderator": "модератор", "member": "участник"}
+ROLE_ICON = {"owner": "👑", "admin": "⭐", "moderator": "🛡", "member": "•"}
+ROLE_NAME = {"owner": "владелец", "admin": "администратор", "moderator": "модератор", "member": "участник"}
+ROLE_LEVEL = {"owner": 3, "admin": 2, "moderator": 1, "member": 0}
 
 B_GROUP, B_GROUPS, B_MEMBERS = "👥 Группа", "🗂 Мои группы", "📋 Участники"
 B_NICK, B_PANEL = "✏️ Сменить ник", "⚙️ Управление"
 B_STATS = "📊 Статистика"
+B_CATALOG = "📂 Каталог"
 B_HELP, B_ABOUT = "❓ Помощь", "ℹ️ О боте"
-MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_HELP, B_ABOUT}
+MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT}
 
 COMMANDS = [
     ("start", "Начало / регистрация"),
@@ -78,19 +92,26 @@ COMMANDS = [
     ("group", "Активная группа"),
     ("members", "Участники"),
     ("stats", "Статистика (личная и по группе)"),
+    ("catalog", "Каталог публичных групп"),
+    ("search_group", "Поиск группы по названию/описанию"),
     ("nick", "Сменить ник"),
     ("leave", "Выйти из группы"),
     ("cancel", "Отменить ввод"),
     ("report", "Пожаловаться на сообщение (ответом)"),
     ("panel", "Управление группой (модератор)"),
-    ("rename", "Сменить название группы (владелец)"),
+    ("rename", "Сменить название группы (администратор)"),
+    ("description", "Сменить описание группы (администратор)"),
     ("kick", "Исключить (модератор)"),
     ("mute", "Заглушить (модератор)"),
     ("unmute", "Снять мут (модератор)"),
     ("link", "Ссылка-приглашение (модератор)"),
     ("newlink", "Обновить ссылку (модератор)"),
-    ("mod", "Назначить модератора (владелец)"),
-    ("unmod", "Снять модератора (владелец)"),
+    ("adm", "Назначить администратора / модератора"),
+    ("unadm", "Снять администратора / модератора"),
+    ("close_group", "Закрыть вход в группу (администратор)"),
+    ("open_group", "Открыть вход в группу (администратор)"),
+    ("mod", "Назначить модератора (владелец/администратор)"),
+    ("unmod", "Снять модератора (владелец/администратор)"),
     ("help", "Помощь"),
     ("about", "О боте"),
 ]
@@ -107,12 +128,14 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 /group — об активной группе
 /members — кто в группе
 /stats — статистика: сколько сообщений и медиа отправили вы и вся группа
+/catalog — каталог публичных групп
+/search_group название — поиск группы по названию или описанию
 /nick — сменить ник
 /leave — выйти из активной группы
 /cancel — отменить ввод
 /report — свайпните на сообщение нарушителя и отправьте эту команду
 
-Состоять можно максимум в {MAX_GROUPS} группах.
+Состоять можно максимум в {MAX_GROUPS} группах, участников в одной группе — максимум {MAX_MEMBERS}.
 
 <b>Модераторы</b> (ответьте командой на сообщение или укажите ник)
 /kick ник — исключить
@@ -122,18 +145,25 @@ HELP_TEXT = f"""❓ <b>Помощь</b>
 /newlink — обновить ссылку (старая перестанет работать)
 /panel — панель управления
 
-<b>Владелец</b>
-/mod ник — назначить модератором
-/unmod ник — снять права модератора
+<b>Администраторы и владелец</b> (те же права, что у владельца, кроме удаления группы)
+/adm ник — владелец назначает администратора; администратор той же командой назначает модератора
+/unadm ник — соответствующее снятие прав
 /rename — сменить название группы
-/panel — защита от пересылки, медиа, название, удаление группы"""
+/description — сменить описание группы (видно в каталоге)
+/close_group — закрыть вход (новые участники не смогут войти)
+/open_group — снова открыть вход
+/panel — публичность, защита от пересылки, медиа, название, описание, вход, удаление группы
+
+<b>Только владелец</b>
+/panel → «Удалить группу»"""
 
 ABOUT_TEXT = f"""ℹ️ <b>О боте</b>
 
 Бот анонимных групп. Вас видят только под ником — ваш Telegram-аккаунт скрыт от всех, включая владельца и модераторов группы.
 
-• Вход только по ссылке-приглашению, ссылку можно обновить
+• Вход по ссылке-приглашению или через каталог публичных групп (/catalog)
 • До {MAX_GROUPS} групп на один аккаунт, между ними можно переключаться (/groups)
+• До {MAX_MEMBERS} участников в одной группе
 • Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
 • Защита от пересылки и сохранения — настройка группы
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
@@ -147,7 +177,7 @@ PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS users(
     user_id INTEGER PRIMARY KEY,
     nick TEXT, nick_lc TEXT UNIQUE,
-    state TEXT DEFAULT '',            -- '' | 'nick' | 'newgroup' | 'rename:<id группы>'
+    state TEXT DEFAULT '',            -- '' | 'nick' | 'newgroup' | 'rename:<id>' | 'desc:<id>'
     pending TEXT DEFAULT '',          -- токен приглашения, ждущий регистрации
     active_group INTEGER DEFAULT 0,   -- группа, в которую уходят сообщения
     banned_until INTEGER DEFAULT 0,   -- до какого времени (unix) человек в бане за жалобы
@@ -158,6 +188,9 @@ CREATE TABLE IF NOT EXISTS groups(
     title TEXT, owner_id INTEGER, token TEXT UNIQUE,
     protect INTEGER DEFAULT 1,        -- запрет пересылки и сохранения
     media INTEGER DEFAULT 1,          -- разрешены ли медиа
+    is_public INTEGER DEFAULT 0,      -- видна ли группа в каталоге /catalog
+    is_closed INTEGER DEFAULT 0,      -- закрыт ли вход новым участникам
+    description TEXT DEFAULT '',      -- описание для каталога
     created INTEGER
 );
 CREATE TABLE IF NOT EXISTS members(
@@ -184,11 +217,22 @@ CREATE INDEX IF NOT EXISTS ix_reports_date ON reports(date);
 
 
 def migrate():
-    """Обновляет базу старой версии (одна группа на человека) до текущей схемы."""
-    if "active_group" not in {r["name"] for r in db.execute("PRAGMA table_info(users)")}:
+    """Обновляет базу старой версии до текущей схемы. Таблица groups никогда не удаляется —
+    существующие группы и их участники сохраняются."""
+    ucols = {r["name"] for r in db.execute("PRAGMA table_info(users)")}
+    if "active_group" not in ucols:
         db.execute("ALTER TABLE users ADD COLUMN active_group INTEGER DEFAULT 0")
-    if "banned_until" not in {r["name"] for r in db.execute("PRAGMA table_info(users)")}:
+    if "banned_until" not in ucols:
         db.execute("ALTER TABLE users ADD COLUMN banned_until INTEGER DEFAULT 0")
+
+    gcols = {r["name"] for r in db.execute("PRAGMA table_info(groups)")}
+    if "is_public" not in gcols:
+        db.execute("ALTER TABLE groups ADD COLUMN is_public INTEGER DEFAULT 0")
+    if "is_closed" not in gcols:
+        db.execute("ALTER TABLE groups ADD COLUMN is_closed INTEGER DEFAULT 0")
+    if "description" not in gcols:
+        db.execute("ALTER TABLE groups ADD COLUMN description TEXT DEFAULT ''")
+
     db.executescript("""
     CREATE TABLE IF NOT EXISTS reports(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,6 +264,9 @@ def migrate():
     db.executescript("""
     CREATE INDEX IF NOT EXISTS ix_members_group ON members(group_id);
     CREATE INDEX IF NOT EXISTS ix_relay_src ON relay(src_chat_id, src_msg_id);
+    CREATE INDEX IF NOT EXISTS ix_groups_public ON groups(is_public);
+    CREATE INDEX IF NOT EXISTS ix_groups_closed ON groups(is_closed);
+    CREATE INDEX IF NOT EXISTS ix_groups_title ON groups(title);
     UPDATE users SET active_group = (SELECT group_id FROM members WHERE members.user_id = users.user_id)
      WHERE COALESCE(active_group, 0) = 0
        AND (SELECT COUNT(*) FROM members WHERE members.user_id = users.user_id) = 1;
@@ -254,7 +301,8 @@ def ensure_user(uid: int):
 
 
 MEM_SQL = """SELECT m.user_id, m.group_id, m.role, m.muted_until,
-                    g.title, g.protect, g.media, g.token
+                    g.title, g.protect, g.media, g.token,
+                    g.is_public, g.is_closed, g.description
              FROM members m JOIN groups g ON g.id = m.group_id
              WHERE m.user_id=?"""
 
@@ -339,13 +387,28 @@ def drop_member(uid: int, gid: int) -> str:
 
 
 def parse_title(raw: str):
-    """Название группы: схлопывает пробелы и переводы строк. Возвращает (название, ошибка)."""
+    """Название группы: схлопывает пробелы и переводы строк, без эмодзи. Возвращает (название, ошибка)."""
     title = " ".join((raw or "").split())
     if not title:
         return "", "❌ Название не может быть пустым."
+    if EMOJI_RE.search(title):
+        return "", "🚫 В названии группы нельзя использовать эмодзи."
     if len(title) > TITLE_MAX:
         return "", f"✂️ Слишком длинное название: максимум {TITLE_MAX} символов, у вас {len(title)}."
     return title, None
+
+
+def parse_desc(raw: str):
+    """Описание группы (для каталога): схлопывает пробелы, может быть пустым. Возвращает (текст, ошибка)."""
+    desc = " ".join((raw or "").split())
+    if len(desc) > DESC_MAX:
+        return "", f"✂️ Слишком длинное описание: максимум {DESC_MAX} символов, у вас {len(desc)}."
+    return desc, None
+
+
+def group_locked(g) -> bool:
+    """Верно, если в группу больше нельзя войти: заполнена или вход закрыт владельцем/администратором."""
+    return bool(g["is_closed"]) or count_members(g["id"]) >= MAX_MEMBERS
 
 
 # ───────────────────────── Вспомогательное ─────────────────────────
@@ -357,8 +420,8 @@ BOT_USERNAME = ""
 
 
 class DropState(BaseMiddleware):
-    """Любая команда или кнопка меню отменяет ожидание ввода (ника / названия) — иначе следующее
-    обычное сообщение ушло бы не в группу, а стало бы «названием»."""
+    """Любая команда или кнопка меню отменяет ожидание ввода (ника / названия / описания) — иначе
+    следующее обычное сообщение ушло бы не в группу, а стало бы этим вводом."""
 
     async def __call__(self, handler, m: Message, data: dict):
         t = m.text or ""
@@ -380,8 +443,9 @@ def main_kb(uid: int) -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text=B_GROUP), KeyboardButton(text=B_GROUPS)],
             [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_STATS)],
-            [KeyboardButton(text=B_PANEL), KeyboardButton(text=B_NICK)],
-            [KeyboardButton(text=B_HELP), KeyboardButton(text=B_ABOUT)],
+            [KeyboardButton(text=B_CATALOG), KeyboardButton(text=B_PANEL)],
+            [KeyboardButton(text=B_NICK), KeyboardButton(text=B_HELP)],
+            [KeyboardButton(text=B_ABOUT)],
         ],
         resize_keyboard=True,
         input_field_placeholder=hint[:64],
@@ -392,6 +456,7 @@ def no_group_text(uid: int) -> str:
     if count_groups(uid):
         return "🗂 Сначала выберите группу: /groups"
     return ("Вы пока не в группе.\n• Создать: /newgroup\n"
+            "• Посмотреть каталог: /catalog\n"
             "• Или откройте ссылку-приглашение от владельца группы.")
 
 
@@ -412,8 +477,12 @@ def link_text(token: str, title: str) -> str:
 
 
 def panel_text(mem) -> str:
+    desc = f"\nОписание: {esc(mem['description'])}" if mem["description"] else ""
     return (f"⚙️ <b>Управление группой «{esc(mem['title'])}»</b>\n"
-            f"Участников: {count_members(mem['group_id'])}\n\n"
+            f"Участников: {count_members(mem['group_id'])}/{MAX_MEMBERS}\n"
+            f"В каталоге: {'да' if mem['is_public'] else 'нет'} · "
+            f"Вход: {'закрыт' if mem['is_closed'] else 'открыт'}"
+            f"{desc}\n\n"
             "🛡 Защита — сообщения нельзя пересылать и сохранять\n"
             "🖼 Медиа — можно ли слать фото, видео и файлы")
 
@@ -422,12 +491,18 @@ def panel_kb(mem) -> InlineKeyboardMarkup:
     gid = mem["group_id"]      # id группы зашит в кнопки: они всегда относятся к «своей» группе
     kb = [[InlineKeyboardButton(text="🔗 Ссылка", callback_data=f"p:link:{gid}"),
            InlineKeyboardButton(text="♻️ Обновить ссылку", callback_data=f"p:newlink:{gid}")]]
-    if mem["role"] == "owner":
-        kb.append([InlineKeyboardButton(text="✏️ Сменить название", callback_data=f"p:rename:{gid}")])
+    if ROLE_LEVEL[mem["role"]] >= 2:       # владелец или администратор
+        kb.append([InlineKeyboardButton(text="✏️ Название", callback_data=f"p:rename:{gid}"),
+                   InlineKeyboardButton(text="📝 Описание", callback_data=f"p:desc:{gid}")])
         kb.append([InlineKeyboardButton(
             text=f"🛡 Защита от пересылки: {'вкл' if mem['protect'] else 'выкл'}", callback_data=f"p:protect:{gid}")])
         kb.append([InlineKeyboardButton(
             text=f"🖼 Медиа: {'разрешены' if mem['media'] else 'запрещены'}", callback_data=f"p:media:{gid}")])
+        kb.append([InlineKeyboardButton(
+            text=f"🌐 В каталоге: {'да' if mem['is_public'] else 'нет'}", callback_data=f"p:public:{gid}")])
+        kb.append([InlineKeyboardButton(
+            text=f"🚪 Вход: {'закрыт' if mem['is_closed'] else 'открыт'}", callback_data=f"p:closed:{gid}")])
+    if mem["role"] == "owner":
         kb.append([InlineKeyboardButton(text="🗑 Удалить группу", callback_data=f"p:del:{gid}")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -436,7 +511,8 @@ def groups_text(uid: int) -> str:
     return (f"🗂 <b>Мои группы</b> ({count_groups(uid)}/{MAX_GROUPS})\n"
             "Сообщения уходят и приходят только в группе с отметкой ✅ — остальные молчат в фоне.\n"
             "Нажмите на другую, чтобы переключиться.\n"
-            f"{ROLE_ICON['owner']} владелец · {ROLE_ICON['moderator']} модератор · {ROLE_ICON['member']} участник")
+            f"{ROLE_ICON['owner']} владелец · {ROLE_ICON['admin']} администратор · "
+            f"{ROLE_ICON['moderator']} модератор · {ROLE_ICON['member']} участник")
 
 
 def groups_kb(uid: int) -> InlineKeyboardMarkup:
@@ -449,6 +525,52 @@ def groups_kb(uid: int) -> InlineKeyboardMarkup:
         callback_data=f"g:{r['group_id']}")] for r in rows]
     if len(rows) < MAX_GROUPS:
         kb.append([InlineKeyboardButton(text="➕ Новая группа", callback_data="g:new")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+# ───────────────────────── Каталог публичных групп ─────────────────────────
+def catalog_count(q: str = "") -> int:
+    if q:
+        like = f"%{q}%"
+        return one("SELECT COUNT(*) AS c FROM groups WHERE is_public=1 AND (title LIKE ? OR description LIKE ?)",
+                   (like, like))["c"]
+    return one("SELECT COUNT(*) AS c FROM groups WHERE is_public=1")["c"]
+
+
+def catalog_page(offset: int, q: str = ""):
+    if q:
+        like = f"%{q}%"
+        return many("""SELECT id, title, description, is_closed FROM groups
+                       WHERE is_public=1 AND (title LIKE ? OR description LIKE ?)
+                       ORDER BY title COLLATE NOCASE LIMIT ? OFFSET ?""",
+                    (like, like, CATALOG_PAGE_SIZE, offset))
+    return many("""SELECT id, title, description, is_closed FROM groups WHERE is_public=1
+                   ORDER BY title COLLATE NOCASE LIMIT ? OFFSET ?""", (CATALOG_PAGE_SIZE, offset))
+
+
+def catalog_text(rows, offset: int, total: int, header: str = "📂 <b>Каталог групп</b>") -> str:
+    if not total:
+        return "📂 Публичных групп пока нет." if "Каталог" in header else "🔎 Ничего не найдено."
+    lines = [f"{header} ({total})", ""]
+    for r in rows:
+        cnt = count_members(r["id"])
+        desc = esc(r["description"]) if r["description"] else "без описания"
+        note = " · вход закрыт" if r["is_closed"] or cnt >= MAX_MEMBERS else ""
+        lines.append(f"<b>{esc(r['title'])}</b> ({cnt}/{MAX_MEMBERS}){note}\n{desc}")
+    return "\n\n".join(lines)
+
+
+def catalog_kb(rows, offset: int, total: int, prefix: str = "cat") -> Optional[InlineKeyboardMarkup]:
+    if not rows:
+        return None
+    kb = [[InlineKeyboardButton(text=f"Войти: {r['title'][:24]}", callback_data=f"cj:{r['id']}")] for r in rows]
+    nav = []
+    if offset > 0:
+        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"{prefix}:{max(0, offset - CATALOG_PAGE_SIZE)}"))
+    if offset + CATALOG_PAGE_SIZE < total:
+        nav.append(InlineKeyboardButton(text="Дальше ▶️", callback_data=f"{prefix}:{offset + CATALOG_PAGE_SIZE}"))
+    if nav:
+        kb.append(nav)
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -498,7 +620,9 @@ async def reg(m: Message):
 
 
 async def staff(m: Message, owner_only: bool = False, gid: Optional[int] = None):
-    """Вернёт участника, если он владелец/модератор группы (активной или указанной gid)."""
+    """Вернёт участника, если он модератор+ (или владелец/администратор при owner_only) группы
+    (активной или указанной gid). owner_only=True требует роль владелец или администратор —
+    администратор обладает всеми правами владельца, кроме удаления группы."""
     if not await reg(m):
         return None
     uid = m.from_user.id
@@ -506,10 +630,10 @@ async def staff(m: Message, owner_only: bool = False, gid: Optional[int] = None)
     if not mem:
         await m.answer("🚫 Вы уже не состоите в группе этого сообщения." if gid else no_group_text(uid))
         return None
-    allowed = ("owner",) if owner_only else ("owner", "moderator")
-    if mem["role"] not in allowed:
-        await m.answer("🚫 Только для владельца группы." if owner_only
-                       else "🚫 Только для владельца и модераторов группы.")
+    min_level = 2 if owner_only else 1
+    if ROLE_LEVEL[mem["role"]] < min_level:
+        await m.answer("🚫 Только для владельца и администраторов группы." if owner_only
+                       else "🚫 Только для владельца, администраторов и модераторов группы.")
         return None
     return mem
 
@@ -541,7 +665,8 @@ def find_target(m: Message, args: list, mem):
 
 async def mod_ctx(m: Message, command: CommandObject, owner_only: bool = False):
     """Общая проверка для /kick /mute /unmute /mod /unmod. Вернёт (я, цель, аргументы) или None.
-    При ответе на сообщение действует в той группе, откуда оно пришло, — даже если она не активная."""
+    При ответе на сообщение действует в той группе, откуда оно пришло, — даже если она не активная.
+    Нельзя действовать против участника с такой же или более высокой ролью (кроме владельца)."""
     mem = await staff(m, owner_only, reply_group(m))
     if not mem:
         return None
@@ -555,8 +680,8 @@ async def mod_ctx(m: Message, command: CommandObject, owner_only: bool = False):
         err = "🙂 К себе это применить нельзя."
     elif t["role"] == "owner":
         err = "🚫 Владельца трогать нельзя."
-    elif mem["role"] == "moderator" and t["role"] == "moderator":
-        err = "🚫 Модератор не может действовать против другого модератора."
+    elif ROLE_LEVEL[t["role"]] >= ROLE_LEVEL[mem["role"]] and mem["role"] != "owner":
+        err = "🚫 Нельзя действовать против участника с такой же или более высокой ролью."
     if err:
         await m.answer(err)
         return None
@@ -653,6 +778,7 @@ async def finish_nick(m: Message, u, text: str):
         return
     await m.answer(f"✅ Ник <b>{esc(nick)}</b> сохранён!\n\n"
                    "Создайте группу: /newgroup\n"
+                   "Посмотрите каталог: /catalog\n"
                    "или откройте ссылку-приглашение от владельца группы.\n"
                    "Меню — внизу 👇", reply_markup=main_kb(uid))
     if token:
@@ -673,6 +799,9 @@ async def join_group(m: Message, token: str):
         return
     if count_groups(uid) >= MAX_GROUPS:
         await m.answer(limit_text(), reply_markup=main_kb(uid))
+        return
+    if group_locked(g):
+        await m.answer("Вход в группу закрыт.", reply_markup=main_kb(uid))
         return
     run("INSERT INTO members(user_id, group_id, role, joined) VALUES(?,?,?,?)",
         (uid, g["id"], "member", now()))
@@ -704,7 +833,7 @@ async def cmd_start(m: Message, command: CommandObject):
     elif count_groups(u["user_id"]):
         where = "Выберите, куда писать: /groups"
     else:
-        where = "Создайте группу: /newgroup или откройте ссылку-приглашение."
+        where = "Создайте группу: /newgroup, посмотрите каталог /catalog или откройте ссылку-приглашение."
     await m.answer(f"👋 Привет, <b>{esc(u['nick'])}</b>!\n{where}", reply_markup=main_kb(u["user_id"]))
 
 
@@ -740,7 +869,8 @@ async def begin_newgroup(uid: int, say):
         await say(limit_text())
         return
     run("UPDATE users SET state='newgroup' WHERE user_id=?", (uid,))
-    await say(f"📝 Напишите название группы одним сообщением (до {TITLE_MAX} символов).\nОтмена — /cancel")
+    await say(f"📝 Напишите название группы одним сообщением (до {TITLE_MAX} символов, без эмодзи).\n"
+              "Отмена — /cancel")
 
 
 async def create_group(m: Message, u, raw_title: str):
@@ -762,6 +892,11 @@ async def create_group(m: Message, u, raw_title: str):
     await m.answer(f"🎉 Группа «{esc(title)}» создана — сообщения теперь идут в неё.\n\n"
                    f"{link_text(token, title)}\n\n"
                    "Настройки — /panel, команды — /help", reply_markup=main_kb(uid))
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Да", callback_data=f"cg:pub:{gid}:1"),
+        InlineKeyboardButton(text="🚫 Нет", callback_data=f"cg:pub:{gid}:0")]])
+    await m.answer("Сделать группу публичной? Она появится в каталоге /catalog, и вступить в неё "
+                   "сможет любой человек — без ссылки-приглашения.", reply_markup=kb)
 
 
 @router.message(Command("newgroup"))
@@ -773,6 +908,25 @@ async def cmd_newgroup(m: Message, command: CommandObject):
         await create_group(m, u, command.args)         # можно и сразу: /newgroup Название
     else:
         await begin_newgroup(u["user_id"], m.answer)   # или в два шага: /newgroup → название
+
+
+@router.callback_query(F.data.startswith("cg:pub:"))
+async def create_pub_cb(c: CallbackQuery):
+    uid = c.from_user.id
+    parts = c.data.split(":")
+    try:
+        gid, val = int(parts[2]), int(parts[3])
+    except (IndexError, ValueError):
+        await c.answer("Кнопка устарела", show_alert=True)
+        return
+    mem = get_member(uid, gid)
+    if not mem or mem["role"] != "owner":
+        await c.answer("Нет доступа", show_alert=True)
+        return
+    run("UPDATE groups SET is_public=? WHERE id=?", (val, gid))
+    await edit(c, "✅ Группа публичная — видна в /catalog." if val
+              else "Группа приватная — вход только по ссылке-приглашению (изменить можно в /panel).")
+    await c.answer()
 
 
 @router.message(Command("groups"))
@@ -828,7 +982,9 @@ async def cmd_group(m: Message):
     await m.answer(
         f"👥 <b>{esc(mem['title'])}</b>\n"
         f"Ваш ник: <b>{esc(u['nick'])}</b> · роль: {ROLE_NAME[mem['role']]}\n"
-        f"Участников: {count_members(mem['group_id'])}\n"
+        f"Участников: {count_members(mem['group_id'])}/{MAX_MEMBERS}\n"
+        f"В каталоге: {'да' if mem['is_public'] else 'нет'}\n"
+        f"Вход: {'закрыт' if mem['is_closed'] else 'открыт'}\n"
         f"Защита от пересылки: {'вкл' if mem['protect'] else 'выкл'}\n"
         f"Медиа: {'разрешены' if mem['media'] else 'запрещены'}\n"
         f"Ваших групп: {count_groups(u['user_id'])} из {MAX_GROUPS} — переключение: /groups")
@@ -848,11 +1004,13 @@ async def cmd_members(m: Message):
     for r in many("""SELECT u.user_id, u.nick, m.role, m.muted_until
                      FROM members m JOIN users u ON u.user_id = m.user_id
                      WHERE m.group_id=?
-                     ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'moderator' THEN 1 ELSE 2 END, u.nick_lc""",
+                     ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1
+                                          WHEN 'moderator' THEN 2 ELSE 3 END, u.nick_lc""",
                   (mem["group_id"],)):
         tags = (" (вы)" if r["user_id"] == u["user_id"] else "") + (" 🔇" if r["muted_until"] > now() else "")
         lines.append(f"{ROLE_ICON[r['role']]} {esc(r['nick'])}{tags}")
-    await m.answer(f"📋 <b>Участники «{esc(mem['title'])}»</b>\n" + "\n".join(lines)[:3800])
+    await m.answer(f"📋 <b>Участники «{esc(mem['title'])}»</b> ({count_members(mem['group_id'])}/{MAX_MEMBERS})\n"
+                   + "\n".join(lines)[:3700])
 
 
 @router.message(Command("stats"))
@@ -897,7 +1055,8 @@ async def cmd_leave(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Да, выйти", callback_data=f"l:yes:{mem['group_id']}"),
         InlineKeyboardButton(text="↩️ Отмена", callback_data="l:no")]])
-    await m.answer(f"Выйти из группы «{esc(mem['title'])}»? Вернуться можно будет только по ссылке-приглашению.",
+    await m.answer(f"Выйти из группы «{esc(mem['title'])}»? Вернуться можно будет только по ссылке-приглашению "
+                   "или через каталог, если группа публичная и открыта.",
                    reply_markup=kb)
 
 
@@ -930,13 +1089,13 @@ async def leave_cb(c: CallbackQuery):
     await c.answer()
 
 
-# ───────────────────────── Название группы ─────────────────────────
+# ───────────────────────── Название и описание группы ─────────────────────────
 async def finish_rename(m: Message, u, gid: int, raw_title: str):
     uid = u["user_id"]
     mem = get_member(uid, gid)
-    if not mem or mem["role"] != "owner":
+    if not mem or ROLE_LEVEL[mem["role"]] < 2:
         run("UPDATE users SET state='' WHERE user_id=?", (uid,))
-        await m.answer("🚫 Переименовать группу может только её владелец.")
+        await m.answer("🚫 Переименовать группу может только владелец или администратор.")
         return
     title, err = parse_title(raw_title)
     if err:                            # остаёмся в режиме ввода — можно прислать другое название
@@ -964,7 +1123,59 @@ async def cmd_rename(m: Message, command: CommandObject):
         return
     run("UPDATE users SET state=? WHERE user_id=?", (f"rename:{mem['group_id']}", uid))
     await m.answer(f"✏️ Напишите новое название группы «{esc(mem['title'])}» одним сообщением "
-                   f"(до {TITLE_MAX} символов).\nОтмена — /cancel")
+                   f"(до {TITLE_MAX} символов, без эмодзи).\nОтмена — /cancel")
+
+
+async def finish_desc(m: Message, u, gid: int, raw_desc: str):
+    uid = u["user_id"]
+    mem = get_member(uid, gid)
+    if not mem or ROLE_LEVEL[mem["role"]] < 2:
+        run("UPDATE users SET state='' WHERE user_id=?", (uid,))
+        await m.answer("🚫 Изменить описание может только владелец или администратор.")
+        return
+    desc, err = parse_desc(raw_desc)
+    if err:
+        run("UPDATE users SET state=? WHERE user_id=?", (f"desc:{gid}", uid))
+        await m.answer(f"{err}\nНапишите описание ещё раз или /cancel.")
+        return
+    run("UPDATE users SET state='' WHERE user_id=?", (uid,))
+    run("UPDATE groups SET description=? WHERE id=?", (desc, gid))
+    await m.answer("✅ Описание обновлено." if desc else "✅ Описание очищено.", reply_markup=main_kb(uid))
+
+
+@router.message(Command("description"))
+async def cmd_description(m: Message, command: CommandObject):
+    mem = await staff(m, owner_only=True)
+    if not mem:
+        return
+    uid = m.from_user.id
+    if (command.args or "").strip():
+        await finish_desc(m, ensure_user(uid), mem["group_id"], command.args)
+        return
+    run("UPDATE users SET state=? WHERE user_id=?", (f"desc:{mem['group_id']}", uid))
+    await m.answer(f"📝 Напишите описание группы «{esc(mem['title'])}» одним сообщением "
+                   f"(до {DESC_MAX} символов; видно в каталоге /catalog; можно оставить пустым, "
+                   "чтобы очистить).\nОтмена — /cancel")
+
+
+# ───────────────────────── Закрытие / открытие входа ─────────────────────────
+@router.message(Command("close_group"))
+async def cmd_close_group(m: Message):
+    mem = await staff(m, owner_only=True)
+    if not mem:
+        return
+    run("UPDATE groups SET is_closed=1 WHERE id=?", (mem["group_id"],))
+    await m.answer(f"🔒 Вход в группу «{esc(mem['title'])}» закрыт. Новые участники не смогут войти, "
+                   "текущие остаются.")
+
+
+@router.message(Command("open_group"))
+async def cmd_open_group(m: Message):
+    mem = await staff(m, owner_only=True)
+    if not mem:
+        return
+    run("UPDATE groups SET is_closed=0 WHERE id=?", (mem["group_id"],))
+    await m.answer(f"🔓 Вход в группу «{esc(mem['title'])}» снова открыт.")
 
 
 # ───────────────────────── Модерация ─────────────────────────
@@ -977,7 +1188,8 @@ async def cmd_kick(m: Message, command: CommandObject):
     note = drop_member(t["user_id"], mem["group_id"])
     await m.answer(f"🚪 {esc(t['nick'])} исключён из группы «{esc(mem['title'])}».")
     await notify(t["user_id"], f"🚪 Вас исключили из группы «{esc(mem['title'])}». "
-                               "Вернуться можно только по действующей ссылке-приглашению." + note, kb=bool(note))
+                               "Вернуться можно только по действующей ссылке-приглашению "
+                               "(или через каталог, если группа публичная)." + note, kb=bool(note))
     await announce(mem["group_id"], f"🚪 <i>Участник {esc(t['nick'])} исключён из группы</i>",
                    exclude=(mem["user_id"],))
 
@@ -1042,6 +1254,85 @@ async def cmd_unmod(m: Message, command: CommandObject):
     await notify(t["user_id"], f"С вас сняли права модератора в группе «{title}».")
 
 
+@router.message(Command("adm"))
+async def cmd_adm(m: Message, command: CommandObject):
+    """Владелец назначает администратора; администратор той же командой назначает модератора.
+    Администратор обладает всеми правами владельца, кроме удаления группы."""
+    if not await reg(m):
+        return
+    mem = get_member(m.from_user.id, reply_group(m))
+    if not mem or ROLE_LEVEL[mem["role"]] < 2:
+        await m.answer("🚫 Команда доступна владельцу и администраторам группы.")
+        return
+    t, _ = find_target(m, (command.args or "").split(), mem)
+    if not t:
+        await m.answer("Не нашёл участника. Ответьте командой на его сообщение "
+                       "или укажите ник, например <code>/adm ник</code>.")
+        return
+    if t["user_id"] == mem["user_id"]:
+        await m.answer("🙂 К себе это применить нельзя.")
+        return
+    if t["role"] == "owner":
+        await m.answer("🚫 Владельца трогать нельзя.")
+        return
+    title = esc(mem["title"])
+    if mem["role"] == "owner":
+        if t["role"] == "admin":
+            await m.answer("Он уже администратор.")
+            return
+        run("UPDATE members SET role='admin' WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+        await m.answer(f"⭐ {esc(t['nick'])} теперь администратор группы «{title}».")
+        await notify(t["user_id"], f"⭐ Вас назначили администратором группы «{title}». "
+                                   "У вас те же права, что у владельца, кроме удаления группы.")
+    else:   # mem["role"] == "admin"
+        if t["role"] == "admin":
+            await m.answer("🚫 Изменить права другого администратора может только владелец.")
+            return
+        if t["role"] == "moderator":
+            await m.answer("Он уже модератор.")
+            return
+        run("UPDATE members SET role='moderator' WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+        await m.answer(f"🛡 {esc(t['nick'])} теперь модератор группы «{title}».")
+        await notify(t["user_id"], f"🛡 Вас назначили модератором группы «{title}». Команды — /help, панель — /panel.")
+
+
+@router.message(Command("unadm"))
+async def cmd_unadm(m: Message, command: CommandObject):
+    """Снимает права, выданные через /adm: владелец снимает администратора, администратор — модератора."""
+    if not await reg(m):
+        return
+    mem = get_member(m.from_user.id, reply_group(m))
+    if not mem or ROLE_LEVEL[mem["role"]] < 2:
+        await m.answer("🚫 Команда доступна владельцу и администраторам группы.")
+        return
+    t, _ = find_target(m, (command.args or "").split(), mem)
+    if not t:
+        await m.answer("Не нашёл участника. Ответьте командой на его сообщение "
+                       "или укажите ник, например <code>/unadm ник</code>.")
+        return
+    if t["user_id"] == mem["user_id"]:
+        await m.answer("🙂 К себе это применить нельзя.")
+        return
+    title = esc(mem["title"])
+    if mem["role"] == "owner":
+        if t["role"] != "admin":
+            await m.answer("Он не администратор.")
+            return
+        run("UPDATE members SET role='member' WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+        await m.answer(f"{esc(t['nick'])} больше не администратор группы «{title}».")
+        await notify(t["user_id"], f"С вас сняли права администратора в группе «{title}».")
+    else:   # mem["role"] == "admin"
+        if t["role"] == "admin":
+            await m.answer("🚫 Снять права администратора может только владелец.")
+            return
+        if t["role"] != "moderator":
+            await m.answer("Он не модератор.")
+            return
+        run("UPDATE members SET role='member' WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+        await m.answer(f"{esc(t['nick'])} больше не модератор группы «{title}».")
+        await notify(t["user_id"], f"С вас сняли права модератора в группе «{title}».")
+
+
 @router.message(Command("link"))
 async def cmd_link(m: Message):
     mem = await staff(m)
@@ -1055,6 +1346,96 @@ async def cmd_newlink(m: Message):
     if mem:
         token = new_token(mem["group_id"])
         await m.answer("♻️ Ссылка обновлена, старая больше не работает.\n\n" + link_text(token, mem["title"]))
+
+
+# ───────────────────────── Каталог: команды ─────────────────────────
+@router.message(Command("catalog"))
+@router.message(F.text == B_CATALOG)
+async def cmd_catalog(m: Message):
+    u = await reg(m)
+    if not u:
+        return
+    total = catalog_count()
+    rows = catalog_page(0)
+    await m.answer(catalog_text(rows, 0, total), reply_markup=catalog_kb(rows, 0, total))
+
+
+@router.callback_query(F.data.startswith("cat:"))
+async def catalog_nav_cb(c: CallbackQuery):
+    try:
+        offset = int(c.data[4:])
+    except ValueError:
+        offset = 0
+    total = catalog_count()
+    rows = catalog_page(offset)
+    await edit(c, catalog_text(rows, offset, total), catalog_kb(rows, offset, total))
+    await c.answer()
+
+
+@router.message(Command("search_group"))
+async def cmd_search_group(m: Message, command: CommandObject):
+    u = await reg(m)
+    if not u:
+        return
+    q = (command.args or "").strip()
+    if not q:
+        await m.answer("Использование: <code>/search_group название или слово из описания</code>")
+        return
+    total = catalog_count(q)
+    rows = catalog_page(0, q)
+    await m.answer(catalog_text(rows, 0, total, header=f"🔎 <b>Поиск: «{esc(q)}»</b>"),
+                   reply_markup=catalog_kb(rows, 0, total, prefix=f"cats:{q}"))
+
+
+@router.callback_query(F.data.startswith("cats:"))
+async def catalog_search_nav_cb(c: CallbackQuery):
+    try:
+        _, q, off = c.data.split(":", 2)
+        offset = int(off)
+    except ValueError:
+        await c.answer("Кнопка устарела", show_alert=True)
+        return
+    total = catalog_count(q)
+    rows = catalog_page(offset, q)
+    await edit(c, catalog_text(rows, offset, total, header=f"🔎 <b>Поиск: «{esc(q)}»</b>"),
+              catalog_kb(rows, offset, total, prefix=f"cats:{q}"))
+    await c.answer()
+
+
+@router.callback_query(F.data.startswith("cj:"))
+async def catalog_join_cb(c: CallbackQuery):
+    uid = c.from_user.id
+    try:
+        gid = int(c.data[3:])
+    except ValueError:
+        await c.answer("Кнопка устарела", show_alert=True)
+        return
+    u = ensure_user(uid)
+    if not u["nick"]:
+        await c.answer("Сначала придумайте ник — напишите боту /start", show_alert=True)
+        return
+    g = one("SELECT * FROM groups WHERE id=? AND is_public=1", (gid,))
+    if not g:
+        await c.answer("Этой группы больше нет в каталоге", show_alert=True)
+        return
+    if get_member(uid, gid):
+        await c.answer("Вы уже в этой группе", show_alert=True)
+        return
+    if group_locked(g):
+        await c.answer("Вход в группу закрыт", show_alert=True)
+        return
+    if count_groups(uid) >= MAX_GROUPS:
+        await c.answer(limit_text(), show_alert=True)
+        return
+    run("INSERT INTO members(user_id, group_id, role, joined) VALUES(?,?,?,?)", (uid, gid, "member", now()))
+    run("UPDATE users SET active_group=? WHERE user_id=?", (gid, uid))
+    await c.answer("Вы вступили в группу")
+    extra = "\nЭта группа теперь активна, переключаться между группами — /groups." if count_groups(uid) > 1 else ""
+    await bot.send_message(uid, f"✅ Вы в группе «{esc(g['title'])}».\n"
+                                f"Пишите сюда — сообщения увидят все участники под ником "
+                                f"<b>{esc(u['nick'])}</b>." + extra,
+                           reply_markup=main_kb(uid))
+    await announce(gid, f"➕ <i>Участник {esc(u['nick'])} теперь в группе</i>", exclude=(uid,))
 
 
 # ───────────────────────── Жалобы (/report) ─────────────────────────
@@ -1158,10 +1539,11 @@ async def panel_cb(c: CallbackQuery):
         await c.answer("Кнопка устарела — откройте /panel заново", show_alert=True)
         return
     mem = get_member(uid, gid)         # группа берётся из кнопки, а не из «активной»
-    if not mem or mem["role"] not in ("owner", "moderator"):
+    if not mem or ROLE_LEVEL[mem["role"]] < 1:
         await c.answer("Нет доступа", show_alert=True)
         return
     owner = mem["role"] == "owner"
+    priv = ROLE_LEVEL[mem["role"]] >= 2        # владелец или администратор
 
     if act == "link":
         await c.message.answer(link_text(mem["token"], mem["title"]))
@@ -1171,11 +1553,15 @@ async def panel_cb(c: CallbackQuery):
                                + link_text(token, mem["title"]))
     elif act == "cancel":
         await edit(c, panel_text(mem), panel_kb(mem))
-    elif owner and act == "rename":
+    elif priv and act == "rename":
         run("UPDATE users SET state=? WHERE user_id=?", (f"rename:{gid}", uid))
         await bot.send_message(uid, f"✏️ Напишите новое название группы «{esc(mem['title'])}» одним сообщением "
-                                    f"(до {TITLE_MAX} символов).\nОтмена — /cancel")
-    elif owner and act in ("protect", "media"):
+                                    f"(до {TITLE_MAX} символов, без эмодзи).\nОтмена — /cancel")
+    elif priv and act == "desc":
+        run("UPDATE users SET state=? WHERE user_id=?", (f"desc:{gid}", uid))
+        await bot.send_message(uid, f"📝 Напишите описание группы «{esc(mem['title'])}» одним сообщением "
+                                    f"(до {DESC_MAX} символов, можно оставить пустым).\nОтмена — /cancel")
+    elif priv and act in ("protect", "media"):
         run(f"UPDATE groups SET {act}=1-{act} WHERE id=?", (gid,))
         mem = get_member(uid, gid)
         on = bool(mem[act])
@@ -1184,6 +1570,19 @@ async def panel_cb(c: CallbackQuery):
                     else "🛡 Защита выключена: сообщения можно пересылать.")
         else:
             text = "🖼 Медиа разрешены." if on else "🖼 Медиа запрещены — только текст."
+        await announce(gid, f"<i>{text}</i>", exclude=(uid,))
+        await edit(c, panel_text(mem), panel_kb(mem))
+    elif priv and act == "public":
+        run("UPDATE groups SET is_public=1-is_public WHERE id=?", (gid,))
+        mem = get_member(uid, gid)
+        text = "🌐 Группа теперь в каталоге /catalog." if mem["is_public"] else "🌐 Группа скрыта из каталога."
+        await announce(gid, f"<i>{text}</i>", exclude=(uid,))
+        await edit(c, panel_text(mem), panel_kb(mem))
+    elif priv and act == "closed":
+        run("UPDATE groups SET is_closed=1-is_closed WHERE id=?", (gid,))
+        mem = get_member(uid, gid)
+        text = ("🔒 Вход в группу закрыт — новые участники не смогут войти." if mem["is_closed"]
+                else "🔓 Вход в группу снова открыт.")
         await announce(gid, f"<i>{text}</i>", exclude=(uid,))
         await edit(c, panel_text(mem), panel_kb(mem))
     elif owner and act == "del":
@@ -1223,7 +1622,7 @@ async def cmd_about(m: Message):
     await m.answer(ABOUT_TEXT)
 
 
-# ───────────────────────── Ввод ника / названия и обычные сообщения ─────────────────────────
+# ───────────────────────── Ввод ника / названия / описания и обычные сообщения ─────────────────────────
 async def has_state(m: Message) -> bool:
     r = one("SELECT state FROM users WHERE user_id=?", (m.from_user.id,))
     return bool(r and r["state"])
@@ -1239,6 +1638,8 @@ async def on_input_text(m: Message):
         await create_group(m, u, m.text)
     elif st.startswith("rename:"):
         await finish_rename(m, u, int(st[7:]), m.text)
+    elif st.startswith("desc:"):
+        await finish_desc(m, u, int(st[5:]), m.text)
 
 
 @router.message(F.text.startswith("/"))
@@ -1253,8 +1654,15 @@ async def on_message(m: Message):
         return
     if is_banned(u):                   # в бане за жалобы — молча игнорируем любые сообщения
         return
-    if u["state"]:                     # ждём текст (ник / название), а прислали не текст
-        what = "ник" if u["state"] == "nick" else "название группы"
+    if u["state"]:                     # ждём текст (ник / название / описание), а прислали не текст
+        if u["state"] == "nick":
+            what = "ник"
+        elif u["state"] == "newgroup":
+            what = "название группы"
+        elif u["state"].startswith("rename:"):
+            what = "новое название группы"
+        else:
+            what = "описание группы"
         await m.answer(f"✍️ Сейчас я жду {what} текстом. Отмена — /cancel")
         return
     mem = get_member(u["user_id"])
