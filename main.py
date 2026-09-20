@@ -171,21 +171,22 @@ COMMANDS = [
     ("report", "Пожаловаться на сообщение (ответом)"),
     ("rules", "Правила бота"),
     ("support", "Написать администрации"),
-    ("panel", "Управление группой (модератор)"),
-    ("rename", "Сменить название группы (администратор)"),
-    ("description", "Сменить описание группы (администратор)"),
-    ("kick", "Исключить (модератор)"),
-    ("mute", "Заглушить (модератор)"),
-    ("unmute", "Снять мут (модератор)"),
-    ("link", "Ссылка-приглашение (модератор)"),
-    ("newlink", "Обновить ссылку (модератор)"),
+    ("panel", "Управление группой"),
+    ("rename", "Сменить название группы"),
+    ("description", "Сменить описание группы"),
+    ("kick", "Исключить навсегда"),
+    ("unkick", "Разблокировать участника"),
+    ("mute", "Заглушить"),
+    ("unmute", "Снять мут"),
+    ("link", "Ссылка-приглашение"),
+    ("newlink", "Обновить ссылку"),
     ("adm", "Назначить администратора / модератора"),
     ("unadm", "Снять администратора / модератора"),
-    ("close_group", "Закрыть вход в группу (администратор)"),
-    ("open_group", "Открыть вход в группу (администратор)"),
-    ("mod", "Назначить модератора (владелец/администратор)"),
-    ("unmod", "Снять модератора (владелец/администратор)"),
-    ("transfer", "Передать владение группой (владелец)"),
+    ("close_group", "Закрыть вход в группу"),
+    ("open_group", "Открыть вход в группу"),
+    ("mod", "Назначить модератора"),
+    ("unmod", "Снять модератора"),
+    ("transfer", "Передать владение группой"),
     ("help", "Помощь"),
     ("about", "О боте"),
 ]
@@ -231,7 +232,8 @@ def help_text() -> str:
 Группы без сообщений {INACTIVE_DAYS} дней удаляются автоматически.
 
 <b>Модераторы</b> (ответьте командой на сообщение или укажите ник)
-/kick ник — исключить
+/kick ник — исключить навсегда: не сможет войти снова ни по ссылке-приглашению, ни через каталог
+/unkick ник — снять блокировку, поставленную /kick — участник снова сможет войти
 /mute ник 30 — заглушить на 30 минут
 /unmute ник — снять мут
 /link — ссылка-приглашение
@@ -301,6 +303,11 @@ CREATE TABLE IF NOT EXISTS members(
     muted_until INTEGER DEFAULT 0, joined INTEGER,
     PRIMARY KEY(user_id, group_id)    -- один человек может состоять в нескольких группах
 );
+CREATE TABLE IF NOT EXISTS kicked_members(
+    user_id INTEGER, group_id INTEGER, kicked_at INTEGER,
+    PRIMARY KEY(user_id, group_id)    -- навсегда исключённые из группы через /kick: не могут войти
+                                       -- обратно ни по ссылке, ни через каталог, пока не будет /unkick
+);
 CREATE TABLE IF NOT EXISTS relay(
     chat_id INTEGER, msg_id INTEGER, sender_id INTEGER, group_id INTEGER, ts INTEGER,
     src_chat_id INTEGER, src_msg_id INTEGER,   -- «оригинал»: чат и id исходного сообщения отправителя,
@@ -357,6 +364,10 @@ def migrate():
     );
     CREATE INDEX IF NOT EXISTS ix_reports_offender ON reports(offender_id);
     CREATE INDEX IF NOT EXISTS ix_reports_date ON reports(date);
+    CREATE TABLE IF NOT EXISTS kicked_members(
+        user_id INTEGER, group_id INTEGER, kicked_at INTEGER,
+        PRIMARY KEY(user_id, group_id)
+    );
     """)
     pk = [r["name"] for r in db.execute("PRAGMA table_info(members)") if r["pk"]]
     if pk == ["user_id"]:              # старая схема: PRIMARY KEY только по user_id
@@ -529,6 +540,21 @@ def ban_user(uid: int, seconds: int):
     run("UPDATE users SET banned_until=MAX(banned_until, ?) WHERE user_id=?", (until, uid))
 
 
+def is_kicked(uid: int, gid: int) -> bool:
+    """Верно, если человека навсегда исключили из этой группы через /kick и это не снято /unkick."""
+    return one("SELECT 1 FROM kicked_members WHERE user_id=? AND group_id=?", (uid, gid)) is not None
+
+
+def kick_forever(uid: int, gid: int):
+    run("INSERT OR REPLACE INTO kicked_members(user_id, group_id, kicked_at) VALUES(?,?,?)",
+        (uid, gid, now()))
+
+
+def unkick(uid: int, gid: int) -> bool:
+    """Снимает блокировку /kick. Возвращает True, если блокировка действительно была."""
+    return run("DELETE FROM kicked_members WHERE user_id=? AND group_id=?", (uid, gid)).rowcount > 0
+
+
 def drop_member(uid: int, gid: int) -> str:
     """Убирает человека из группы. Если группа была активной — выбирает новую активную.
     Возвращает пояснение для человека (пустое, если активная группа не менялась)."""
@@ -548,6 +574,7 @@ def wipe_group(gid: int):
     """Удаляет саму группу и всё, что с ней связано (участников — отдельно, через drop_member)."""
     run("DELETE FROM relay WHERE group_id=?", (gid,))
     run("DELETE FROM stats WHERE group_id=?", (gid,))
+    run("DELETE FROM kicked_members WHERE group_id=?", (gid,))
     run("DELETE FROM groups WHERE id=?", (gid,))
 
 
@@ -894,6 +921,24 @@ def find_target(m: Message, args: list, mem):
     return None, args
 
 
+def find_kicked_target(m: Message, args: list, gid: int):
+    """Цель для /unkick: ищет по ответу на старое сообщение (через relay) или по нику — среди ВСЕХ
+    пользователей бота, а не только текущих участников группы (исключённый уже не член группы).
+    Возвращает (user_id, nick) или (None, None)."""
+    if m.reply_to_message:
+        r = one("SELECT sender_id FROM relay WHERE chat_id=? AND msg_id=? AND group_id=?",
+                (m.chat.id, m.reply_to_message.message_id, gid))
+        if r:
+            u = one("SELECT user_id, nick FROM users WHERE user_id=?", (r["sender_id"],))
+            if u:
+                return u["user_id"], u["nick"]
+    if args:
+        u = one("SELECT user_id, nick FROM users WHERE nick_lc=?", (args[0].lstrip("@").lower(),))
+        if u:
+            return u["user_id"], u["nick"]
+    return None, None
+
+
 async def mod_ctx(m: Message, command: CommandObject, owner_only: bool = False):
     """Общая проверка для /kick /mute /unmute /mod /unmod. Вернёт (я, цель, аргументы) или None.
     При ответе на сообщение действует в той группе, откуда оно пришло, — даже если она не активная.
@@ -1048,6 +1093,9 @@ async def join_group(m: Message, token: str):
     if get_member(uid, g["id"]):
         await m.answer(f"Вы уже в группе «{esc(g['title'])}». Переключиться на неё — /groups",
                        reply_markup=main_kb(uid))
+        return
+    if is_kicked(uid, g["id"]):
+        await m.answer("🚫 Вам запрещено входить в эту группу.", reply_markup=main_kb(uid))
         return
     if count_groups(uid) >= MAX_GROUPS:
         await m.answer(limit_text(), reply_markup=main_kb(uid))
@@ -1448,13 +1496,40 @@ async def cmd_kick(m: Message, command: CommandObject):
     if not ctx:
         return
     mem, t, _ = ctx
-    note = drop_member(t["user_id"], mem["group_id"])
-    await m.answer(f"🚪 {esc(t['nick'])} исключён из группы «{esc(mem['title'])}».")
-    await notify(t["user_id"], f"🚪 Вас исключили из группы «{esc(mem['title'])}». "
-                               "Вернуться можно только по действующей ссылке-приглашению "
-                               "(или через каталог, если группа публичная)." + note, kb=bool(note))
-    await announce(mem["group_id"], f"🚪 <i>Участник {esc(t['nick'])} исключён из группы</i>",
+    gid = mem["group_id"]
+    kick_forever(t["user_id"], gid)
+    note = drop_member(t["user_id"], gid)
+    await m.answer(f"⛔ {esc(t['nick'])} навсегда исключён из группы «{esc(mem['title'])}» — "
+                   "не сможет войти снова ни по ссылке-приглашению, ни через каталог, пока это "
+                   "не отменит /unkick.")
+    await notify(t["user_id"], f"⛔ Вас навсегда исключили из группы «{esc(mem['title'])}». "
+                               "Вернуться будет невозможно, пока модерация не снимет блокировку." + note,
+                 kb=bool(note))
+    await announce(gid, f"⛔ <i>Участник {esc(t['nick'])} навсегда исключён из группы</i>",
                    exclude=(mem["user_id"],))
+
+
+@router.message(Command("unkick"))
+async def cmd_unkick(m: Message, command: CommandObject):
+    """Снимает блокировку, поставленную /kick — можно ответом (свайпом) на старое сообщение
+    исключённого или по нику: /unkick ник."""
+    mem = await staff(m, owner_only=False, gid=reply_group(m))
+    if not mem:
+        return
+    gid = mem["group_id"]
+    args = (command.args or "").split()
+    uid, nick = find_kicked_target(m, args, gid)
+    if not uid:
+        await m.answer("Не нашёл пользователя. Ответьте командой на его старое сообщение "
+                       "или укажите ник, например <code>/unkick ник</code>.")
+        return
+    if not unkick(uid, gid):
+        await m.answer(f"{esc(nick)} и так не заблокирован в этой группе.")
+        return
+    await m.answer(f"✅ {esc(nick)} разблокирован — снова сможет войти в «{esc(mem['title'])}» "
+                   "по ссылке-приглашению или через каталог.")
+    await notify(uid, f"✅ Вас разблокировали в группе «{esc(mem['title'])}» — можно снова войти "
+                      "по ссылке-приглашению или через каталог.")
 
 
 @router.message(Command("mute"))
@@ -1795,6 +1870,9 @@ async def catalog_join_cb(c: CallbackQuery):
         return
     if get_member(uid, gid):
         await c.answer("Вы уже в этой группе", show_alert=True)
+        return
+    if is_kicked(uid, gid):
+        await c.answer("Вам запрещено входить в эту группу", show_alert=True)
         return
     if group_locked(g):
         await c.answer("Вход в группу закрыт", show_alert=True)
