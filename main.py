@@ -25,7 +25,9 @@
 отвечают ничем. В BotFather их регистрировать не нужно. В панели:
   • статистика, онлайн и активные группы за 15 минут (/activity);
   • группы: список, закрытие входа, удаление (/groups_list);
-  • бан / разбан / профиль пользователя (/ban, /unban, /find);
+  • бан / разбан / профиль пользователя (/ban, /unban, /find — по ID или нику);
+  • участники любой группы с их ID и кнопкой «Бан» (/groups_list → «Участники», /gmembers ID_группы);
+  • список всех пользователей с ID (/users) и список забаненных с разбаном (/banned);
   • настройки прямо из бота, без перезапуска: лимит групп на человека, участников в группе, срок
     автоудаления + переключатели (регистрация, создание групп, пауза пересылки) — /settings, /limit;
   • рассылка всем (/broadcast), ответ на обращения из /support, бэкап базы (/backup).
@@ -2296,8 +2298,9 @@ async def on_message(m: Message):
 # admin_router подключается в диспетчер ПЕРВЫМ, поэтому перехватывает эти команды раньше основного роутера.
 admin_router = Router()
 admin_router.message.filter(F.chat.type == "private")
-HIDDEN_CMDS = ("admin", "statistics", "ban", "unban", "find", "groups_list",
+HIDDEN_CMDS = ("admin", "statistics", "ban", "unban", "find", "groups_list", "gmembers", "users", "banned",
                "activity", "settings", "set", "limit", "broadcast", "reply", "backup")
+ADMIN_LIST_PAGE = 8                        # строк на страницу в списках участников / юзеров / банов
 ADMIN_TITLE = "🛠 <b>Админ-панель</b>"
 
 _bc_pending: dict = {}          # админ → текст рассылки, ждущий подтверждения
@@ -2381,8 +2384,9 @@ def _btn(text: str, data: str) -> InlineKeyboardButton:
 def admin_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("📊 Статистика", "adm:stats"), _btn("🟢 Активность", "adm:act")],
-        [_btn("🗂 Группы", "adm:gl:0"), _btn("🔎 Найти юзера", "adm:find")],
-        [_btn("🚫 Бан по ID", "adm:ban"), _btn("✅ Разбан", "adm:unban")],
+        [_btn("🗂 Группы", "adm:gl:0"), _btn("👤 Юзеры", "adm:ul:0")],
+        [_btn("🔎 Найти (ID/ник)", "adm:find"), _btn("🚫 Список банов", "adm:bl:0")],
+        [_btn("⛔ Бан по ID", "adm:ban"), _btn("✅ Разбан по ID", "adm:unban")],
         [_btn("📋 Жалобы", "adm:rep"), _btn("⚙️ Настройки", "adm:cfg")],
         [_btn("📢 Рассылка", "adm:bc"), _btn("💾 Бэкап базы", "adm:bk")],
     ])
@@ -2392,12 +2396,40 @@ def admin_back_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[_btn("◀️ Меню", "adm:menu")]])
 
 
-def admin_ban_kb(target: int, with_unban: bool = False) -> InlineKeyboardMarkup:
-    rows = [[_btn("♾ Навсегда", f"adm:b:{target}:0"),
-             _btn("⏱ 1 час", f"adm:b:{target}:1"),
-             _btn("📅 24 часа", f"adm:b:{target}:24")]]
+# «Код возврата» — куда вести кнопку «Назад» (в callback_data двоеточие занято, поэтому точки):
+# "menu" → adm:menu, "gm.12.8" → adm:gm:12:8, "ul.0" → adm:ul:0, "bl.0" → adm:bl:0.
+_CODE_RE = re.compile(r"[a-z]{1,4}(?:\.\d{1,9}){0,2}")
+
+
+def _safe_code(code: str) -> str:
+    return code if _CODE_RE.fullmatch(code or "") else "menu"
+
+
+def _back_cb(code: str) -> str:
+    return "adm:" + _safe_code(code).replace(".", ":")
+
+
+def _back_kb(code: str) -> InlineKeyboardMarkup:
+    """Клавиатура под результатом действия: «Назад» (туда, откуда пришли) и «Меню»."""
+    code = _safe_code(code)
+    if code == "menu":
+        return admin_back_kb()
+    return InlineKeyboardMarkup(inline_keyboard=[[_btn("◀️ Назад", _back_cb(code))],
+                                                 [_btn("◀️ Меню", "adm:menu")]])
+
+
+def admin_ban_kb(target: int, with_unban: bool = False, extra_rows: Optional[list] = None,
+                 back: str = "menu") -> InlineKeyboardMarkup:
+    back = _safe_code(back)
+    sfx = "" if back == "menu" else f":{back}"
+    rows = [[_btn("♾ Навсегда", f"adm:b:{target}:0{sfx}"),
+             _btn("⏱ 1 час", f"adm:b:{target}:1{sfx}"),
+             _btn("📅 24 часа", f"adm:b:{target}:24{sfx}")]]
     if with_unban:
-        rows.append([_btn("✅ Разбанить", f"adm:ub:{target}")])
+        rows.append([_btn("✅ Разбанить", f"adm:ub:{target}{sfx}")])
+    rows += extra_rows or []
+    if back != "menu":
+        rows.append([_btn("◀️ Назад", _back_cb(back))])
     rows.append([_btn("◀️ Меню", "adm:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -2465,7 +2497,7 @@ def activity_view():
 
 
 # ── пользователи ──
-def admin_profile(uid: int):
+def admin_profile(uid: int, back: str = "menu"):
     """Профиль пользователя для админа: (текст, клавиатура) или None, если такого ID нет в базе."""
     u = one("SELECT * FROM users WHERE user_id=?", (uid,))
     if not u:
@@ -2488,7 +2520,9 @@ def admin_profile(uid: int):
     for r in grp:
         mark = " ✅" if r["group_id"] == u["active_group"] else ""
         lines.append(f"  {ROLE_ICON[r['role']]} <b>#{r['group_id']}</b> «{esc(r['title'])}» — {ROLE_NAME[r['role']]}{mark}")
-    return "\n".join(lines), admin_ban_kb(uid, with_unban=True)
+    extra = [[_btn(f"👥 #{r['group_id']} «{r['title'][:18]}» — участники", f"adm:gm:{r['group_id']}:0")]
+             for r in grp[:20]]
+    return "\n".join(lines), admin_ban_kb(uid, with_unban=True, extra_rows=extra, back=back)
 
 
 def ban_precheck(admin_id: int, target: int) -> Optional[str]:
@@ -2545,6 +2579,7 @@ def admin_groups_view(offset: int):
         lines.append(f"<b>#{r['id']}</b> «{esc(r['title'])}» — {count_members(r['id'])}/{MAX_MEMBERS}\n"
                      f"{flags}владелец: {esc(r['owner_nick'] or '—')} (<code>{r['owner_id']}</code>) · "
                      f"без сообщений: {idle} дн.")
+        kb.append([_btn(f"👥 Участники #{r['id']}", f"adm:gm:{r['id']}:0")])
         kb.append([
             _btn(f"{'🔓 Открыть' if r['is_closed'] else '🔒 Закрыть'} #{r['id']}", f"adm:gc:{r['id']}:{offset}"),
             _btn(f"🗑 Удалить #{r['id']}", f"adm:gd:{r['id']}:{offset}")])
@@ -2577,6 +2612,121 @@ def admin_reports_text() -> str:
                      f"{esc(r['rnick'] or '—')} (<code>{r['reporter_id']}</code>) → "
                      f"{esc(r['onick'] or '—')} (<code>{r['offender_id']}</code>) · {grp}")
     return "\n\n".join(lines)[:4000]
+
+
+# ── участники групп, все юзеры, баны (с ID) ──
+def resolve_user(raw: str) -> Optional[int]:
+    """ID (если такой юзер есть в базе) или ник → user_id. Иначе None."""
+    raw = (raw or "").strip().lstrip("@")
+    if re.fullmatch(r"\d{1,15}", raw):
+        r = one("SELECT user_id FROM users WHERE user_id=?", (int(raw),))
+        if r:
+            return r["user_id"]
+    if not raw:
+        return None
+    r = one("SELECT user_id FROM users WHERE nick_lc=?", (raw.lower(),))
+    return r["user_id"] if r else None
+
+
+def _arg_user(command: CommandObject) -> Optional[int]:
+    args = (command.args or "").split()
+    return resolve_user(args[0]) if args else None
+
+
+def _nav_row(prefix: str, offset: int, total: int) -> list:
+    nav = []
+    if offset > 0:
+        nav.append(_btn("◀️ Назад", f"{prefix}:{max(0, offset - ADMIN_LIST_PAGE)}"))
+    if offset + ADMIN_LIST_PAGE < total:
+        nav.append(_btn("Дальше ▶️", f"{prefix}:{offset + ADMIN_LIST_PAGE}"))
+    return nav
+
+
+def _clamp(offset: int, total: int) -> int:
+    return min(max(0, offset), ((max(total, 1) - 1) // ADMIN_LIST_PAGE) * ADMIN_LIST_PAGE)
+
+
+def _user_row(r, back: str, unban: bool = False) -> list:
+    """Строка кнопок под пользователем: профиль + «Бан» (или «Разбан» в списке банов)."""
+    uid = r["user_id"]
+    row = [_btn(f"👤 {(r['nick'] or '—')[:16]}", f"adm:pf:{uid}:{back}")]
+    if unban:
+        row.append(_btn("✅ Разбан", f"adm:ubl:{uid}:{back}"))
+    elif not is_admin(uid):
+        row.append(_btn("🚫 Бан", f"adm:bp:{uid}:{back}"))
+    return row
+
+
+def admin_members_view(gid: int, offset: int = 0):
+    """Участники группы с ID и кнопками бана: (текст, клавиатура)."""
+    g = one("SELECT id, title FROM groups WHERE id=?", (gid,))
+    if not g:
+        return "❌ Группа не найдена (возможно, уже удалена).", InlineKeyboardMarkup(
+            inline_keyboard=[[_btn("🗂 К группам", "adm:gl:0")], [_btn("◀️ Меню", "adm:menu")]])
+    total = count_members(gid)
+    offset = _clamp(offset, total)
+    rows = many("""SELECT u.user_id, u.nick, u.banned_until, u.last_seen, m.role, m.muted_until
+                   FROM members m JOIN users u ON u.user_id = m.user_id
+                   WHERE m.group_id=?
+                   ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1
+                                        WHEN 'moderator' THEN 2 ELSE 3 END, u.nick_lc
+                   LIMIT ? OFFSET ?""", (gid, ADMIN_LIST_PAGE, offset))
+    lines = [f"👥 <b>#{gid}</b> «{esc(g['title'])}» — участники ({total})", ""]
+    kb = []
+    for r in rows:
+        flags = (" 🚫" if is_banned(r) else "") + (" 🔇" if r["muted_until"] > now() else "")
+        lines.append(f"{ROLE_ICON[r['role']]} <b>{esc(r['nick'] or '—')}</b> · <code>{r['user_id']}</code>{flags}"
+                     f" · {fmt_ago(r['last_seen'])}")
+        kb.append(_user_row(r, f"gm.{gid}.{offset}"))
+    if not rows:
+        lines.append("В группе никого нет.")
+    nav = _nav_row(f"adm:gm:{gid}", offset, total)
+    if nav:
+        kb.append(nav)
+    kb.append([_btn("🗂 К группам", "adm:gl:0"), _btn("◀️ Меню", "adm:menu")])
+    return "\n".join(lines)[:4000], InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def admin_users_view(offset: int = 0):
+    """Все пользователи бота (по последней активности) с ID: (текст, клавиатура)."""
+    total = _count("SELECT COUNT(*) AS c FROM users")
+    if not total:
+        return "👤 Пользователей пока нет.", admin_back_kb()
+    offset = _clamp(offset, total)
+    rows = many("""SELECT user_id, nick, banned_until, last_seen FROM users
+                   ORDER BY last_seen DESC, user_id DESC LIMIT ? OFFSET ?""", (ADMIN_LIST_PAGE, offset))
+    lines = [f"👤 <b>Юзеры</b> ({total}) — по последней активности", ""]
+    kb = []
+    for r in rows:
+        flag = " 🚫" if is_banned(r) else ""
+        lines.append(f"<b>{esc(r['nick'] or '— (без ника)')}</b> · <code>{r['user_id']}</code>{flag}"
+                     f" · {fmt_ago(r['last_seen'])}")
+        kb.append(_user_row(r, f"ul.{offset}"))
+    nav = _nav_row("adm:ul", offset, total)
+    if nav:
+        kb.append(nav)
+    kb.append([_btn("🔎 Найти (ID/ник)", "adm:find"), _btn("◀️ Меню", "adm:menu")])
+    return "\n".join(lines)[:4000], InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def admin_banned_view(offset: int = 0):
+    """Сейчас забаненные: (текст, клавиатура) — с кнопкой разбана."""
+    total = _count("SELECT COUNT(*) AS c FROM users WHERE banned_until>?", now())
+    if not total:
+        return "🚫 Сейчас в бане никого нет.", admin_back_kb()
+    offset = _clamp(offset, total)
+    rows = many("""SELECT user_id, nick, banned_until, last_seen FROM users WHERE banned_until>?
+                   ORDER BY banned_until DESC LIMIT ? OFFSET ?""", (now(), ADMIN_LIST_PAGE, offset))
+    lines = [f"🚫 <b>В бане</b> ({total})", ""]
+    kb = []
+    for r in rows:
+        lines.append(f"<b>{esc(r['nick'] or '—')}</b> · <code>{r['user_id']}</code> · {fmt_ban(r)}")
+        kb.append(_user_row(r, f"bl.{offset}", unban=True))
+    nav = _nav_row("adm:bl", offset, total)
+    if nav:
+        kb.append(nav)
+    kb.append([_btn("◀️ Меню", "adm:menu")])
+    return "\n".join(lines)[:4000], InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 # ── настройки прямо из бота ──
@@ -2720,10 +2870,16 @@ async def adm_input(m: Message):
     raw = m.text.strip()
 
     if kind in ("ban", "unban", "find"):
-        if not re.fullmatch(r"\d{1,15}", raw):
+        if kind == "find":
+            target = resolve_user(raw)
+            if target is None:
+                await m.answer("❌ Не нашёл такого ID или ника. Отправьте ещё раз или /cancel.")
+                return
+        elif not re.fullmatch(r"\d{1,15}", raw):
             await m.answer("❌ Нужен числовой ID пользователя. Отправьте ещё раз или /cancel.")
             return
-        target = int(raw)
+        else:
+            target = int(raw)
         set_state(uid, "")
         if kind == "ban":
             err = ban_precheck(uid, target)
@@ -2811,21 +2967,45 @@ async def adm_unban_cmd(m: Message, command: CommandObject):
 @admin_router.message(Command("find", ignore_case=True))
 async def adm_find_cmd(m: Message, command: CommandObject):
     set_state(m.from_user.id, "")
-    target = _arg_id(command)
+    target = _arg_user(command)
     if target is None:
-        await m.answer("Использование: <code>/find ID</code>")
+        await m.answer("Использование: <code>/find ID_или_ник</code>. Если ничего не нашлось — "
+                       "такого пользователя нет в базе.")
         return
     prof = admin_profile(target)
-    if prof:
-        await m.answer(prof[0], reply_markup=prof[1])
-    else:
-        await m.answer(f"❌ Пользователь <code>{target}</code> не найден в базе.")
+    await m.answer(prof[0], reply_markup=prof[1])
 
 
 @admin_router.message(Command("groups_list", ignore_case=True))
 async def adm_groups_cmd(m: Message):
     set_state(m.from_user.id, "")
     text, kb = admin_groups_view(0)
+    await m.answer(text, reply_markup=kb)
+
+
+@admin_router.message(Command("gmembers", ignore_case=True))
+async def adm_gmembers_cmd(m: Message, command: CommandObject):
+    """/gmembers ID_ГРУППЫ — участники группы с ID и кнопками бана (ID группы — из /groups_list)."""
+    set_state(m.from_user.id, "")
+    gid = _arg_id(command)
+    if gid is None:
+        await m.answer("Использование: <code>/gmembers ID_группы</code> (номер — из /groups_list, «#12»)")
+        return
+    text, kb = admin_members_view(gid, 0)
+    await m.answer(text, reply_markup=kb)
+
+
+@admin_router.message(Command("users", ignore_case=True))
+async def adm_users_cmd(m: Message):
+    set_state(m.from_user.id, "")
+    text, kb = admin_users_view(0)
+    await m.answer(text, reply_markup=kb)
+
+
+@admin_router.message(Command("banned", ignore_case=True))
+async def adm_banned_cmd(m: Message):
+    set_state(m.from_user.id, "")
+    text, kb = admin_banned_view(0)
     await m.answer(text, reply_markup=kb)
 
 
@@ -2925,13 +3105,50 @@ async def adm_cb(c: CallbackQuery):
             await edit(c, text, kb)
         elif act in ("ban", "unban", "find"):
             set_state(uid, f"adm:{act}")
-            what = {"ban": "забанить", "unban": "разбанить", "find": "найти"}[act]
-            await c.message.answer(f"Отправьте ID пользователя, которого нужно {what}. Отмена — /cancel")
+            if act == "find":
+                await c.message.answer("Отправьте ID или ник пользователя. Отмена — /cancel")
+            else:
+                what = {"ban": "забанить", "unban": "разбанить"}[act]
+                await c.message.answer(f"Отправьте ID пользователя, которого нужно {what}. Отмена — /cancel")
         elif act == "b":
             hours = int(parts[3]) or None
-            await edit(c, await do_ban(uid, int(parts[2]), hours), admin_back_kb())
+            back = _safe_code(parts[4] if len(parts) > 4 else "menu")
+            await edit(c, await do_ban(uid, int(parts[2]), hours), _back_kb(back))
         elif act == "ub":
-            await edit(c, await do_unban(int(parts[2])), admin_back_kb())
+            back = _safe_code(parts[3] if len(parts) > 3 else "menu")
+            await edit(c, await do_unban(int(parts[2])), _back_kb(back))
+        elif act == "gm":                                   # участники группы
+            text, kb = admin_members_view(int(parts[2]), int(parts[3]) if len(parts) > 3 else 0)
+            await edit(c, text, kb)
+        elif act == "ul":                                   # все юзеры
+            text, kb = admin_users_view(int(parts[2]) if len(parts) > 2 else 0)
+            await edit(c, text, kb)
+        elif act == "bl":                                   # список банов
+            text, kb = admin_banned_view(int(parts[2]) if len(parts) > 2 else 0)
+            await edit(c, text, kb)
+        elif act == "pf":                                   # профиль юзера
+            back = _safe_code(parts[3] if len(parts) > 3 else "menu")
+            prof = admin_profile(int(parts[2]), back)
+            if prof:
+                await edit(c, prof[0], prof[1])
+            else:
+                await edit(c, "❌ Пользователь не найден.", _back_kb(back))
+        elif act == "bp":                                   # «Бан» из списка: выбор срока
+            target = int(parts[2])
+            back = _safe_code(parts[3] if len(parts) > 3 else "menu")
+            err = ban_precheck(uid, target)
+            if err:
+                await edit(c, err, _back_kb(back))
+            else:
+                u = one("SELECT nick, banned_until FROM users WHERE user_id=?", (target,))
+                await edit(c, f"🚫 Забанить <b>{esc(u['nick'] or '—')}</b> (<code>{target}</code>)?\n"
+                              f"Сейчас бан: {fmt_ban(u)}\nНа какой срок?", admin_ban_kb(target, back=back))
+        elif act == "ubl":                                  # «Разбан» из списка банов
+            await do_unban(int(parts[2]))
+            code = _safe_code(parts[3] if len(parts) > 3 else "bl.0")
+            off = int(code.split(".")[1]) if code.startswith("bl.") else 0
+            text, kb = admin_banned_view(off)
+            await edit(c, text, kb)
         elif act == "gl":
             text, kb = admin_groups_view(int(parts[2]))
             await edit(c, text, kb)
