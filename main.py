@@ -5,7 +5,7 @@
     pip install -U aiogram
     export BOT_TOKEN="123456:ABC..."      # токен от @BotFather
     export ADMIN_IDS="111111,222222"      # Telegram ID администраторов бота (через запятую)
-    python anon_groups_bot_v3.py
+    python anon_groups_bot.py
 
 Как это работает: участники пишут боту в личку, бот пересылает сообщение
 всем остальным в активной группе от своего имени с ником отправителя.
@@ -20,6 +20,9 @@
 Ссылки, e-mail и @юзернеймы в сообщениях обезвреживаются (дефанг): текст остаётся, но некликабелен.
 Группы без сообщений INACTIVE_DAYS дней удаляются автоматически.
 /rules — правила, /support — связь с администрацией (раз в сутки, 30–500 символов).
+/games (или кнопка «🎮 Игры») — игры прямо в чате группы. Пока есть «Шпион» (3–12 человек):
+бот раздаёт роли в личку, ведёт таймеры и голосование. Состояние игр хранится в памяти —
+после перезапуска бота незавершённые игры сбрасываются.
 
 Скрытая админ-панель бота (/admin) доступна только ID из ADMIN_IDS; остальным её команды не
 отвечают ничем. В BotFather их регистрировать не нужно. В панели:
@@ -43,6 +46,8 @@ import sqlite3
 import struct
 import tempfile
 import time
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html import escape as esc
 from typing import NamedTuple, Optional
@@ -159,8 +164,9 @@ B_GROUP, B_GROUPS, B_MEMBERS = "👥 Группа", "🗂 Мои группы", 
 B_NICK, B_PANEL = "✏️ Сменить ник", "⚙️ Управление"
 B_STATS = "📊 Статистика"
 B_CATALOG = "📂 Каталог"
+B_GAMES = "🎮 Игры"
 B_HELP, B_ABOUT = "❓ Помощь", "ℹ️ О боте"
-MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT}
+MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_GAMES, B_HELP, B_ABOUT}
 
 # Только публичные команды. Админские (/admin, /statistics, /ban, /unban, /find, /groups_list и др.)
 # сюда НЕ добавляются — они скрыты и работают только для ADMIN_IDS.
@@ -173,6 +179,7 @@ COMMANDS = [
     ("stats", "Статистика (личная и по группе)"),
     ("catalog", "Каталог публичных групп"),
     ("search_group", "Поиск группы по названию/описанию"),
+    ("games", "Игры в чате группы"),
     ("nick", "Сменить ник"),
     ("leave", "Выйти из группы"),
     ("cancel", "Отменить ввод"),
@@ -229,6 +236,7 @@ def help_text() -> str:
 /stats — статистика: сколько сообщений и медиа отправили вы и вся группа
 /catalog — каталог публичных групп
 /search_group название — поиск группы по названию или описанию
+/games — игры прямо в чате группы (пока «Шпион»)
 /nick — сменить ник (не больше {NICK_CHANGES_PER_DAY} смен за 24 часа)
 /leave — выйти из активной группы
 /cancel — отменить ввод
@@ -276,6 +284,7 @@ def about_text() -> str:
 • Группы без сообщений {INACTIVE_DAYS} дней удаляются
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
 • Правка и удаление сообщений у других участников не синхронизируются
+• Игры прямо в чате группы — /games
 
 Правила — /rules · Связь с администрацией — /support"""
 
@@ -729,8 +738,8 @@ def main_kb(uid: int) -> ReplyKeyboardMarkup:
             [KeyboardButton(text=B_GROUP), KeyboardButton(text=B_GROUPS)],
             [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_STATS)],
             [KeyboardButton(text=B_CATALOG), KeyboardButton(text=B_PANEL)],
-            [KeyboardButton(text=B_NICK), KeyboardButton(text=B_HELP)],
-            [KeyboardButton(text=B_ABOUT)],
+            [KeyboardButton(text=B_GAMES), KeyboardButton(text=B_NICK)],
+            [KeyboardButton(text=B_HELP), KeyboardButton(text=B_ABOUT)],
         ],
         resize_keyboard=True,
         input_field_placeholder=hint[:64],
@@ -2257,6 +2266,706 @@ async def cmd_support(m: Message, command: CommandObject):
     run("UPDATE users SET state='support' WHERE user_id=?", (u["user_id"],))
     await m.answer(f"📩 Опишите проблему или идею одним сообщением ({SUPPORT_MIN}–{SUPPORT_MAX} символов).\n"
                    f"Администрация увидит ваш ник и ID. Писать можно 1 раз в {SUPPORT_COOLDOWN_H} ч.\nОтмена — /cancel")
+
+
+# ───────────────────────── 🎮 Игры ─────────────────────────
+# Раздел «Игры» и первая игра — «Шпион». Игра идёт прямо в чате группы (обычной пересылкой бота),
+# бот раздаёт роли в личку, ведёт таймеры и голосование.
+# Этот блок стоит ДО обработчиков unknown_command и on_message (раздел «Ввод ника …» ниже),
+# иначе /games и кнопка «🎮 Игры» были бы перехвачены ими.
+# Состояние игр хранится в памяти, а не в базе: игра живёт считанные минуты, а после перезапуска
+# бота незавершённые игры просто сбрасываются (их кнопки ответят «игра завершена»).
+# ВАЖНО: в callback_data кнопок никогда не кладём Telegram-ID игроков — только номера мест.
+# Иначе анонимность можно было бы обойти, заглянув в данные кнопки.
+
+SPY_MIN_PLAYERS, SPY_MAX_PLAYERS = 3, 12
+SPY_LOBBY_SEC = 10 * 60          # сколько ждём игроков, потом набор отменяется
+SPY_DISCUSS_SEC = 8 * 60         # обсуждение в чате до голосования
+SPY_VOTE_SEC = 90                # время на голосование
+SPY_LAST_SEC = 45                # последний шанс разоблачённого шпиона
+
+SPY_LOCATIONS = [
+    ("✈️", "Аэропорт"), ("🏦", "Банк"), ("🏖", "Пляж"), ("🎰", "Казино"),
+    ("🎪", "Цирк"), ("🏫", "Школа"), ("🏥", "Больница"), ("🏨", "Отель"),
+    ("🎬", "Кинотеатр"), ("🛰", "Космическая станция"), ("🚢", "Подводная лодка"), ("🚆", "Поезд"),
+    ("🍽", "Ресторан"), ("🛒", "Супермаркет"), ("📚", "Библиотека"), ("⛪", "Церковь"),
+    ("🎓", "Университет"), ("🚓", "Полицейский участок"), ("🦁", "Зоопарк"), ("🖼", "Музей"),
+    ("🏭", "Фабрика"), ("🚜", "Ферма"), ("💆", "Спа-салон"), ("🏴‍☠️", "Пиратский корабль"),
+]
+
+
+@dataclass
+class SpyGame:
+    id: str                                              # короткий уникальный id игры (идёт в callback_data)
+    gid: int                                             # группа, в чате которой идёт игра
+    title: str
+    host: int
+    players: list = field(default_factory=list)          # user_id; индекс в списке = «место» игрока
+    nicks: dict = field(default_factory=dict)            # user_id → ник на момент входа в игру
+    phase: str = "lobby"                                 # lobby → play → vote → last → done
+    loc: int = -1                                        # индекс локации в SPY_LOCATIONS
+    spy: int = -1                                        # место шпиона
+    votes: dict = field(default_factory=dict)            # user_id → место, за которое он проголосовал
+    vote_req: set = field(default_factory=set)           # кто просит начать голосование раньше срока
+    lobby_msgs: dict = field(default_factory=dict)       # user_id → id сообщения набора (приглашение)
+    host_msg: int = 0                                    # id панели ведущего
+    kb_msgs: list = field(default_factory=list)          # (chat_id, msg_id) с кнопками — снимаем в конце игры
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    vote_now: asyncio.Event = field(default_factory=asyncio.Event)
+    all_voted: asyncio.Event = field(default_factory=asyncio.Event)
+    task: Optional[asyncio.Task] = None
+
+
+SPY_GAMES: dict = {}       # id игры → SpyGame
+SPY_BY_GROUP: dict = {}    # id группы → id игры (в группе идёт не больше одной игры)
+SPY_BY_USER: dict = {}     # user_id → id игры (человек играет не больше чем в одной игре)
+
+
+# ── мелкие помощники ──
+def gbtn(text: str, data: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, callback_data=data)
+
+
+def spy_nick(game: SpyGame, uid: int) -> str:
+    return esc(game.nicks.get(uid, "—"))
+
+
+def spy_loc_name(i: int) -> str:
+    emo, name = SPY_LOCATIONS[i]
+    return f"{emo} {name}"
+
+
+def spy_need_votes(game: SpyGame) -> int:
+    """Сколько игроков должны нажать «Начать голосование», чтобы оно началось раньше срока."""
+    return len(game.players) // 2 + 1
+
+
+def spy_players_line(game: SpyGame) -> str:
+    return ", ".join(("👑 " if uid == game.host else "") + spy_nick(game, uid) for uid in game.players)
+
+
+def spy_is_spy(game: SpyGame, uid: int) -> bool:
+    return game.spy >= 0 and game.players[game.spy] == uid
+
+
+def spy_group_alive(game: SpyGame) -> bool:
+    return one("SELECT 1 FROM groups WHERE id=?", (game.gid,)) is not None
+
+
+async def gsend(uid: int, text: str, kb: Optional[InlineKeyboardMarkup] = None, protect: bool = False) -> int:
+    """Личное сообщение игроку. Возвращает id сообщения или 0, если отправить не удалось."""
+    try:
+        r = await bot.send_message(uid, text, reply_markup=kb, protect_content=protect)
+        return r.message_id
+    except TelegramAPIError as e:
+        log.info("игра: не отправлено %s: %s", uid, e)
+        return 0
+
+
+async def gsafe_edit(chat_id: int, mid: int, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+    if not mid:
+        return
+    try:
+        await bot.edit_message_text(text, chat_id=chat_id, message_id=mid, reply_markup=kb)
+    except TelegramAPIError as e:
+        log.info("игра: не изменено %s/%s: %s", chat_id, mid, e)
+
+
+async def gedit_kb(c: CallbackQuery, kb: Optional[InlineKeyboardMarkup]):
+    """Меняет только кнопки под сообщением (текст остаётся)."""
+    try:
+        await c.message.edit_reply_markup(reply_markup=kb)
+    except (TelegramAPIError, AttributeError):
+        pass
+
+
+# ── меню «Игры» ──
+def games_menu_view():
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [gbtn("🕵️ Шпион", "sp:home")],
+        [gbtn("◀️ Назад", "gam:back")],
+    ])
+    return "🎮 <b>Игры</b>\nВыберите игру:", kb
+
+
+def main_menu_view():
+    kb = InlineKeyboardMarkup(inline_keyboard=[[gbtn("🎮 Игры", "gam:menu")]])
+    return "🏠 <b>Главное меню</b>\nОсновные разделы — кнопками внизу 👇", kb
+
+
+@router.message(Command("games"))
+@router.message(F.text == B_GAMES)
+async def cmd_games(m: Message):
+    if not await reg(m):
+        return
+    text, kb = games_menu_view()
+    await m.answer(text, reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("gam:"))
+async def games_cb(c: CallbackQuery):
+    act = c.data[4:]
+    if act == "menu":
+        text, kb = games_menu_view()
+    elif act == "back":
+        text, kb = main_menu_view()
+    else:
+        await c.answer()
+        return
+    await edit(c, text, kb)
+    await c.answer()
+
+
+# ── «Шпион»: тексты и клавиатуры ──
+def spy_intro() -> str:
+    return ("🕵️ <b>Шпион</b>\n\n"
+            f"Игра для {SPY_MIN_PLAYERS}–{SPY_MAX_PLAYERS} человек прямо в чате вашей группы. У всех игроков есть "
+            "секретная локация — кроме шпиона: он её не знает и старается не выдать себя. "
+            "Остальные задают вопросы и вычисляют шпиона.")
+
+
+def spy_rules_text() -> str:
+    return (
+        "📖 <b>Правила «Шпиона»</b>\n\n"
+        "1. Ведущий собирает игроков (участников одной группы), бот присылает каждому роль в личку. "
+        "Все, кроме шпиона, видят секретную локацию.\n"
+        "2. Обсуждайте в чате группы: задавайте друг другу вопросы о месте и отвечайте так, чтобы свои "
+        "поняли, что вы в теме, а шпион — нет. Называть локацию прямо нельзя.\n"
+        "3. Шпион слушает и пытается понять, где все находятся. Назвать локацию он может в любой момент: "
+        "угадал — победил, ошибся — проиграл.\n"
+        f"4. Через {SPY_DISCUSS_SEC // 60} мин начинается голосование «кто шпион?» — или раньше, если "
+        "больше половины игроков нажмут «Начать голосование».\n"
+        f"5. Разоблачённый шпион получает последний шанс: {SPY_LAST_SEC} сек, чтобы назвать локацию. "
+        "Если голоса разделились или выбрали не того — побеждает шпион.\n\n"
+        "⚠️ Не переключайтесь на другие группы во время игры — вы перестанете видеть чат."
+    )
+
+
+def spy_home_view(uid: int):
+    """Карточка игры: правила и кнопка, подходящая текущей ситуации человека."""
+    text = spy_intro()
+    rows = []
+    game = SPY_GAMES.get(SPY_BY_USER.get(uid))
+    mem = get_member(uid)
+    if game:
+        text += f"\n\n▶️ Вы участвуете в игре (группа «{esc(game.title)}»)."
+    elif not mem:
+        text += "\n\n⚠️ Чтобы играть, нужно состоять в группе: /catalog, /newgroup или ссылка-приглашение."
+    else:
+        g = SPY_GAMES.get(SPY_BY_GROUP.get(mem["group_id"]))
+        title = esc(mem["title"])
+        if g is None:
+            text += f"\n\nИгра пройдёт в группе «{title}»."
+            rows.append([gbtn("🎲 Создать игру", "sp:new")])
+        elif g.phase == "lobby":
+            text += f"\n\n⏳ В группе «{title}» идёт набор игроков ({len(g.players)}/{SPY_MAX_PLAYERS})."
+            rows.append([gbtn("✅ Присоединиться", f"sp:j:{g.id}")])
+        else:
+            text += f"\n\n⏳ В группе «{title}» игра уже идёт."
+    rows.append([gbtn("📖 Правила", "sp:rules")])
+    rows.append([gbtn("◀️ Назад", "gam:menu")])
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def spy_lobby_text(game: SpyGame) -> str:
+    return ("🕵️ <b>Шпион</b> — набор игроков\n"
+            f"Группа «{esc(game.title)}»\n\n"
+            f"Игроки ({len(game.players)}/{SPY_MAX_PLAYERS}): {spy_players_line(game)}\n\n"
+            f"Нужно минимум {SPY_MIN_PLAYERS}. Приглашение получили участники группы, у которых она сейчас "
+            f"активна. Набор закроется через {SPY_LOBBY_SEC // 60} мин.")
+
+
+def spy_host_kb(game: SpyGame) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        gbtn("▶️ Начать игру", f"sp:go:{game.id}"), gbtn("❌ Отменить", f"sp:x:{game.id}")]])
+
+
+def spy_invite_text(game: SpyGame) -> str:
+    return (f"🎮 <b>{spy_nick(game, game.host)}</b> собирает игру «Шпион» в группе «{esc(game.title)}».\n"
+            f"Играем прямо в чате группы. Нужно {SPY_MIN_PLAYERS}–{SPY_MAX_PLAYERS} человек.")
+
+
+def spy_invite_kb(game: SpyGame) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [gbtn("✅ Участвовать", f"sp:j:{game.id}")],
+        [gbtn("📖 Правила", "sp:rules")]])
+
+
+def spy_joined_text(game: SpyGame) -> str:
+    return (f"✅ Вы в игре «Шпион» (группа «{esc(game.title)}»).\n"
+            f"Игроков: {len(game.players)}/{SPY_MAX_PLAYERS}. Ждём, пока ведущий "
+            f"<b>{spy_nick(game, game.host)}</b> начнёт игру.\n\n"
+            "⚠️ Не переключайтесь на другие группы, пока идёт игра, — иначе перестанете видеть чат.")
+
+
+def spy_joined_kb(game: SpyGame) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[gbtn("🚪 Выйти из игры", f"sp:l:{game.id}")]])
+
+
+def spy_role_text(game: SpyGame, seat: int) -> str:
+    locs = ", ".join(f"{e} {n}" for e, n in SPY_LOCATIONS)
+    head = f"🕵️ <b>Шпион</b> · группа «{esc(game.title)}»\n\n"
+    if seat == game.spy:
+        role = ("🕵️ <b>Вы — шпион!</b>\nЛокацию вы не знаете. Слушайте разговор в чате, отвечайте расплывчато "
+                "и пытайтесь понять, где все находятся. Уверены в ответе — жмите «Угадать локацию» "
+                "(ошибка = поражение).")
+    else:
+        role = (f"📍 Локация: <b>{spy_loc_name(game.loc)}</b>\n"
+                "Вы — не шпион. Один из игроков локацию не знает. Задавайте вопросы в чате группы, "
+                "но не выдавайте место слишком прямо.")
+    return (f"{head}{role}\n\n👥 Игроки: {spy_players_line(game)}\n\n🗺 Возможные локации: {locs}\n\n"
+            f"⏱ Обсуждение — {SPY_DISCUSS_SEC // 60} мин, затем голосование. "
+            "Не переключайтесь на другие группы.")
+
+
+def spy_role_kb(game: SpyGame, seat: int) -> InlineKeyboardMarkup:
+    rows = [[gbtn("🗳 Начать голосование", f"sp:vr:{game.id}")]]
+    if seat == game.spy:
+        rows.append([gbtn("🔎 Угадать локацию", f"sp:g:{game.id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def spy_guess_kb(game: SpyGame, back: bool) -> InlineKeyboardMarkup:
+    rows, row = [], []
+    for i, (emo, name) in enumerate(SPY_LOCATIONS):
+        row.append(gbtn(f"{emo} {name}", f"sp:gc:{game.id}:{i}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    if back:
+        rows.append([gbtn("↩️ Отмена", f"sp:gb:{game.id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def spy_vote_kb(game: SpyGame, seat: int) -> InlineKeyboardMarkup:
+    rows, row = [], []
+    for s, uid in enumerate(game.players):
+        if s == seat:
+            continue
+        row.append(gbtn(game.nicks.get(uid, "—"), f"sp:v:{game.id}:{s}"))   # только номер места, не ID
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ── «Шпион»: проверки ──
+def spy_check(uid: int, gid: Optional[int] = None):
+    """Может ли человек играть. Возвращает (текст ошибки или None, пользователь, членство).
+    gid не указан — берётся его активная группа; указан — должна быть активной именно эта группа."""
+    u = one("SELECT * FROM users WHERE user_id=?", (uid,))
+    if not u or not u["nick"]:
+        return "Сначала придумайте ник — напишите боту /start", None, None
+    if is_banned(u):
+        return "🚫 Вы в бане — играть нельзя.", None, None
+    mem = get_member(uid, gid)
+    if not mem:
+        return ("Вы не состоите в группе этой игры." if gid is not None
+                else "Сначала вступите в группу или выберите её: /groups"), None, None
+    if gid is not None and u["active_group"] != gid:
+        return f"Сначала переключитесь на группу «{mem['title']}» (/groups) — игра идёт в её чате.", None, None
+    if mem["muted_until"] > now():
+        return "🔇 Вы в муте в этой группе — играть нельзя.", None, None
+    return None, u, mem
+
+
+# ── «Шпион»: жизненный цикл игры ──
+def spy_close(game: SpyGame):
+    """Снимает игру с учёта (синхронно, чтобы повторные нажатия уже видели «игра завершена»)."""
+    game.phase = "done"
+    SPY_GAMES.pop(game.id, None)
+    if SPY_BY_GROUP.get(game.gid) == game.id:
+        SPY_BY_GROUP.pop(game.gid, None)
+    for uid in game.players:
+        if SPY_BY_USER.get(uid) == game.id:
+            SPY_BY_USER.pop(uid, None)
+    if game.task and game.task is not asyncio.current_task():
+        game.task.cancel()
+
+
+async def spy_clear_markups(game: SpyGame):
+    """Убирает кнопки у всех сообщений игры, чтобы старые кнопки не висели."""
+    for chat_id, mid in list(game.kb_msgs):
+        try:
+            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=mid, reply_markup=None)
+        except TelegramAPIError:
+            pass
+        await asyncio.sleep(0.03)
+    game.kb_msgs.clear()
+
+
+async def spy_close_lobby_msgs(game: SpyGame, text: str):
+    """Заменяет сообщения набора (приглашения и панель ведущего) итоговым текстом, без кнопок."""
+    await gsafe_edit(game.host, game.host_msg, text)
+    for uid, mid in list(game.lobby_msgs.items()):
+        if uid != game.host:
+            await gsafe_edit(uid, mid, text)
+            await asyncio.sleep(0.03)
+
+
+async def spy_abort(game: SpyGame, reason: str):
+    """Отмена игры на любой стадии (ведущий отменил, вышло время, группу удалили, ошибка)."""
+    if game.phase == "done":
+        return
+    was_lobby = game.phase == "lobby"
+    spy_close(game)
+    text = f"❌ Игра «Шпион» отменена: {reason}."
+    if was_lobby:
+        await spy_close_lobby_msgs(game, text)
+        return
+    await spy_clear_markups(game)
+    for uid in game.players:
+        await notify(uid, text)
+        await asyncio.sleep(0.04)
+
+
+async def spy_finish(game: SpyGame, spy_won: bool, reason: str):
+    """Конец игры: раскрывает шпиона и локацию игрокам и зрителям (участникам группы, не игравшим)."""
+    if game.phase == "done":
+        return
+    spy_close(game)
+    text = (f"🕵️ <b>Шпион — игра окончена</b>\n\n{reason}\n\n"
+            f"Шпионом был: <b>{spy_nick(game, game.players[game.spy])}</b>\n"
+            f"Локация: <b>{spy_loc_name(game.loc)}</b>\n\n"
+            + ("🕵️ <b>Победил шпион!</b>" if spy_won else "🎉 <b>Победили игроки!</b>"))
+    await spy_clear_markups(game)
+    for uid in game.players:
+        await notify(uid, text)
+        await asyncio.sleep(0.04)
+    await announce(game.gid, text, exclude=tuple(game.players))
+
+
+async def spy_start(game: SpyGame):
+    game.phase = "play"                # сразу, до любых await: повторное «Начать» уже ничего не сделает
+    game.loc = secrets.randbelow(len(SPY_LOCATIONS))
+    game.spy = secrets.randbelow(len(game.players))
+    game.started.set()
+    run("UPDATE groups SET last_active=? WHERE id=?", (now(), game.gid))   # группа не должна «протухнуть» посреди игры
+    await spy_close_lobby_msgs(game, "🎮 Набор в игру «Шпион» закрыт — игра началась.")
+    for seat, uid in enumerate(game.players):
+        mid = await gsend(uid, spy_role_text(game, seat), spy_role_kb(game, seat), protect=True)
+        if mid:
+            game.kb_msgs.append((uid, mid))
+        await asyncio.sleep(0.04)
+    await announce(game.gid, f"🎮 В группе началась игра «Шпион» ({len(game.players)} игроков). "
+                             "Вы — зритель: наблюдайте за чатом и, пожалуйста, не подсказывайте игрокам.",
+                   exclude=tuple(game.players))
+
+
+async def spy_begin_vote(game: SpyGame):
+    if game.phase != "play":
+        return
+    if not spy_group_alive(game):
+        await spy_abort(game, "группа была удалена")
+        return
+    game.phase = "vote"
+    text = ("🗳 <b>Кто шпион?</b>\nВыберите игрока. Выбор окончательный. "
+            f"Время на голосование — {SPY_VOTE_SEC} сек.")
+    for seat, uid in enumerate(game.players):
+        mid = await gsend(uid, text, spy_vote_kb(game, seat))
+        if mid:
+            game.kb_msgs.append((uid, mid))
+        await asyncio.sleep(0.04)
+    await announce(game.gid, "🗳 В игре «Шпион» началось голосование.", exclude=tuple(game.players))
+
+
+async def spy_tally(game: SpyGame):
+    if game.phase != "vote":
+        return
+    if not spy_group_alive(game):
+        await spy_abort(game, "группа была удалена")
+        return
+    counts = Counter(game.votes.values())
+    board = ("\n".join(f"• {spy_nick(game, game.players[s])} — {n}" for s, n in counts.most_common())
+             or "Никто не проголосовал.")
+    head = f"🗳 <b>Итоги голосования</b>\n{board}\n\n"
+    top = counts.most_common(1)[0][1] if counts else 0
+    leaders = [s for s, n in counts.items() if n == top]
+    if not counts or len(leaders) > 1:
+        await spy_finish(game, True, head + "Голоса разделились — шпиона не вычислили.")
+        return
+    accused = leaders[0]
+    if accused != game.spy:
+        await spy_finish(game, True, head + f"Обвинили <b>{spy_nick(game, game.players[accused])}</b> — "
+                                            "но он не шпион!")
+        return
+    # шпиона вычислили — у него остаётся последний шанс
+    game.phase = "last"
+    text = (head + f"Шпион разоблачён — это <b>{spy_nick(game, game.players[accused])}</b>! "
+                   f"Но у него есть последний шанс: назвать локацию ({SPY_LAST_SEC} сек).")
+    for uid in game.players:
+        if uid == game.players[game.spy]:
+            mid = await gsend(uid, text + "\n\n🔎 Выберите локацию — выбор окончательный:",
+                              spy_guess_kb(game, back=False))
+            if mid:
+                game.kb_msgs.append((uid, mid))
+        else:
+            await notify(uid, text)
+        await asyncio.sleep(0.04)
+    await announce(game.gid, text, exclude=tuple(game.players))
+
+
+async def _spy_lifecycle(game: SpyGame):
+    """Таймеры игры: набор → обсуждение → голосование → (последний шанс шпиона)."""
+    try:
+        try:
+            await asyncio.wait_for(game.started.wait(), SPY_LOBBY_SEC)
+        except asyncio.TimeoutError:
+            await spy_abort(game, "время набора истекло")
+            return
+        try:
+            await asyncio.wait_for(game.vote_now.wait(), SPY_DISCUSS_SEC)
+        except asyncio.TimeoutError:
+            pass
+        await spy_begin_vote(game)
+        if game.phase != "vote":
+            return
+        try:
+            await asyncio.wait_for(game.all_voted.wait(), SPY_VOTE_SEC)
+        except asyncio.TimeoutError:
+            pass
+        await spy_tally(game)
+        if game.phase == "last":
+            await asyncio.sleep(SPY_LAST_SEC)
+            if game.phase == "last":
+                await spy_finish(game, False, "⌛ Шпион не успел назвать локацию.")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("ошибка в игре «Шпион»")
+        await spy_abort(game, "внутренняя ошибка")
+
+
+# ── «Шпион»: нажатия кнопок ──
+async def spy_new(c: CallbackQuery):
+    uid = c.from_user.id
+    err, u, mem = spy_check(uid)
+    if not err and not RELAY_ON and not is_admin(uid):
+        err = "⏸ Пересылка сообщений приостановлена администрацией — играть пока нельзя."
+    if not err and (uid in SPY_BY_USER):
+        err = "Вы уже участвуете в игре."
+    if not err and mem["group_id"] in SPY_BY_GROUP:
+        err = "В вашей группе уже идёт игра или набор."
+    if not err and c.message is None:
+        err = "Кнопка устарела — откройте /games заново."
+    if err:
+        await c.answer(err, show_alert=True)
+        return
+    gid = mem["group_id"]
+    game_id = secrets.token_hex(3)
+    while game_id in SPY_GAMES:
+        game_id = secrets.token_hex(3)
+    game = SpyGame(id=game_id, gid=gid, title=mem["title"], host=uid)
+    game.players.append(uid)
+    game.nicks[uid] = u["nick"]
+    game.host_msg = c.message.message_id
+    SPY_GAMES[game.id] = game
+    SPY_BY_GROUP[gid] = game.id
+    SPY_BY_USER[uid] = game.id
+    game.task = asyncio.create_task(_spy_lifecycle(game))
+    await c.answer()
+    await edit(c, spy_lobby_text(game), spy_host_kb(game))      # карточка игры превращается в панель ведущего
+    for rid in active_recipients(gid, exclude=(uid,)):          # приглашение — тем, у кого группа активна
+        if game.phase != "lobby":
+            break
+        mid = await gsend(rid, spy_invite_text(game), spy_invite_kb(game))
+        if mid:
+            game.lobby_msgs.setdefault(rid, mid)
+        await asyncio.sleep(0.04)
+
+
+async def spy_refresh_host(game: SpyGame):
+    await gsafe_edit(game.host, game.host_msg, spy_lobby_text(game), spy_host_kb(game))
+
+
+async def spy_join(c: CallbackQuery, game: SpyGame, parts: list):
+    uid = c.from_user.id
+    if game.phase != "lobby":
+        await c.answer("Набор в эту игру уже закрыт.", show_alert=True)
+        await gedit_kb(c, None)
+        return
+    if uid in game.players:
+        await c.answer("Вы уже в игре.")
+        return
+    if uid in SPY_BY_USER:
+        await c.answer("Вы уже участвуете в другой игре.", show_alert=True)
+        return
+    if len(game.players) >= SPY_MAX_PLAYERS:
+        await c.answer("Игра заполнена.", show_alert=True)
+        return
+    err, u, mem = spy_check(uid, game.gid)
+    if err:
+        await c.answer(err, show_alert=True)
+        return
+    game.players.append(uid)                 # без await между проверкой и записью — гонки не будет
+    game.nicks[uid] = u["nick"]
+    SPY_BY_USER[uid] = game.id
+    game.lobby_msgs[uid] = c.message.message_id
+    await c.answer("Вы в игре!")
+    await edit(c, spy_joined_text(game), spy_joined_kb(game))
+    await spy_refresh_host(game)
+
+
+async def spy_leave(c: CallbackQuery, game: SpyGame, parts: list):
+    uid = c.from_user.id
+    if game.phase != "lobby":
+        await c.answer("Игра уже началась.", show_alert=True)
+        return
+    if uid == game.host:
+        await c.answer("Ведущий может только отменить игру.", show_alert=True)
+        return
+    if uid not in game.players:
+        await c.answer()
+        return
+    game.players.remove(uid)
+    if SPY_BY_USER.get(uid) == game.id:
+        SPY_BY_USER.pop(uid, None)
+    await c.answer("Вы вышли из игры")
+    await edit(c, spy_invite_text(game), spy_invite_kb(game))   # сообщение снова становится приглашением
+    await spy_refresh_host(game)
+
+
+async def spy_go(c: CallbackQuery, game: SpyGame, parts: list):
+    if c.from_user.id != game.host:
+        await c.answer("Начать игру может только ведущий.", show_alert=True)
+        return
+    if game.phase != "lobby":
+        await c.answer("Игра уже началась.")
+        return
+    if len(game.players) < SPY_MIN_PLAYERS:
+        await c.answer(f"Нужно минимум {SPY_MIN_PLAYERS} игрока — сейчас {len(game.players)}.", show_alert=True)
+        return
+    await c.answer("Начинаем!")
+    await spy_start(game)
+
+
+async def spy_cancel_cb(c: CallbackQuery, game: SpyGame, parts: list):
+    if c.from_user.id != game.host:
+        await c.answer("Отменить может только ведущий.", show_alert=True)
+        return
+    if game.phase != "lobby":
+        await c.answer("Игра уже началась.")
+        return
+    await c.answer("Игра отменена")
+    await spy_abort(game, "ведущий отменил набор")
+
+
+async def spy_vote_req(c: CallbackQuery, game: SpyGame, parts: list):
+    uid = c.from_user.id
+    if uid not in game.players:
+        await c.answer("Вы не участвуете в этой игре.", show_alert=True)
+        return
+    if game.phase != "play":
+        await c.answer("Сейчас это недоступно.", show_alert=True)
+        return
+    game.vote_req.add(uid)
+    need = spy_need_votes(game)
+    await c.answer(f"Голосов за раннее голосование: {len(game.vote_req)}/{need}")
+    if len(game.vote_req) >= need:
+        game.vote_now.set()
+
+
+async def spy_vote(c: CallbackQuery, game: SpyGame, parts: list):
+    uid = c.from_user.id
+    seat = int(parts[3])
+    if uid not in game.players:
+        await c.answer("Вы не участвуете в этой игре.", show_alert=True)
+        return
+    if game.phase != "vote":
+        await c.answer("Голосование сейчас не идёт.", show_alert=True)
+        return
+    if uid in game.votes:
+        await c.answer("Вы уже проголосовали.")
+        return
+    if not 0 <= seat < len(game.players) or seat == game.players.index(uid):
+        await c.answer("Так проголосовать нельзя.", show_alert=True)
+        return
+    game.votes[uid] = seat
+    await c.answer("Голос принят")
+    await edit(c, f"🗳 Вы проголосовали за <b>{spy_nick(game, game.players[seat])}</b>. "
+                  f"Ждём остальных ({len(game.votes)}/{len(game.players)}).")
+    if len(game.votes) >= len(game.players):
+        game.all_voted.set()
+
+
+async def spy_guess_open(c: CallbackQuery, game: SpyGame, parts: list):
+    if not spy_is_spy(game, c.from_user.id) or game.phase not in ("play", "vote", "last"):
+        await c.answer("Сейчас это недоступно.", show_alert=True)
+        return
+    await gedit_kb(c, spy_guess_kb(game, back=game.phase != "last"))
+    await c.answer("Выберите локацию")
+
+
+async def spy_guess_back(c: CallbackQuery, game: SpyGame, parts: list):
+    if not spy_is_spy(game, c.from_user.id) or game.phase == "done":
+        await c.answer()
+        return
+    await gedit_kb(c, spy_role_kb(game, game.spy))
+    await c.answer()
+
+
+async def spy_guess_confirm(c: CallbackQuery, game: SpyGame, parts: list):
+    i = int(parts[3])
+    if not spy_is_spy(game, c.from_user.id) or game.phase not in ("play", "vote", "last") \
+            or not 0 <= i < len(SPY_LOCATIONS):
+        await c.answer("Сейчас это недоступно.", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [gbtn(f"✅ Да, {spy_loc_name(i)}", f"sp:gy:{game.id}:{i}")],
+        [gbtn("↩️ Выбрать другую", f"sp:g:{game.id}")]])
+    await gedit_kb(c, kb)
+    await c.answer("Это окончательный выбор")
+
+
+async def spy_guess_final(c: CallbackQuery, game: SpyGame, parts: list):
+    i = int(parts[3])
+    if not spy_is_spy(game, c.from_user.id) or game.phase not in ("play", "vote", "last") \
+            or not 0 <= i < len(SPY_LOCATIONS):
+        await c.answer("Сейчас это недоступно.", show_alert=True)
+        return
+    await c.answer()
+    if i == game.loc:
+        await spy_finish(game, True, "🔎 Шпион угадал локацию!")
+    else:
+        await spy_finish(game, False, f"🔎 Шпион назвал «{esc(SPY_LOCATIONS[i][1])}» — и ошибся.")
+
+
+SPY_ACTIONS = {
+    "j": spy_join, "l": spy_leave, "go": spy_go, "x": spy_cancel_cb, "vr": spy_vote_req, "v": spy_vote,
+    "g": spy_guess_open, "gb": spy_guess_back, "gc": spy_guess_confirm, "gy": spy_guess_final,
+}
+
+
+@router.callback_query(F.data.startswith("sp:"))
+async def spy_cb(c: CallbackQuery):
+    parts = c.data.split(":")
+    act = parts[1] if len(parts) > 1 else ""
+    try:
+        if act == "home":
+            text, kb = spy_home_view(c.from_user.id)
+            await edit(c, text, kb)
+            await c.answer()
+        elif act == "rules":
+            await edit(c, spy_rules_text(),
+                       InlineKeyboardMarkup(inline_keyboard=[[gbtn("◀️ Назад", "sp:home")]]))
+            await c.answer()
+        elif act == "new":
+            await spy_new(c)
+        elif act in SPY_ACTIONS:
+            game = SPY_GAMES.get(parts[2])
+            if game is None:                    # игра закончилась (или бот перезапускался)
+                await c.answer("Эта игра уже завершена.", show_alert=True)
+                await gedit_kb(c, None)
+                return
+            await SPY_ACTIONS[act](c, game, parts)
+        else:
+            await c.answer("Кнопка устарела", show_alert=True)
+    except (ValueError, IndexError):
+        await c.answer("Кнопка устарела — откройте /games заново", show_alert=True)
 
 
 # ───────────────────────── Ввод ника / названия / описания и обычные сообщения ─────────────────────────
