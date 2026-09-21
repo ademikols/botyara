@@ -5,31 +5,61 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramAPIError
 
-# Импортируем функции из основного файла main.py
-from main import ensure_user, get_member, active_recipients, tag, one
+# ВАЖНО: импортируем модуль целиком (а не "from main import ..."),
+# т.к. main.py будет импортировать games_router из этого файла.
+# При "from main import x" на этапе загрузки games.py main.py ещё не
+# успеет доопределить свои функции -> ImportError (circular import).
+# При "import main" мы просто получаем ссылку на модуль и читаем его
+# атрибуты (main.ensure_user и т.д.) только в момент вызова хендлеров,
+# когда main.py уже полностью загружен.
+import main
 
 games_router = Router()
 games_router.message.filter(F.chat.type == "private")
 
+MAX_PLAYERS = 15
+MIN_PLAYERS = 3
+
 # Расширенные наборы слов для игры "Шпион"
 SPY_PACKS = {
     "clash": {
-        "name": "Clash Royale (Все карты)",
+        "name": "🏰 Clash Royale",
         "words": [
-            "Рыцарь", "Рыцарь на гончей", "Лучезарный дракон", "Лучицы", "Гоблины", "Копейщики", "Гигант",
-            "ПЕККА", "Мини ПЕККА", "Всадник на кабане", "Бревно", "Спарки", "Мегарыцарь", "Принцесса",
-            "Варвары", "Элитные варвары", "Дракончик", "Ведьма", "Ночная ведьма", "Шар", "Шахтер",
-            "Бандитка", "Громовержец", "Пламенный дракон", "Кладбище", "Вышибала", "Палач", "Торнадо",
-            "Яд", "Ракета", "Мортира", "Электродракон", "Королевский гигант", "Всадница на баране",
-            "Эликсирный голем", "Боевой целитель", "Феникс", "Монах", "Рунный гигант", "Берсерк",
-            "Босс Бандитка", "Егерь", "Землетрясение", "Магический лучник", "Королева лучниц",
-            "Золотой рыцарь", "Скелет в бочке", "Подрывник", "Адская башня", "Тесла", "Пушка", "Арбалет",
-            "Печь", "Хижина гоблинов", "Хижина варваров", "Клон", "Заморозка", "Молния", "Зеркало",
-            "Зап", "Снежок", "Стрелы", "Огненный шар", "Скелеты", "Армия скелетов", "Стражи", "Ледяной дух",
-            "Огненный дух", "Электрический дух", "Дух исцеления", "Ледяной колдун", "Колдун", "Пламенный колдун",
-            "Страж", "Королевские рекруты", "Повозка с пушкой", "Пламенный голем", "Гигантский скелет",
-            "Маленький дракон", "Скелетный дракон", "Пламенная башня", "Сборщик эликсира", "Гоблинская бочка",
-            "Гоблин-бурильщик", "Стеклорез", "Стенари", "Королевские призраки", "Королевский призрак"
+
+        # --- Обычные ---
+        "Скелеты", "Ледяной дух", "Огненный дух", "Электрический дух", "Дух исцеления",
+        "Разряд", "Гигантский снежок", "Стрелы", "Гоблины", "Гоблины-копейщики", "Подрывник",
+        "Летучие мыши", "Миньоны", "Банда гоблинов", "Пушка", "Тесла", "Мортира",
+        "Варвары", "Элитные варвары", "Королевские рекруты", "Королевский гигант",
+        "Орда миньонов", "Бочка со скелетами", "Гоблин с дротиками", "Костяные драконы",
+        "Рыцарь", "Лучницы", "Огненная лучница", "Королевская почта", "Разбойники",
+        "Подозрительный куст",
+
+        # --- Редкие ---
+        "Мегаминьон", "Всадник на кабане", "Гигант", "Валькирия", "Мушкетёр", "Колдун",
+        "Мини-П.Е.К.К.А.", "Боевой таран", "Ледяной голем", "Три мушкетёра",
+        "Огненный шар", "Ракета", "Землетрясение", "Печь", "Хижина гоблинов",
+        "Хижина варваров", "Сборщик эликсира", "Адская башня", "Целительница-воин",
+        "Эликсирный голем", "Гоблинский бур", "Башня-бомбёжка", "Королевские кабаны",
+        "Летучка", "Клетка с гоблином", "Надгробие", "Гоблин-подрывник",
+
+        # --- Эпические ---
+        "Гоблинская бочка", "Стражи", "Армия скелетов", "Зеркало", "Клон",
+        "Заморозка", "Молния", "Торнадо", "Стенобои", "Дракончик", "Ведьма",
+        "Вышибала", "П.Е.К.К.А.", "Гигантский скелет", "Шар", "Принц", "Тёмный принц",
+        "Охотник", "Палач", "Повозка с пушкой", "Электродракон", "Арбалет",
+        "Гоблин-гигант", "Голем", "Яд", "Варварская бочка", "Электрогигант",
+        "Ярость", "Пустота", "Проклятие гоблинов", "Гоблинская машина",
+
+        # --- Легендарные ---
+        "Бревно", "Принцесса", "Шахтёр", "Ледяной колдун", "Пламенный дракон",
+        "Громовержец", "Бандитка", "Ночная ведьма", "Магический лучник", "Кладбище",
+        "Спарки", "Мегарыцарь", "Всадница на баране", "Королевский призрак", "Рыбак",
+        "Феникс", "Ведьмина бабушка", "Дровосек", "Адская гончая",
+
+        # --- Чемпионы ---
+        "Золотой рыцарь", "Королева лучниц", "Король скелетов", "Монах",
+        "Шустрый шахтёр", "Маленький Принц"
         ]
     },
     "mc": {
@@ -98,6 +128,7 @@ SPY_PACKS = {
 
 active_lobbies = {}
 
+
 def get_lobby_text(gid: int, title: str) -> str:
     lobby = active_lobbies[gid]
     pack_name = SPY_PACKS[lobby['pack']]['name']
@@ -105,7 +136,8 @@ def get_lobby_text(gid: int, title: str) -> str:
     return (f"🎮 <b>Лобби: Шпион</b>\n"
             f"Пак: <b>{pack_name}</b>\n"
             f"Группа: <b>{title}</b>\n\n"
-            f"👥 Участники ({len(lobby['players'])}/15):\n{players_list}")
+            f"👥 Участники ({len(lobby['players'])}/{MAX_PLAYERS}):\n{players_list}")
+
 
 def get_lobby_kb(gid: int, is_initiator: bool) -> InlineKeyboardMarkup:
     kb = [[InlineKeyboardButton(text="➕ Присоединиться", callback_data=f"game:spy:join:{gid}")]]
@@ -114,17 +146,19 @@ def get_lobby_kb(gid: int, is_initiator: bool) -> InlineKeyboardMarkup:
         kb.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"game:spy:cancel:{gid}")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+
 async def update_lobby_messages(gid: int, bot: Bot):
-    if gid not in active_lobbies: return
+    if gid not in active_lobbies:
+        return
     lobby = active_lobbies[gid]
-    g = one("SELECT title FROM groups WHERE id=?", (gid,))
+    g = main.one("SELECT title FROM groups WHERE id=?", (gid,))
     title = esc(g["title"]) if g else "Группа"
-    
+
     for rid, msg_id in list(lobby['msg_ids'].items()):
         is_init = (rid == lobby['initiator'])
         try:
             await bot.edit_message_text(
-                text=tag(rid, title) + get_lobby_text(gid, title),
+                text=main.tag(rid, title) + get_lobby_text(gid, title),
                 chat_id=rid,
                 message_id=msg_id,
                 reply_markup=get_lobby_kb(gid, is_init)
@@ -132,17 +166,19 @@ async def update_lobby_messages(gid: int, bot: Bot):
         except TelegramAPIError:
             pass
 
+
 @games_router.message(F.text == "🎮 Игры")
 async def cmd_games(m: Message):
-    mem = get_member(m.from_user.id)
+    mem = main.get_member(m.from_user.id)
     if not mem:
         await m.answer("🗂 Сначала выберите или создайте группу для игры!")
         return
-        
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🕵️‍♂️ Шпион", callback_data="game:spy:packs")]
     ])
     await m.answer("🎮 <b>Игры в группе</b>\nВыберите игру для запуска в вашей текущей активной группе:", reply_markup=kb)
+
 
 @games_router.callback_query(F.data == "game:spy:packs")
 async def spy_packs(c: CallbackQuery):
@@ -150,8 +186,14 @@ async def spy_packs(c: CallbackQuery):
     for p_id, p_data in SPY_PACKS.items():
         kb.append([InlineKeyboardButton(text=p_data["name"], callback_data=f"game:spy:start:{p_id}")])
     kb.append([InlineKeyboardButton(text="↩️ Назад", callback_data="game:main")])
-    await c.message.edit_text("🕵️‍♂️ <b>Игра: Шпион</b>\n\nШпион не знает загаданного слова. Все задают друг другу вопросы, чтобы вычислить шпиона. Шпион должен догадаться, что это за слово.\n\nВыберите набор слов (пак):", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await c.message.edit_text(
+        "🕵️‍♂️ <b>Игра: Шпион</b>\n\n"
+        "Шпион не знает загаданного слова. Все задают друг другу вопросы, чтобы вычислить шпиона. "
+        "Шпион должен догадаться, что это за слово.\n\nВыберите набор слов (пак):",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
     await c.answer()
+
 
 @games_router.callback_query(F.data == "game:main")
 async def game_main(c: CallbackQuery):
@@ -161,87 +203,99 @@ async def game_main(c: CallbackQuery):
     await c.message.edit_text("🎮 <b>Игры в группе</b>\nВыберите игру:", reply_markup=kb)
     await c.answer()
 
+
 @games_router.callback_query(F.data.startswith("game:spy:start:"))
 async def spy_start_lobby(c: CallbackQuery, bot: Bot):
     uid = c.from_user.id
     pack_id = c.data.split(":")[3]
-    mem = get_member(uid)
-    
+    if pack_id not in SPY_PACKS:
+        await c.answer("Неизвестный набор слов.", show_alert=True)
+        return
+
+    mem = main.get_member(uid)
+
     if not mem:
         await c.answer("У вас нет активной группы!", show_alert=True)
         return
-        
+
     gid = mem["group_id"]
     if gid in active_lobbies:
         await c.answer("В этой группе уже собирается лобби!", show_alert=True)
         return
 
-    u = ensure_user(uid)
+    u = main.ensure_user(uid)
     active_lobbies[gid] = {
         'pack': pack_id,
         'initiator': uid,
-        'players': {uid: u.get("nick", "Игрок")},
+        'players': {uid: (u["nick"] if u and u["nick"] else "Игрок")},
         'msg_ids': {}
     }
-    
+
     title = esc(mem['title'])
-    recipients = active_recipients(gid)
-    
+    recipients = main.active_recipients(gid)
+
     for rid in recipients:
-        u_rid = ensure_user(rid)
-        if not u_rid or not u_rid["nick"]: continue
-        
+        u_rid = main.ensure_user(rid)
+        if not u_rid or not u_rid["nick"]:
+            continue
+
         is_init = (rid == uid)
         kb = get_lobby_kb(gid, is_init)
-        
+
         try:
-            msg = await bot.send_message(rid, tag(rid, title) + get_lobby_text(gid, title), reply_markup=kb)
+            msg = await bot.send_message(rid, main.tag(rid, title) + get_lobby_text(gid, title), reply_markup=kb)
             active_lobbies[gid]['msg_ids'][rid] = msg.message_id
         except TelegramAPIError:
             pass
-        
+
     await c.answer()
+
 
 @games_router.callback_query(F.data.startswith("game:spy:join:"))
 async def spy_join(c: CallbackQuery, bot: Bot):
     uid = c.from_user.id
     gid = int(c.data.split(":")[3])
-    
+
     if gid not in active_lobbies:
         await c.answer("Лобби уже закрыто или игра началась.", show_alert=True)
         return
-        
+
     lobby = active_lobbies[gid]
     if uid in lobby['players']:
         await c.answer("Вы уже в лобби!", show_alert=True)
         return
-        
-    u = ensure_user(uid)
+
+    if len(lobby['players']) >= MAX_PLAYERS:
+        await c.answer(f"Лобби заполнено (максимум {MAX_PLAYERS} игроков)!", show_alert=True)
+        return
+
+    u = main.ensure_user(uid)
     lobby['players'][uid] = u["nick"]
     await c.answer("Вы присоединились!")
-    
+
     await update_lobby_messages(gid, bot)
+
 
 @games_router.callback_query(F.data.startswith("game:spy:run:"))
 async def spy_run(c: CallbackQuery, bot: Bot):
     uid = c.from_user.id
     gid = int(c.data.split(":")[3])
-    
+
     if gid not in active_lobbies or active_lobbies[gid]['initiator'] != uid:
         await c.answer("У вас нет прав для старта этой игры.", show_alert=True)
         return
-        
+
     lobby = active_lobbies[gid]
     players = list(lobby['players'].keys())
-    
-    if len(players) < 3:
-        await c.answer("Для игры в Шпиона нужно минимум 3 участника!", show_alert=True)
+
+    if len(players) < MIN_PLAYERS:
+        await c.answer(f"Для игры в Шпиона нужно минимум {MIN_PLAYERS} участника!", show_alert=True)
         return
-        
+
     pack_id = lobby['pack']
     word = random.choice(SPY_PACKS[pack_id]['words'])
     spy_id = random.choice(players)
-    
+
     for pid in players:
         if pid == spy_id:
             text = "🕵️‍♂️ <b>Вы — Шпион!</b>\nПопытайтесь узнать слово из обсуждения участников группы и не спалиться."
@@ -251,45 +305,47 @@ async def spy_run(c: CallbackQuery, bot: Bot):
             await bot.send_message(pid, text)
         except TelegramAPIError:
             pass
-            
-    g = one("SELECT title FROM groups WHERE id=?", (gid,))
+
+    g = main.one("SELECT title FROM groups WHERE id=?", (gid,))
     title = esc(g["title"]) if g else "Группа"
-    
+
     for rid, msg_id in lobby['msg_ids'].items():
         try:
             await bot.edit_message_text(
-                text=tag(rid, title) + "🎮 <b>Игра Шпион началась!</b>\nРоли разосланы, общайтесь прямо здесь, в группе.",
+                text=main.tag(rid, title) + "🎮 <b>Игра Шпион началась!</b>\nРоли разосланы, общайтесь прямо здесь, в группе.",
                 chat_id=rid,
                 message_id=msg_id
             )
         except TelegramAPIError:
             pass
-            
+
     del active_lobbies[gid]
     await c.answer("Игра началась!")
+
 
 @games_router.callback_query(F.data.startswith("game:spy:cancel:"))
 async def spy_cancel(c: CallbackQuery, bot: Bot):
     uid = c.from_user.id
     gid = int(c.data.split(":")[3])
-    
+
     if gid not in active_lobbies or active_lobbies[gid]['initiator'] != uid:
         await c.answer("У вас нет прав.", show_alert=True)
         return
-        
+
     lobby = active_lobbies[gid]
-    g = one("SELECT title FROM groups WHERE id=?", (gid,))
+    g = main.one("SELECT title FROM groups WHERE id=?", (gid,))
     title = esc(g["title"]) if g else "Группа"
-    
+
     for rid, msg_id in lobby['msg_ids'].items():
         try:
             await bot.edit_message_text(
-                text=tag(rid, title) + "🛑 <b>Сбор лобби отменен организатором.</b>",
+                text=main.tag(rid, title) + "🛑 <b>Сбор лобби отменен организатором.</b>",
                 chat_id=rid,
                 message_id=msg_id
             )
         except TelegramAPIError:
             pass
-            
+
     del active_lobbies[gid]
     await c.answer("Отменено.")
+
