@@ -1,39 +1,3 @@
-"""
-Бот анонимных групп — aiogram 3, HTML-разметка, SQLite, всё в одном файле.
-
-Запуск:
-    pip install -U aiogram
-    export BOT_TOKEN="123456:ABC..."      # токен от @BotFather
-    export ADMIN_IDS="111111,222222"      # Telegram ID администраторов бота (через запятую)
-    python anon_groups_bot_v3.py
-
-Как это работает: участники пишут боту в личку, бот пересылает сообщение
-всем остальным в активной группе от своего имени с ником отправителя.
-Один человек может состоять максимум в MAX_GROUPS группах и переключаться между ними (/groups).
-Сообщения из группы доходят только тем, у кого она сейчас активна — если человек сидит
-в другой группе, сообщения из фоновой группы к нему не приходят, пока он не переключится.
-В группе не может быть больше MAX_MEMBERS участников. Группы можно делать публичными —
-такие видны всем в каталоге /catalog и через /search_group. Роли: владелец → администратор
-→ модератор → участник; администратор обладает всеми правами владельца, кроме удаления группы
-и передачи владения. Владелец может передать группу другому участнику: /transfer ник
-(или кнопка «Передать владение» в /panel) — бывший владелец становится администратором.
-Ссылки, e-mail и @юзернеймы в сообщениях обезвреживаются (дефанг): текст остаётся, но некликабелен.
-Группы без сообщений INACTIVE_DAYS дней удаляются автоматически.
-/rules — правила, /support — связь с администрацией (раз в сутки, 30–500 символов).
-
-Скрытая админ-панель бота (/admin) доступна только ID из ADMIN_IDS; остальным её команды не
-отвечают ничем. В BotFather их регистрировать не нужно. В панели:
-  • статистика, онлайн и активные группы за 15 минут (/activity);
-  • группы: список, закрытие входа, удаление (/groups_list);
-  • бан / разбан / профиль пользователя (/ban, /unban, /find — по ID или нику);
-  • участники любой группы с их ID и кнопкой «Бан» (/groups_list → «Участники», /gmembers ID_группы);
-  • список всех пользователей с ID (/users) и список забаненных с разбаном (/banned);
-  • настройки прямо из бота, без перезапуска: лимит групп на человека, участников в группе, срок
-    автоудаления + переключатели (регистрация, создание групп, пауза пересылки) — /settings, /limit;
-  • рассылка всем (/broadcast), ответ на обращения из /support, бэкап базы (/backup).
-База старой версии (одна группа на человека / без каталога и ролей) обновляется автоматически
-при запуске.
-"""
 import asyncio
 import logging
 import os
@@ -160,7 +124,8 @@ B_NICK, B_PANEL = "✏️ Сменить ник", "⚙️ Управление"
 B_STATS = "📊 Статистика"
 B_CATALOG = "📂 Каталог"
 B_HELP, B_ABOUT = "❓ Помощь", "ℹ️ О боте"
-MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT}
+B_GAMES = "🎮 Игры"
+MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT, B_GAMES}
 
 # Только публичные команды. Админские (/admin, /statistics, /ban, /unban, /find, /groups_list и др.)
 # сюда НЕ добавляются — они скрыты и работают только для ADMIN_IDS.
@@ -729,8 +694,8 @@ def main_kb(uid: int) -> ReplyKeyboardMarkup:
             [KeyboardButton(text=B_GROUP), KeyboardButton(text=B_GROUPS)],
             [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_STATS)],
             [KeyboardButton(text=B_CATALOG), KeyboardButton(text=B_PANEL)],
-            [KeyboardButton(text=B_NICK), KeyboardButton(text=B_HELP)],
-            [KeyboardButton(text=B_ABOUT)],
+            [KeyboardButton(text=B_GAMES), KeyboardButton(text=B_NICK)],
+            [KeyboardButton(text=B_HELP), KeyboardButton(text=B_ABOUT)],
         ],
         resize_keyboard=True,
         input_field_placeholder=hint[:64],
@@ -3276,6 +3241,13 @@ async def adm_cb(c: CallbackQuery):
     await c.answer()
 
 
+# Игровой модуль импортируем после объявления всех функций main.py.
+# Так games.py может обращаться к main.one(), main.get_member() и т.д. без circular import.
+from games import games_router
+
+def _register_games_router(dp: Dispatcher):
+    dp.include_router(games_router)
+
 # ───────────────────────── Запуск ─────────────────────────
 async def cleanup_loop():
     while True:
@@ -3307,6 +3279,7 @@ async def main():
     dp.callback_query.outer_middleware(SeenMiddleware())
     dp.include_router(admin_router)     # первым: скрытые админ-команды перехватываются раньше основных
     dp.include_router(router)
+    _register_games_router(dp)
     asyncio.create_task(cleanup_loop())
     if not ADMIN_IDS:
         log.warning("ADMIN_IDS не задан — админ-панель и /support недоступны")
@@ -3316,3 +3289,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
