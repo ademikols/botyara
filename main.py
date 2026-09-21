@@ -17,7 +17,11 @@
 → модератор → участник; администратор обладает всеми правами владельца, кроме удаления группы
 и передачи владения. Владелец может передать группу другому участнику: /transfer ник
 (или кнопка «Передать владение» в /panel) — бывший владелец становится администратором.
-Ссылки, e-mail и @юзернеймы в сообщениях обезвреживаются (дефанг): текст остаётся, но некликабелен.
+Ссылки, e-mail и @юзернеймы в сообщениях остаются в тексте как есть, но становятся «обычным»
+текстом: не синие и не нажимаются (в них вставляются невидимые символы нулевой ширины).
+Настройки группы (/panel, только владелец и администраторы): защита от пересылки, запрет скриншотов,
+медиа, каталог, вход и т.д. Отдельному участнику можно запретить медиа: /nomedia ник (или свайпом
+на его сообщение), вернуть — /allowmedia. Доступно только владельцу и администраторам группы.
 Группы без сообщений INACTIVE_DAYS дней удаляются автоматически.
 /rules — правила, /support — связь с администрацией (раз в сутки, 30–500 символов).
 
@@ -187,6 +191,8 @@ COMMANDS = [
     ("unkick", "Разблокировать участника"),
     ("mute", "Заглушить"),
     ("unmute", "Снять мут"),
+    ("nomedia", "Запретить участнику медиа"),
+    ("allowmedia", "Разрешить участнику медиа"),
     ("link", "Ссылка-приглашение"),
     ("newlink", "Обновить ссылку"),
     ("adm", "Назначить администратора / модератора"),
@@ -223,6 +229,9 @@ def help_text() -> str:
 Просто пишите боту — сообщение уйдёт всем в активной группе под вашим ником.
 Сообщения других ваших групп при этом не приходят — переключайтесь между ними через /groups.
 
+<b>Ссылки, почта и @юзернеймы</b>
+Они не пропадают из сообщений — текст остаётся ровно таким, как вы написали, но выглядит как обычный (не синий) и не нажимается: ни ссылки, ни e-mail, ни @юзернеймы. Чтобы открыть такую ссылку, её нужно переписать вручную — при копировании внутри остаются невидимые символы.
+
 <b>Основное</b>
 /newgroup — создать группу (название — следующим сообщением)
 /groups — мои группы и переключение между ними
@@ -254,11 +263,16 @@ def help_text() -> str:
 <b>Администраторы и владелец</b> (те же права, что у владельца, кроме удаления группы и передачи владения)
 /adm ник — владелец назначает администратора; администратор той же командой назначает модератора
 /unadm ник — соответствующее снятие прав
+/nomedia ник — запретить конкретному участнику отправлять медиа (фото, видео, файлы, голосовые, стикеры); писать текстом он сможет. Можно свайпом на его сообщение
+/allowmedia ник — снова разрешить этому участнику медиа
 /rename — сменить название группы
 /description — сменить описание группы (видно в каталоге)
 /close_group — закрыть вход (новые участники не смогут войти)
 /open_group — снова открыть вход
-/panel — публичность, защита от пересылки, медиа, название, описание, вход, удаление группы
+/panel — публичность, защита от пересылки, запрет скриншотов, медиа для всей группы, название, описание, вход, удаление группы
+
+<b>Про скриншоты</b>
+В /panel есть переключатель «📵 Скриншоты». Он использует встроенную защиту содержимого Telegram, поэтому вместе с ним сообщения нельзя и пересылать. Работает в мобильных приложениях Telegram; на компьютере и при съёмке экрана другим устройством защитить нельзя.
 
 <b>Только владелец</b>
 /transfer ник — передать владение группой другому участнику (вы станете администратором)
@@ -274,8 +288,9 @@ def about_text() -> str:
 • До {MAX_GROUPS} групп на один аккаунт, между ними можно переключаться (/groups)
 • До {MAX_MEMBERS} участников в одной группе
 • Сообщения приходят только из активной группы — остальные группы «молчат» в фоне, пока вы на них не переключитесь
-• Защита от пересылки и сохранения — настройка группы
-• Ссылки, почта и @юзернеймы в сообщениях обезвреживаются: текст виден, но нажать на него нельзя
+• Защита от пересылки и сохранения, запрет скриншотов — настройки группы
+• Владелец и администраторы могут запретить медиа отдельному участнику (/nomedia)
+• Ссылки, почта и @юзернеймы в сообщениях остаются текстом, но не подсвечиваются и не нажимаются
 • Группы без сообщений {INACTIVE_DAYS} дней удаляются
 • Контакты, геопозиция и опросы не передаются, чтобы вас не раскрыть
 • Правка и удаление сообщений у других участников не синхронизируются
@@ -302,6 +317,7 @@ CREATE TABLE IF NOT EXISTS groups(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT, owner_id INTEGER, token TEXT UNIQUE,
     protect INTEGER DEFAULT 1,        -- запрет пересылки и сохранения
+    noscreen INTEGER DEFAULT 0,       -- запрет скриншотов (тоже через защиту содержимого Telegram)
     media INTEGER DEFAULT 1,          -- разрешены ли медиа
     is_public INTEGER DEFAULT 0,      -- видна ли группа в каталоге /catalog
     is_closed INTEGER DEFAULT 0,      -- закрыт ли вход новым участникам
@@ -312,6 +328,7 @@ CREATE TABLE IF NOT EXISTS groups(
 CREATE TABLE IF NOT EXISTS members(
     user_id INTEGER, group_id INTEGER, role TEXT DEFAULT 'member',
     muted_until INTEGER DEFAULT 0, joined INTEGER,
+    nomedia INTEGER DEFAULT 0,        -- 1 — этому участнику запрещено отправлять медиа (/nomedia)
     PRIMARY KEY(user_id, group_id)    -- один человек может состоять в нескольких группах
 );
 CREATE TABLE IF NOT EXISTS kicked_members(
@@ -370,6 +387,8 @@ def migrate():
         db.execute("ALTER TABLE groups ADD COLUMN description TEXT DEFAULT ''")
     if "last_active" not in gcols:
         db.execute("ALTER TABLE groups ADD COLUMN last_active INTEGER DEFAULT 0")
+    if "noscreen" not in gcols:
+        db.execute("ALTER TABLE groups ADD COLUMN noscreen INTEGER DEFAULT 0")
     # Старым группам ставим «активность = сейчас», чтобы они не удалились сразу после обновления.
     db.execute("UPDATE groups SET last_active=? WHERE COALESCE(last_active,0)=0", (int(time.time()),))
 
@@ -392,12 +411,16 @@ def migrate():
         CREATE TABLE members(
             user_id INTEGER, group_id INTEGER, role TEXT DEFAULT 'member',
             muted_until INTEGER DEFAULT 0, joined INTEGER,
+            nomedia INTEGER DEFAULT 0,
             PRIMARY KEY(user_id, group_id)
         );
         INSERT INTO members(user_id, group_id, role, muted_until, joined)
             SELECT user_id, group_id, role, muted_until, joined FROM members_old;
         DROP TABLE members_old;
         """)
+    mcols = {r["name"] for r in db.execute("PRAGMA table_info(members)")}
+    if "nomedia" not in mcols:
+        db.execute("ALTER TABLE members ADD COLUMN nomedia INTEGER DEFAULT 0")
     relay_cols = {r["name"] for r in db.execute("PRAGMA table_info(relay)")}
     if "src_chat_id" not in relay_cols:         # старая база: добавляем связку для нативных reply
         db.executescript("""
@@ -485,8 +508,8 @@ def touch(uid: int):
             _seen_cache[uid] = t
 
 
-MEM_SQL = """SELECT m.user_id, m.group_id, m.role, m.muted_until,
-                    g.title, g.protect, g.media, g.token,
+MEM_SQL = """SELECT m.user_id, m.group_id, m.role, m.muted_until, m.nomedia,
+                    g.title, g.protect, g.noscreen, g.media, g.token,
                     g.is_public, g.is_closed, g.description
              FROM members m JOIN groups g ON g.id = m.group_id
              WHERE m.user_id=?"""
@@ -594,17 +617,21 @@ def wipe_group(gid: int):
     run("DELETE FROM groups WHERE id=?", (gid,))
 
 
-# ───────────────────────── Дефанг ссылок, e-mail и юзернеймов ─────────────────────────
-# Ссылки, домены, IP, e-mail и @юзернеймы не удаляются, а «обезвреживаются»:
-#   https://t.me/bot → hxxps[:]//t[.]me/bot,  @bot → [@]bot,  a@b.com → a[@]b[.]com.
-# Telegram такой текст не превращает в кликабельные ссылки.
-DEFANG_ANY_TLD = False   # True — ломать вообще любое «слово.слово» (надёжнее, но заденет и опечатки без пробела)
+# ───────────────────────── «Обесцвечивание» ссылок, e-mail и юзернеймов ─────────────────────────
+# Ссылки, домены, IP, e-mail и @юзернеймы НЕ ломаются и не заменяются: текст остаётся ровно таким,
+# как его написали (@bot, t.me/bot, a@b.com, https://site.com/x), но Telegram не подсвечивает его
+# синим и не делает нажимаемым — он выглядит как обычный белый/чёрный текст.
+# Достигается это невидимым символом нулевой ширины (U+200B): он вставляется перед точкой,
+# вокруг «@» и после двоеточия в «://». Автоопределение ссылок в Telegram на нём «спотыкается».
+ZW = "\u200b"
+DEFANG_ANY_TLD = True    # True — «обесцвечивать» любое «слово.слово» (невидимо, поэтому безопасно и для опечаток)
 
 _TLDS = ("com|net|org|info|biz|xyz|top|site|online|club|link|store|shop|live|life|world|fun|vip|app|dev|"
          "pro|one|tech|cloud|space|website|click|download|games|today|news|blog|wiki|art|network|agency|"
          "media|team|zone|works|page|ink|icu|host|press|email|chat|social|group|lol|wtf|xxx|"
          "рф|онлайн|сайт")
-_TLD_PART = r"[a-z]{2,24}" if DEFANG_ANY_TLD else r"(?:" + _TLDS + r"|[a-z]{2})"
+_TLD_PART = (r"(?:[a-z]{2,24}|рф|онлайн|сайт)" if DEFANG_ANY_TLD
+             else r"(?:" + _TLDS + r"|[a-z]{2})")
 _PATH = r"(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?"
 _URL = (r"(?:(?:https?|ftp|tg|ton)://[^\s<>\"']+"                          # со схемой
         r"|(?:[\w\-]+\.)+" + _TLD_PART + r"(?![\w\-])" + _PATH +           # домен.зона[/путь]
@@ -618,30 +645,23 @@ _TRAIL_PUNCT = ".,;:!?)»…"
 
 
 def _plan(text: str) -> list:
-    """chunks[i] — то, на что заменяется i-й символ текста (обычно он сам)."""
+    """chunks[i] — то, на что заменяется i-й символ текста (обычно он сам, иногда — он же + невидимый символ)."""
     chunks = list(text)
     for mo in _ANY_RE.finditer(text):
         a, b = mo.span()
         if mo.lastgroup == "mention":
-            chunks[a] = "[@]"
+            chunks[a] = ZW + "@" + ZW
             continue
         while b > a and text[b - 1] in _TRAIL_PUNCT:      # хвостовая пунктуация — не часть ссылки
             b -= 1
-        seg = text[a:b]
-        sch = re.match(r"(?i)(https?|ftp)://", seg)
-        if sch:
-            if sch.group(1).lower() == "ftp":
-                chunks[a + 1] = "x"
-            else:
-                chunks[a + 1] = chunks[a + 2] = "x"
-        k = seg.find("://")
-        if k >= 0:
-            chunks[a + k] = "[:]"
         for i in range(a, b):
-            if text[i] == ".":
-                chunks[i] = "[.]"
-            elif text[i] == "@":                          # @ внутри ссылки/почты тоже ломаем
-                chunks[i] = "[@]"
+            ch = text[i]
+            if ch == ".":
+                chunks[i] = ZW + "."
+            elif ch == "@":                               # @ внутри ссылки/почты
+                chunks[i] = ZW + "@" + ZW
+            elif ch == ":" and text.startswith("://", i):
+                chunks[i] = ":" + ZW
     return chunks
 
 
@@ -658,30 +678,30 @@ def defang_map(text: str):
 
 
 def defang(text: str) -> str:
-    """Обезвреживает ссылки, e-mail и @юзернеймы в тексте (текст сохраняется, но не кликается)."""
+    """Делает ссылки, e-mail и @юзернеймы в тексте «обычным» текстом: виден как написан, но не синий и не нажимается."""
     return defang_map(text)[0] if text else text
 
 
 def parse_title(raw: str):
-    """Название группы: схлопывает пробелы и переводы строк, без эмодзи, ссылки обезврежены.
+    """Название группы: схлопывает пробелы и переводы строк, без эмодзи, ссылки не кликаются.
     Возвращает (название, ошибка)."""
-    title = defang(" ".join((raw or "").split()))
+    title = " ".join((raw or "").split())
     if not title:
         return "", "❌ Название не может быть пустым."
     if EMOJI_RE.search(title):
         return "", "🚫 В названии группы нельзя использовать эмодзи."
     if len(title) > TITLE_MAX:
         return "", f"✂️ Слишком длинное название: максимум {TITLE_MAX} символов, у вас {len(title)}."
-    return title, None
+    return defang(title), None
 
 
 def parse_desc(raw: str):
-    """Описание группы (для каталога): схлопывает пробелы, ссылки обезврежены, может быть пустым.
+    """Описание группы (для каталога): схлопывает пробелы, ссылки не кликаются, может быть пустым.
     Возвращает (текст, ошибка)."""
-    desc = defang(" ".join((raw or "").split()))
+    desc = " ".join((raw or "").split())
     if len(desc) > DESC_MAX:
         return "", f"✂️ Слишком длинное описание: максимум {DESC_MAX} символов, у вас {len(desc)}."
-    return desc, None
+    return defang(desc), None
 
 
 def group_locked(g) -> bool:
@@ -772,7 +792,11 @@ def panel_text(mem) -> str:
             f"Вход: {'закрыт' if mem['is_closed'] else 'открыт'}"
             f"{desc}\n\n"
             "🛡 Защита — сообщения нельзя пересылать и сохранять\n"
-            "🖼 Медиа — можно ли слать фото, видео и файлы")
+            "📵 Скриншоты — запрет скриншотов (использует ту же защиту Telegram, поэтому "
+            "заодно запрещает пересылку; работает в мобильных приложениях)\n"
+            "🖼 Медиа — можно ли слать фото, видео и файлы всей группе\n\n"
+            "Запретить медиа одному участнику: /nomedia ник (или свайпом на его сообщение), "
+            "вернуть — /allowmedia")
 
 
 def panel_kb(mem) -> InlineKeyboardMarkup:
@@ -784,6 +808,9 @@ def panel_kb(mem) -> InlineKeyboardMarkup:
                    InlineKeyboardButton(text="📝 Описание", callback_data=f"p:desc:{gid}")])
         kb.append([InlineKeyboardButton(
             text=f"🛡 Защита от пересылки: {'вкл' if mem['protect'] else 'выкл'}", callback_data=f"p:protect:{gid}")])
+        kb.append([InlineKeyboardButton(
+            text=f"📵 Скриншоты: {'запрещены' if mem['noscreen'] else 'разрешены'}",
+            callback_data=f"p:noscreen:{gid}")])
         kb.append([InlineKeyboardButton(
             text=f"🖼 Медиа: {'разрешены' if mem['media'] else 'запрещены'}", callback_data=f"p:media:{gid}")])
         kb.append([InlineKeyboardButton(
@@ -988,7 +1015,7 @@ def find_kicked_target(m: Message, args: list, gid: int):
 
 
 async def mod_ctx(m: Message, command: CommandObject, owner_only: bool = False):
-    """Общая проверка для /kick /mute /unmute /mod /unmod. Вернёт (я, цель, аргументы) или None.
+    """Общая проверка для /kick /mute /unmute /mod /unmod /nomedia /allowmedia. Вернёт (я, цель, аргументы) или None.
     При ответе на сообщение действует в той группе, откуда оно пришло, — даже если она не активная.
     Нельзя действовать против участника с такой же или более высокой ролью (кроме владельца)."""
     mem = await staff(m, owner_only, reply_group(m))
@@ -1029,10 +1056,10 @@ def _from_units(s: str) -> str:
 
 
 def to_html(m: Message) -> str:
-    """Текст (или подпись) сообщения в HTML-разметке с обезвреженными ссылками, почтой и @юзернеймами.
-    Дефанг делается по ПРОСТОМУ тексту, а не по готовому HTML: иначе <b>t</b>.me/x проскакивал бы —
-    теги разрезали ссылку, а Telegram ищет ссылки именно в простом тексте. Форматирование
-    (offset/length) при этом пересчитывается под удлинившийся текст."""
+    """Текст (или подпись) сообщения в HTML-разметке, где ссылки, почта и @юзернеймы остаются текстом,
+    но не подсвечиваются и не нажимаются. Дефанг делается по ПРОСТОМУ тексту, а не по готовому HTML:
+    иначе <b>t</b>.me/x проскакивал бы — теги разрезали ссылку, а Telegram ищет ссылки именно в простом
+    тексте. Форматирование (offset/length) при этом пересчитывается под текст с невидимыми символами."""
     raw = m.text or m.caption or ""
     if not raw:
         return ""
@@ -1087,7 +1114,9 @@ async def relay(m: Message, u, mem):
     Если это ответ на ранее пересланное сообщение — у каждого получателя оно уходит тоже
     нативным Telegram-reply на его копию того же сообщения (без текстовых вставок вида
     «в ответ на…»)."""
-    protect = bool(mem["protect"])
+    # Telegram умеет запрещать пересылку/сохранение и (в мобильных приложениях) скриншоты одним
+    # механизмом — protect_content. Поэтому включён любой из двух переключателей группы → защита включена.
+    protect = bool(mem["protect"] or mem["noscreen"])
     gid = mem["group_id"]
     src_chat_id, src_msg_id = m.chat.id, m.message_id
 
@@ -1404,7 +1433,9 @@ async def cmd_group(m: Message):
         f"В каталоге: {'да' if mem['is_public'] else 'нет'}\n"
         f"Вход: {'закрыт' if mem['is_closed'] else 'открыт'}\n"
         f"Защита от пересылки: {'вкл' if mem['protect'] else 'выкл'}\n"
-        f"Медиа: {'разрешены' if mem['media'] else 'запрещены'}\n"
+        f"Скриншоты: {'запрещены' if mem['noscreen'] else 'разрешены'}\n"
+        f"Медиа: {'разрешены' if mem['media'] else 'запрещены'}"
+        f"{' (вам лично запрещены)' if mem['nomedia'] else ''}\n"
         f"Ваших групп: {count_groups(u['user_id'])} из {MAX_GROUPS} — переключение: /groups")
 
 
@@ -1419,13 +1450,14 @@ async def cmd_members(m: Message):
         await m.answer(no_group_text(u["user_id"]))
         return
     lines = []
-    for r in many("""SELECT u.user_id, u.nick, m.role, m.muted_until
+    for r in many("""SELECT u.user_id, u.nick, m.role, m.muted_until, m.nomedia
                      FROM members m JOIN users u ON u.user_id = m.user_id
                      WHERE m.group_id=?
                      ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1
                                           WHEN 'moderator' THEN 2 ELSE 3 END, u.nick_lc""",
                   (mem["group_id"],)):
-        tags = (" (вы)" if r["user_id"] == u["user_id"] else "") + (" 🔇" if r["muted_until"] > now() else "")
+        tags = ((" (вы)" if r["user_id"] == u["user_id"] else "") + (" 🔇" if r["muted_until"] > now() else "")
+                + (" 🖼🚫" if r["nomedia"] else ""))
         lines.append(f"{ROLE_ICON[r['role']]} {esc(r['nick'])}{tags}")
     await m.answer(f"📋 <b>Участники «{esc(mem['title'])}»</b> ({count_members(mem['group_id'])}/{MAX_MEMBERS})\n"
                    + "\n".join(lines)[:3700])
@@ -1669,6 +1701,43 @@ async def cmd_unmute(m: Message, command: CommandObject):
     await notify(t["user_id"], f"🔊 В группе «{title}» мут снят — можно писать.")
 
 
+@router.message(Command("nomedia"))
+async def cmd_nomedia(m: Message, command: CommandObject):
+    """Запрещает ОДНОМУ участнику отправлять медиа (текст ему остаётся доступен).
+    Только владелец и администраторы — ответом (свайпом) на сообщение участника или по нику."""
+    ctx = await mod_ctx(m, command, owner_only=True)
+    if not ctx:
+        return
+    mem, t, _ = ctx
+    cur = one("SELECT nomedia FROM members WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+    if cur and cur["nomedia"]:
+        await m.answer(f"🖼 У {esc(t['nick'])} медиа и так запрещены. Вернуть: /allowmedia")
+        return
+    run("UPDATE members SET nomedia=1 WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+    title = esc(mem["title"])
+    await m.answer(f"🖼🚫 {esc(t['nick'])} больше не может отправлять медиа в группе «{title}» — только текст. "
+                   "Вернуть: /allowmedia")
+    await notify(t["user_id"], f"🖼🚫 В группе «{title}» вам запретили отправлять медиа "
+                               "(фото, видео, файлы, голосовые, стикеры). Писать текстом можно.")
+
+
+@router.message(Command("allowmedia"))
+async def cmd_allowmedia(m: Message, command: CommandObject):
+    """Снимает запрет медиа, поставленный /nomedia. Только владелец и администраторы."""
+    ctx = await mod_ctx(m, command, owner_only=True)
+    if not ctx:
+        return
+    mem, t, _ = ctx
+    cur = one("SELECT nomedia FROM members WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+    if not cur or not cur["nomedia"]:
+        await m.answer(f"🖼 У {esc(t['nick'])} нет личного запрета на медиа.")
+        return
+    run("UPDATE members SET nomedia=0 WHERE user_id=? AND group_id=?", (t["user_id"], mem["group_id"]))
+    title = esc(mem["title"])
+    await m.answer(f"🖼 {esc(t['nick'])} снова может отправлять медиа в группе «{title}».")
+    await notify(t["user_id"], f"🖼 В группе «{title}» вам снова разрешили отправлять медиа.")
+
+
 @router.message(Command("mod"))
 async def cmd_mod(m: Message, command: CommandObject):
     ctx = await mod_ctx(m, command, owner_only=True)
@@ -1823,7 +1892,7 @@ async def apply_transfer(gid: int, old_id: int, new_id: int, by_admin: bool = Fa
     if not g or old_id == new_id:
         return
     db.execute("UPDATE members SET role='admin' WHERE user_id=? AND group_id=?", (old_id, gid))
-    db.execute("UPDATE members SET role='owner', muted_until=0 WHERE user_id=? AND group_id=?", (new_id, gid))
+    db.execute("UPDATE members SET role='owner', muted_until=0, nomedia=0 WHERE user_id=? AND group_id=?", (new_id, gid))
     db.execute("UPDATE groups SET owner_id=? WHERE id=?", (new_id, gid))
     db.commit()
     title = esc(g["title"])
@@ -2121,13 +2190,17 @@ async def panel_cb(c: CallbackQuery):
         run("UPDATE users SET state=? WHERE user_id=?", (f"desc:{gid}", uid))
         await bot.send_message(uid, f"📝 Напишите описание группы «{esc(mem['title'])}» одним сообщением "
                                     f"(до {DESC_MAX} символов, можно оставить пустым).\nОтмена — /cancel")
-    elif priv and act in ("protect", "media"):
-        run(f"UPDATE groups SET {act}=1-{act} WHERE id=?", (gid,))
+    elif priv and act in ("protect", "media", "noscreen"):
+        run(f"UPDATE groups SET {act}=1-{act} WHERE id=?", (gid,))     # act — только из этого кортежа, не из ввода
         mem = get_member(uid, gid)
         on = bool(mem[act])
         if act == "protect":
             text = ("🛡 Защита включена: сообщения нельзя пересылать и сохранять." if on
                     else "🛡 Защита выключена: сообщения можно пересылать.")
+        elif act == "noscreen":
+            text = ("📵 Скриншоты запрещены: сообщения нельзя фотографировать экраном "
+                    "(в мобильных приложениях Telegram), пересылать и сохранять." if on
+                    else "📵 Скриншоты снова разрешены.")
         else:
             text = "🖼 Медиа разрешены." if on else "🖼 Медиа запрещены — только текст."
         await announce(gid, f"<i>{text}</i>", exclude=(uid,))
@@ -2338,6 +2411,9 @@ async def on_message(m: Message):
             return
     elif not mem["media"]:
         await m.answer("🖼 В этой группе медиа запрещены — только текст.")
+        return
+    elif mem["nomedia"]:
+        await m.answer("🖼🚫 Вам запретили отправлять медиа в этой группе — можно писать только текстом.")
         return
     bump_stats(u["user_id"], mem["group_id"], is_media=not bool(m.text))
     run("UPDATE groups SET last_active=? WHERE id=?", (now(), mem["group_id"]))   # для автоудаления неактивных
