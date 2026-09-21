@@ -57,6 +57,7 @@ from aiogram.types import (
     KeyboardButton, Message, ReplyKeyboardMarkup, ReplyParameters,
 )
 from aiogram.utils.text_decorations import html_decoration
+from games import games_router
 
 # ───────────────────────── Настройки ─────────────────────────
 # Значения ниже — «заводские». Часть из них (см. SETTINGS) администратор бота меняет прямо в боте:
@@ -3306,6 +3307,7 @@ async def main():
     dp.message.outer_middleware(SeenMiddleware())            # «онлайн» для админ-аналитики
     dp.callback_query.outer_middleware(SeenMiddleware())
     dp.include_router(admin_router)     # первым: скрытые админ-команды перехватываются раньше основных
+    dp.include_router(games_router)     # игры (games.py) — ДО основного router, иначе /games перехватит unknown_command
     dp.include_router(router)
     asyncio.create_task(cleanup_loop())
     if not ADMIN_IDS:
