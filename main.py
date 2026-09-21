@@ -198,6 +198,7 @@ COMMANDS = [
     ("transfer", "Передать владение группой"),
     ("help", "Помощь"),
     ("about", "О боте"),
+    ("games", "Игры в группе"),
 ]
 
 
@@ -236,6 +237,7 @@ def help_text() -> str:
 /report — свайпните на сообщение нарушителя и отправьте эту команду
 /rules — правила бота
 /support — написать администрации бота ({SUPPORT_MIN}–{SUPPORT_MAX} символов, 1 раз в {SUPPORT_COOLDOWN_H} ч)
+/games — игры в активной группе (пока «Шпион»)
 
 Состоять можно максимум в {MAX_GROUPS} группах, участников в одной группе — максимум {MAX_MEMBERS}.
 Группы без сообщений {INACTIVE_DAYS} дней удаляются автоматически.
@@ -731,7 +733,7 @@ def main_kb(uid: int) -> ReplyKeyboardMarkup:
             [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_STATS)],
             [KeyboardButton(text=B_CATALOG), KeyboardButton(text=B_PANEL)],
             [KeyboardButton(text=B_NICK), KeyboardButton(text=B_HELP)],
-            [KeyboardButton(text=B_ABOUT)],
+            [KeyboardButton(text=B_ABOUT), KeyboardButton(text="🎮 Игры")],
         ],
         resize_keyboard=True,
         input_field_placeholder=hint[:64],
