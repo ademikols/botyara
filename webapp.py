@@ -149,7 +149,7 @@ async def ws_handler(request):
     return ws
 
 
-# ═══════════════════════ ДУРАК (2–4 ИГРОКА + ТАЙМЕР) ═══════════════════════
+# ═══════════════════════ ДУРАК ═══════════════════════
 RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "В", 12: "Д", 13: "К", 14: "Т"}
 SUIT_NAMES = {"h": "♥", "d": "♦", "c": "♣", "s": "♠"}
 TURN_LIMIT = 30
@@ -192,7 +192,7 @@ def new_durak(code, host_id, host_name, opts):
         "pending_hands": hands[1:], "deck": deck, "trump": trump, "trump_card": trump_card,
         "table": [], "attacker_idx": 0, "defender_idx": 1,
         "phase": "waiting", "durak_id": None, "is_draw": False,
-        "clients": {}, "log": [], "turn_started_at": 0,
+        "clients": {}, "log": [], "chat": [], "turn_started_at": 0,
     }
 
 
@@ -293,6 +293,7 @@ def public_state_durak(r, for_uid):
         "your_left": me.get("left", False) if me else True,
         "players": players, "max_players": r["max_players"],
         "log": r["log"][-6:], "opts": r["opts"],
+        "chat": r["chat"][-50:],
         "turn_remaining": turn_remaining(r), "turn_limit": TURN_LIMIT,
     }
 
@@ -563,6 +564,15 @@ async def durak_ws(request):
             except Exception:
                 continue
             act = d.get("action")
+            if act == "chat":
+                text = (d.get("text") or "").strip()[:300]
+                if text:
+                    name = next((p["name"] for p in r["players"] if p["user_id"] == uid), "?")
+                    r["chat"].append({"user": name, "text": text})
+                    if len(r["chat"]) > 200:
+                        r["chat"] = r["chat"][-200:]
+                    await durak_broadcast(r)
+                continue
             err = None
             if act == "attack":
                 err = handle_attack(r, uid, d.get("card"))
@@ -856,16 +866,13 @@ async def start_web_server():
     app.router.add_get("/", handle_index)
     app.router.add_get("/app.html", handle_index)
     app.router.add_get("/health", handle_health)
-    # Крестики
     app.router.add_post("/api/room/create", api_create)
     app.router.add_post("/api/room/join", api_join)
     app.router.add_get("/ws/game/{code}", ws_handler)
-    # Дурак
     app.router.add_post("/api/durak/create", durak_create)
     app.router.add_post("/api/durak/join", durak_join)
     app.router.add_post("/api/durak/start", durak_start)
     app.router.add_get("/ws/durak/{code}", durak_ws)
-    # Шпион
     app.router.add_post("/api/spy/create", spy_create)
     app.router.add_post("/api/spy/join", spy_join)
     app.router.add_post("/api/spy/start", spy_start)
