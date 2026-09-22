@@ -36,9 +36,6 @@ rooms = {}
 durak_rooms = {}
 spy_rooms = {}
 
-TTT_TURN_LIMIT = 15
-DURAK_TURN_LIMIT = 30
-
 
 def gen_code():
     while True:
@@ -62,16 +59,6 @@ def new_ttt():
     return {"board": [""] * 9, "turn": "X", "winner": None}
 
 
-def ttt_turn_remaining(r):
-    if r["state"]["winner"] or not r["guest_id"]:
-        return 0
-    return max(0, TTT_TURN_LIMIT - int(_time.time() - r.get("turn_started_at", _time.time())))
-
-
-def ttt_reset_timer(r):
-    r["turn_started_at"] = int(_time.time())
-
-
 def check_win(b, s):
     lines = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
     return any(b[a] == b[c] == b[d] == s for a, c, d in lines)
@@ -90,12 +77,8 @@ async def broadcast_ttt(r, data):
 async def api_create(request):
     d = await request.json()
     code = gen_code()
-    rooms[code] = {
-        "host_id": d.get("user_id"), "host_name": d.get("username") or "Игрок 1",
-        "guest_id": None, "guest_name": None,
-        "state": new_ttt(), "clients": set(),
-        "turn_started_at": int(_time.time()),
-    }
+    rooms[code] = {"host_id": d.get("user_id"), "host_name": d.get("username") or "Игрок 1",
+                   "guest_id": None, "guest_name": None, "state": new_ttt(), "clients": set()}
     return web.json_response({"ok": True, "code": code})
 
 
@@ -109,7 +92,6 @@ async def api_join(request):
         return web.json_response({"ok": False, "error": "Комната уже занята"}, status=400)
     r["guest_id"] = d.get("user_id")
     r["guest_name"] = d.get("username") or "Игрок 2"
-    ttt_reset_timer(r)
     return web.json_response({"ok": True, "code": code})
 
 
@@ -135,8 +117,7 @@ async def ws_handler(request):
         await ws.close()
         return ws
     r["clients"].add(ws)
-    await ws.send_json({"type": "init", "symbol": symbol, "state": r["state"],
-                        "turn_remaining": ttt_turn_remaining(r), "turn_limit": TTT_TURN_LIMIT})
+    await ws.send_json({"type": "init", "symbol": symbol, "state": r["state"]})
     try:
         async for msg in ws:
             if msg.type != web.WSMsgType.TEXT:
@@ -159,61 +140,19 @@ async def ws_handler(request):
                     st["winner"] = "draw"
                 else:
                     st["turn"] = "O" if symbol == "X" else "X"
-                    ttt_reset_timer(r)
-                await broadcast_ttt(r, {"type": "state", **st,
-                                        "turn_remaining": ttt_turn_remaining(r), "turn_limit": TTT_TURN_LIMIT})
+                await broadcast_ttt(r, {"type": "state", **st})
             elif data.get("type") == "reset":
                 r["state"] = new_ttt()
-                ttt_reset_timer(r)
-                await broadcast_ttt(r, {"type": "state", **r["state"], "reset": True,
-                                        "turn_remaining": ttt_turn_remaining(r), "turn_limit": TTT_TURN_LIMIT})
-            elif data.get("type") == "surrender":
-                st = r["state"]
-                if st["winner"]:
-                    continue
-                opponent = "O" if symbol == "X" else "X"
-                st["winner"] = opponent
-                await broadcast_ttt(r, {"type": "state", **st,
-                                        "turn_remaining": 0, "turn_limit": TTT_TURN_LIMIT,
-                                        "surrendered_by": symbol})
+                await broadcast_ttt(r, {"type": "state", **r["state"], "reset": True})
     finally:
         r["clients"].discard(ws)
     return ws
 
 
-async def ttt_timer_loop():
-    while True:
-        await asyncio.sleep(1)
-        try:
-            now_ts = int(_time.time())
-            for code in list(rooms.keys()):
-                r = rooms.get(code)
-                if not r: continue
-                if not r["clients"]: continue
-                st = r["state"]
-                if st["winner"]: continue
-                if not r["guest_id"]: continue
-                started = r.get("turn_started_at") or now_ts
-                elapsed = now_ts - started
-                if elapsed >= TTT_TURN_LIMIT:
-                    loser = st["turn"]
-                    winner = "O" if loser == "X" else "X"
-                    st["winner"] = winner
-                    await broadcast_ttt(r, {"type": "state", **st,
-                                            "turn_remaining": 0, "turn_limit": TTT_TURN_LIMIT,
-                                            "timeout_by": loser})
-                else:
-                    if elapsed % 3 == 0:
-                        await broadcast_ttt(r, {"type": "state", **st,
-                                                "turn_remaining": ttt_turn_remaining(r), "turn_limit": TTT_TURN_LIMIT})
-        except Exception as e:
-            print(f"ttt timer: {e}", flush=True)
-
-
 # ═══════════════════════ ДУРАК ═══════════════════════
 RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "В", 12: "Д", 13: "К", 14: "Т"}
 SUIT_NAMES = {"h": "♥", "d": "♦", "c": "♣", "s": "♠"}
-TURN_LIMIT = DURAK_TURN_LIMIT
+TURN_LIMIT = 30
 
 
 def make_deck(size=36):
@@ -393,8 +332,8 @@ async def durak_join(request):
         return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
     uid = d.get("user_id")
     if find_player(r, uid) >= 0:
-        return web":.json_response({"ok": " True, "code": code})
-    ifН r["phase"] !=уж "waiting":
+        return web.json_response({"ok": True, "code": code})
+    if r["phase"] != "waiting":
         return web.json_response({"ok": False, "error": "Игра уже началась"}, status=400)
     if len(r["players"]) >= r["max_players"]:
         return web.json_response({"ok": False, "error": "Комната заполнена"}, status=400)
@@ -416,7 +355,7 @@ async def durak_start(request):
     if r["players"][0]["user_id"] != uid:
         return web.json_response({"ok": False, "error": "Только хозяин может начать"}, status=403)
     if len(r["players"]) < 2:
-        return web.json_response({"ok": False, "errorно минимум 2 игрока"}, status=400)
+        return web.json_response({"ok": False, "error": "Нужно минимум 2 игрока"}, status=400)
     r["phase"] = "attack"
     r["attacker_idx"] = 0
     r["defender_idx"] = next_active(r, 0)
@@ -555,39 +494,6 @@ def handle_translate(r, uid, card):
     return None
 
 
-def handle_surrender(r, uid):
-    idx = find_player(r, uid)
-    if idx < 0:
-        return "Вы не в игре"
-    p = r["players"][idx]
-    if p.get("left"):
-        return None
-    p["left"] = True
-    p["hand"] = []
-    r["log"].append(f"🏳️ {p['name']} сдался")
-    # если сдался атакующий или защитник — сдвинем роли
-    if r["phase"] in ("attack", "defend"):
-        active = [i for i, x in enumerate(r["players"]) if not x.get("left")]
-        if len(active) < 2:
-            r["table"] = []
-            check_end(r)
-            return None
-        # если сдался защитник — раунд заканчивается в пользу атакующего
-        if idx == r["defender_idx"]:
-            r["table"] = []
-            for i in range(len(r["players"])):
-                refill_hand(r, i)
-        # если сдался атакующий — раунд тоже заканчивается, роли сдвигаются
-        if idx == r["attacker_idx"]:
-            r["table"] = []
-            for i in range(len(r["players"])):
-                refill_hand(r, i)
-        advance_roles(r)
-        reset_turn_timer(r)
-    check_end(r)
-    return None
-
-
 def auto_action(r):
     if r["phase"] == "defend":
         r["log"].append(f"⏰ {r['players'][r['defender_idx']]['name']} не успел — ВЗЯЛ карты")
@@ -678,8 +584,6 @@ async def durak_ws(request):
                 err = handle_pass(r, uid)
             elif act == "translate":
                 err = handle_translate(r, uid, d.get("card"))
-            elif act == "surrender":
-                err = handle_surrender(r, uid)
             if err:
                 await ws.send_json({"type": "error", "error": err})
             else:
@@ -778,12 +682,12 @@ async def spy_create(request):
     if pack not in SPY_PACKS:
         pack = next(iter(SPY_PACKS.keys()))
     code = gen_code()
-    spy_rooms[code] = new_spy_room(code, d.get("user_id"), d.get("username") d or "Хозяин", pack)
- =    return web await.json_response({"ok request": True, "code.json": code})
+    spy_rooms[code] = new_spy_room(code, d.get("user_id"), d.get("username") or "Хозяин", pack)
+    return web.json_response({"ok": True, "code": code})
 
 
 async def spy_join(request):
-   ()
+    d = await request.json()
     code = str(d.get("code", "")).strip()
     r = spy_rooms.get(code)
     if not r:
@@ -977,7 +881,6 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    asyncio.create_task(ttt_timer_loop())
     asyncio.create_task(durak_timer_loop())
     asyncio.create_task(spy_timer_loop())
     print(f"🔧 Веб-сервер на 0.0.0.0:{PORT}", flush=True)
