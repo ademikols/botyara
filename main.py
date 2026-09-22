@@ -1,45 +1,5 @@
 """
 Бот анонимных групп — aiogram 3, HTML-разметка, SQLite, всё в одном файле.
-
-Запуск:
-    pip install -U aiogram
-    export BOT_TOKEN="123456:ABC..."      # токен от @BotFather
-    export ADMIN_IDS="111111,222222"      # Telegram ID администраторов бота (через запятую)
-    python anon_groups_bot_v3.py
-
-Как это работает: участники пишут боту в личку, бот пересылает сообщение
-всем остальным в активной группе от своего имени с ником отправителя.
-Один человек может состоять максимум в MAX_GROUPS группах и переключаться между ними (/groups).
-Сообщения из группы доходят только тем, у кого она сейчас активна — если человек сидит
-в другой группе, сообщения из фоновой группы к нему не приходят, пока он не переключится.
-В группе не может быть больше MAX_MEMBERS участников. Группы можно делать публичными —
-такие видны всем в каталоге /catalog и через /search_group. Роли: владелец → администратор
-→ модератор → участник; администратор обладает всеми правами владельца, кроме удаления группы
-и передачи владения. Владелец может передать группу другому участнику: /transfer ник
-(или кнопка «Передать владение» в /panel) — бывший владелец становится администратором.
-Ссылки, e-mail и @юзернеймы в сообщениях остаются в тексте как есть, но становятся «обычным»
-текстом: не синие и не нажимаются (в них вставляются невидимые символы нулевой ширины).
-Настройки группы (/panel, только владелец и администраторы): защита от пересылки, запрет скриншотов,
-медиа, каталог, вход и т.д. Отдельному участнику можно запретить медиа: /nomedia ник (или свайпом
-на его сообщение), вернуть — /allowmedia. Доступно только владельцу и администраторам группы.
-Группы без сообщений INACTIVE_DAYS дней удаляются автоматически.
-/rules — правила, /support — связь с администрацией (раз в сутки, 30–500 символов).
-
-Скрытая админ-панель бота (/admin) доступна только ID из ADMIN_IDS; остальным её команды не
-отвечают ничем. В BotFather их регистрировать не нужно. В панели:
-  • статистика, онлайн и активные группы за 15 минут (/activity);
-  • группы: список, закрытие входа, удаление (/groups_list);
-  • бан / разбан / профиль пользователя (/ban, /unban, /find — по ID или нику);
-  • участники любой группы с их ID и кнопкой «Бан» (/groups_list → «Участники», /gmembers ID_группы);
-  • список всех пользователей с ID (/users) и список забаненных с разбаном (/banned);
-  • настройки прямо из бота, без перезапуска: лимит групп на человека, участников в группе, срок
-    автоудаления + переключатели (регистрация, создание групп, пауза пересылки) — /settings, /limit;
-  • редактирование текстов (/rules, /help, /about, приветствие) — 📝 Тексты;
-  • управление списком команд (скрыть / переименовать описание) — ⌨️ Команды;
-  • расширенные настройки группы: название, описание, вход, каталог, очистка истории, кик всех;
-  • рассылка всем (/broadcast), ответ на обращения из /support, бэкап базы (/backup).
-База старой версии (одна группа на человека / без каталога и ролей) обновляется автоматически
-при запуске.
 """
 import asyncio
 import logging
@@ -64,7 +24,6 @@ from aiogram.types import (
     KeyboardButton, Message, ReplyKeyboardMarkup, ReplyParameters,
 )
 from aiogram.utils.text_decorations import html_decoration
-from games import games_router
 from webapp import webapp_router, start_web_server
 
 # ───────────────────────── Настройки ─────────────────────────
@@ -172,7 +131,8 @@ B_NICK, B_PANEL = "✏️ Сменить ник", "⚙️ Управление"
 B_STATS = "📊 Статистика"
 B_CATALOG = "📂 Каталог"
 B_HELP, B_ABOUT = "❓ Помощь", "ℹ️ О боте"
-MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT}
+B_GAMES = "🎮 Игры"
+MENU_BUTTONS = {B_GROUP, B_GROUPS, B_MEMBERS, B_NICK, B_PANEL, B_STATS, B_CATALOG, B_HELP, B_ABOUT, B_GAMES}
 
 COMMANDS = [
     ("start", "Начало / регистрация"),
@@ -209,8 +169,7 @@ COMMANDS = [
     ("transfer", "Передать владение группой"),
     ("help", "Помощь"),
     ("about", "О боте"),
-    ("games", "Игры в группе"),
-    ("play", "Игры в Mini App"),
+    ("play", "🎮 Игры (Mini App)"),
 ]
 
 
@@ -251,8 +210,14 @@ def help_text_default() -> str:
 /report — свайпните на сообщение нарушителя и отправьте эту команду
 /rules — правила бота
 /support — написать администрации бота
-/games — игры в активной группе (Шпион)
-/play — игры в Mini App (Крестики-нолики по коду)
+
+<b>🎮 Игры в Mini App</b>
+/play — открыть игры (или кнопка «🎮 Игры» внизу).
+Доступны:
+• ❌ Крестики-нолики (1 на 1)
+• 🃏 Дурак подкидной (2–4 игрока, таймер 30 сек)
+• 🕵️ Шпион (3–15 игроков, пак слов)
+Создаёшь комнату → получаешь код → кидаешь другу → играете вместе.
 
 Состоять можно максимум в {MAX_GROUPS} группах, участников в одной группе — максимум {MAX_MEMBERS}.
 Группы без сообщений {INACTIVE_DAYS} дней удаляются автоматически.
@@ -292,7 +257,7 @@ def about_text_default() -> str:
 • Сообщения из активной группы
 • Защита от пересылки, запрет скриншотов
 • /nomedia — запретить медиа участнику
-• Игры: /games (Шпион), /play (Mini App)
+• 🎮 Мини-игры в Mini App — /play
 
 Правила — /rules · Связь — /support"""
 
@@ -301,7 +266,7 @@ def welcome_text_default() -> str:
     return ("Создайте группу: /newgroup\n"
             "Посмотрите каталог: /catalog\n"
             "или откройте ссылку-приглашение от владельца группы.\n"
-            "Игры в Mini App — /play\n"
+            "🎮 Игры — /play\n"
             "Правила — /rules")
 
 
@@ -801,11 +766,17 @@ def main_kb(uid: int) -> ReplyKeyboardMarkup:
             [KeyboardButton(text=B_MEMBERS), KeyboardButton(text=B_STATS)],
             [KeyboardButton(text=B_CATALOG), KeyboardButton(text=B_PANEL)],
             [KeyboardButton(text=B_NICK), KeyboardButton(text=B_HELP)],
-            [KeyboardButton(text=B_ABOUT), KeyboardButton(text="🎮 Игры")],
+            [KeyboardButton(text=B_ABOUT), KeyboardButton(text=B_GAMES, web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))],
         ],
         resize_keyboard=True,
         input_field_placeholder=hint[:64],
     )
+
+
+# импорт WebAppInfo для клавиатуры
+from aiogram.types import WebAppInfo  # noqa: E402
+
+WEB_APP_URL = (os.getenv("WEB_APP_URL") or "").rstrip("/")
 
 
 def no_group_text(uid: int) -> str:
@@ -1260,6 +1231,21 @@ async def cmd_start(m: Message, command: CommandObject):
         where = "Создайте группу: /newgroup, посмотрите каталог /catalog или откройте ссылку-приглашение."
     await m.answer(f"👋 Привет, <b>{esc(u['nick'])}</b>!\n{where}\n\n🎮 Мини-игры: /play",
                    reply_markup=main_kb(u["user_id"]))
+
+
+@router.message(Command("play"))
+@router.message(F.text == B_GAMES)
+async def cmd_play(m: Message):
+    u = await reg(m)
+    if not u:
+        return
+    if not WEB_APP_URL:
+        await m.answer("❌ Не задан WEB_APP_URL в переменных Bothost.")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🎮 Открыть игры", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
+    ]])
+    await m.answer("🎮 Игры: Крестики-нолики, Дурак, Шпион", reply_markup=kb)
 
 
 @router.message(Command("nick"))
@@ -3535,7 +3521,6 @@ async def main():
     dp.message.outer_middleware(SeenMiddleware())
     dp.callback_query.outer_middleware(SeenMiddleware())
     dp.include_router(admin_router)
-    dp.include_router(games_router)
     dp.include_router(webapp_router)
     dp.include_router(router)
     asyncio.create_task(cleanup_loop())
