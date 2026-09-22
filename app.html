@@ -16,6 +16,7 @@
   .btn:active{transform:scale(.98)}
   .btn.ghost{background:transparent;color:#fff}
   .btn.sm{padding:11px;font-size:11px;letter-spacing:1px}
+  .btn.danger{background:transparent;color:#ff4444;border-color:#ff4444}
   .field{margin-bottom:14px}
   .field label{display:block;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#777;margin-bottom:7px}
   .field input,.field select{width:100%;padding:15px;background:#0d0d0d;border:1px solid #222;color:#fff;font-family:inherit;font-size:15px;outline:none}
@@ -45,7 +46,7 @@
   .badge.a{background:#ff8c00;color:#000}
   .badge.d{background:#dc3d3d;color:#fff}
   .timer-bar{height:5px;background:#1a1a1a;border-radius:3px;overflow:hidden;margin:0 auto 10px;max-width:300px}
-  .timer-fill{height:100%;background:#44ff88;transition:width 1s linear,background 0.3s}
+  .timer-fill{height:100%;background:#44ff88;transition:width 0.2s linear,background 0.3s}
   .timer-fill.warn{background:#ffaa00}
   .timer-fill.danger{background:#ff4444}
   .chat{height:120px;overflow-y:auto;border:1px solid #1a1a1a;padding:8px;margin-bottom:6px;font-size:12px;background:#0d0d0d;border-radius:6px}
@@ -79,7 +80,7 @@
   <button class="btn" onclick="go('spyCreate')">🕵️ ШПИОН</button>
 </div>
 
-<!-- КРЕСТИКИ: СОЗДАТЬ -->
+<!-- КРЕСТИКИ -->
 <div id="s-create" class="screen">
   <button class="back-btn" onclick="go('menu')">← НАЗАД</button>
   <div id="createForm">
@@ -107,8 +108,10 @@
   <div class="status"><span class="dot" id="wsDot"></span><span id="wsStatus">ПОДКЛЮЧЕНИЕ...</span></div>
   <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="tttCodeTag">------</span></div>
   <div class="big" id="turnInfo">—</div>
+  <div class="timer-bar" id="tttTimerBar" style="display:none"><div class="timer-fill" id="tttTimerFill" style="width:100%"></div></div>
   <div class="board" id="board"></div>
   <div class="msg" id="result"></div>
+  <button class="btn danger" onclick="tttSurrender()" id="tttSurrenderBtn">СДАТЬСЯ</button>
   <button class="btn ghost" onclick="resetGame()">НОВАЯ ПАРТИЯ</button>
   <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
 </div>
@@ -194,6 +197,7 @@
     <button onclick="durakChat()">→</button>
   </div>
 
+  <button class="btn danger" id="durakSurrenderBtn" onclick="durakSurrender()">СДАТЬСЯ</button>
   <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
 </div>
 
@@ -243,6 +247,7 @@
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
     <button class="btn sm" id="spyStartBtn" style="flex:1;display:none" onclick="spyStartGame()">НАЧАТЬ</button>
     <button class="btn sm" id="spyVoteBtn" style="flex:1;display:none" onclick="spyToVote()">К ГОЛОСОВАНИЮ</button>
+    <button class="btn sm" id="spyFinishBtn" style="flex:1;display:none" onclick="spyFinishVote()">ЗАВЕРШИТЬ</button>
     <button class="btn sm" id="spyResetBtn" style="flex:1;display:none" onclick="spyReset()">НОВАЯ ИГРА</button>
   </div>
   <button class="btn ghost" style="margin-top:8px" onclick="location.reload()">ВЫЙТИ</button>
@@ -263,6 +268,8 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 
 // ═══════════════ КРЕСТИКИ ═══════════════
 let ws = null, code = null, mySymbol = null, board = [], turn = 'X', winner = null, myTurn = false;
+let tttDeadline = null, tttTick = null, tttTimeoutSent = false;
+
 async function createRoom() {
   USERNAME = document.getElementById('createName').value.trim() || USERNAME;
   const r = await fetch('/api/room/create', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:USERNAME})});
@@ -284,18 +291,65 @@ async function joinRoom(){
   if (!d.ok) { tg?.showAlert?.(d.error); return; }
   code = c; startGame();
 }
-function startGame(){go('game');document.getElementById('tttCodeTag').textContent=code||'------';renderBoard();connectWS();}
+function startGame(){go('game');document.getElementById('tttCodeTag').textContent=code||'------';renderBoard();connectWS();startTttTick();}
 function renderBoard(){const b=document.getElementById('board');b.innerHTML='';for(let i=0;i<9;i++){const cell=document.createElement('div');cell.className='cell '+(board[i]||'');cell.textContent=board[i]||'';cell.onclick=()=>clickCell(i);b.appendChild(cell);}}
 function clickCell(i){if(!myTurn||winner||board[i]||!ws||ws.readyState!==1)return;ws.send(JSON.stringify({type:'move',index:i}));}
 function connectWS(){const proto=location.protocol==='https:'?'wss':'ws';ws=new WebSocket(`${proto}://${location.host}/ws/game/${code}?uid=${USER_ID}`);ws.onopen=()=>setDot(true);ws.onclose=()=>setDot(false);ws.onerror=()=>setDot(false);ws.onmessage=e=>handleWS(JSON.parse(e.data));}
 function setDot(on){document.getElementById('wsDot').classList.toggle('on',on);document.getElementById('wsStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
+
 function handleWS(msg){
-  if(msg.type==='init'){mySymbol=msg.symbol;board=msg.state.board;turn=msg.state.turn;winner=msg.state.winner;updateUI();renderBoard();}
-  else if(msg.type==='state'){board=msg.board;turn=msg.turn;winner=msg.winner;updateUI();renderBoard();}
-  else if(msg.type==='error'){document.getElementById('turnInfo').textContent=msg.error;}
+  if(msg.type==='init'){
+    mySymbol=msg.symbol;board=msg.state.board;turn=msg.state.turn;winner=msg.state.winner;
+    tttApplyDeadline(msg.turn_remaining);
+    updateUI();renderBoard();
+  } else if(msg.type==='state'){
+    board=msg.board;turn=msg.turn;winner=msg.winner;
+    if(msg.turn_remaining!==undefined) tttApplyDeadline(msg.turn_remaining);
+    if(msg.winner) tttDeadline=null;
+    updateUI();renderBoard();
+  } else if(msg.type==='error'){
+    document.getElementById('turnInfo').textContent=msg.error;
+  }
 }
-function updateUI(){myTurn=(turn===mySymbol)&&!winner;const el=document.getElementById('turnInfo');const res=document.getElementById('result');if(winner==='draw'){el.textContent='НИЧЬЯ';res.textContent='';}else if(winner){el.textContent=winner===mySymbol?'🏆 ПОБЕДА':'💀 ПОРАЖЕНИЕ';res.textContent='';}else if(myTurn){el.textContent='ВАШ ХОД';res.textContent='Вы — '+mySymbol;}else{el.textContent='ЖДЁМ ПРОТИВНИКА...';res.textContent='Вы — '+(mySymbol||'?');}}
+
+function tttApplyDeadline(rem){
+  tttTimeoutSent=false;
+  if(rem===undefined||rem===null||rem===0||winner){tttDeadline=null;return;}
+  tttDeadline=Date.now()+rem*1000;
+}
+
+function startTttTick(){
+  if(tttTick) clearInterval(tttTick);
+  tttTick=setInterval(()=>{
+    const bar=document.getElementById('tttTimerBar');
+    const fill=document.getElementById('tttTimerFill');
+    if(!bar||!fill) return;
+    if(winner||!tttDeadline){bar.style.display='none';return;}
+    bar.style.display='block';
+    const rem=Math.max(0,(tttDeadline-Date.now())/1000);
+    const pct=Math.max(0,Math.min(100,(rem/15)*100));
+    fill.style.width=pct+'%';
+    fill.classList.toggle('warn',pct<60&&pct>=30);
+    fill.classList.toggle('danger',pct<30);
+    if(rem<=0 && !tttTimeoutSent && myTurn){
+      tttTimeoutSent=true;
+      ws?.send?.(JSON.stringify({type:'timeout'}));
+    }
+  },200);
+}
+
+function updateUI(){
+  myTurn=(turn===mySymbol)&&!winner;
+  const el=document.getElementById('turnInfo');const res=document.getElementById('result');
+  const sb=document.getElementById('tttSurrenderBtn');
+  if(sb) sb.style.display=(winner||!mySymbol)?'none':'block';
+  if(winner==='draw'){el.textContent='НИЧЬЯ';res.textContent='';}
+  else if(winner){el.textContent=winner===mySymbol?'🏆 ПОБЕДА':'💀 ПОРАЖЕНИЕ';res.textContent='';}
+  else if(myTurn){el.textContent='ВАШ ХОД';res.textContent='Вы — '+mySymbol;}
+  else{el.textContent='ЖДЁМ ПРОТИВНИКА...';res.textContent='Вы — '+(mySymbol||'?');}
+}
 function resetGame(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'reset'}));}
+function tttSurrender(){if(!ws||ws.readyState!==1||winner)return;if(!confirm('Сдаться?'))return;ws.send(JSON.stringify({type:'surrender'}));}
 
 // ═══════════════ ДУРАК ═══════════════
 const RANK_NAMES={6:'6',7:'7',8:'8',9:'9',10:'10',11:'В',12:'Д',13:'К',14:'Т'};
@@ -332,7 +386,7 @@ function durakRender(){
   let info='—';
   if(s.phase==='waiting')info=`ЖДЁМ ИГРОКОВ (${s.players.length}/${s.max_players})`;
   else if(s.phase==='over'){if(s.is_draw)info='🤝 НИЧЬЯ';else if(s.durak_id===USER_ID)info='💀 ВЫ ДУРАК';else info='🏆 ВЫ ПОБЕДИЛИ';}
-  else if(iAmOut)info='✅ ВЫ ВЫШЛИ — ЖДЁМ ОСТАЛЬНЫХ';
+  else if(iAmOut)info='✅ ВЫ ВЫШЛИ ИЗ ИГРЫ';
   else if(isMyDefense)info='🛡 ВАША ЗАЩИТА';
   else if(isMyAttack&&s.table.length===0)info='⚔ ВАШ ХОД — АТАКА';
   else if(isMyAttack&&s.phase==='attack')info='⚔ ПОДКИНЬТЕ ИЛИ ЖМИТЕ БИТО';
@@ -340,7 +394,7 @@ function durakRender(){
   document.getElementById('durakInfo').textContent=info;
 
   const bar=document.getElementById('durakTimerBar');const fill=document.getElementById('durakTimerFill');
-  if(s.phase==='waiting'||s.phase==='over'){bar.style.display='none';}
+  if(s.phase==='waiting'||s.phase==='over'||iAmOut){bar.style.display='none';}
   else{bar.style.display='block';const rem=s.turn_remaining??0;const total=s.turn_limit||30;const pct=Math.max(0,Math.min(100,(rem/total)*100));fill.style.width=pct+'%';fill.classList.toggle('warn',pct<60&&pct>=30);fill.classList.toggle('danger',pct<30);}
 
   if(s.trump_card){
@@ -356,7 +410,7 @@ function durakRender(){
   document.getElementById('durakLastLog').textContent=lastLog;
 
   const pl=document.getElementById('durakPlayers');
-  pl.innerHTML=(s.players||[]).map(p=>{const me=p.seat===myIdx;const cls=['player-row'];if(me)cls.push('me');if(p.is_attacker)cls.push('attacker');if(p.is_defender)cls.push('defender');if(p.left)cls.push('left');const badges=(p.is_attacker?'<span class="badge a">АТАКА</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');return `<div class="${cls.join(' ')}"><div>${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div><div>🃏 ${p.hand_count}${p.left?' ✅':''}</div></div>`;}).join('');
+  pl.innerHTML=(s.players||[]).map(p=>{const me=p.seat===myIdx;const cls=['player-row'];if(me)cls.push('me');if(p.is_attacker)cls.push('attacker');if(p.is_defender)cls.push('defender');if(p.left)cls.push('left');const badges=(p.is_attacker?'<span class="badge a">АТАКА</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');return `<div class="${cls.join(' ')}"><div>${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div><div>🃏 ${p.hand_count}${p.left?' 🏳️':''}</div></div>`;}).join('');
 
   const table=document.getElementById('durakTable');
   if(s.table.length===0)table.innerHTML='<div style="color:#555;font-size:11px;padding:10px">Пусто</div>';
@@ -383,14 +437,16 @@ function durakRender(){
     if(atBottom)chatBox.scrollTop=chatBox.scrollHeight;
   }
 
-  const startBtn=document.getElementById('durakStartBtn');const passBtn=document.getElementById('durakPassBtn');const takeBtn=document.getElementById('durakTakeBtn');
+  const startBtn=document.getElementById('durakStartBtn');const passBtn=document.getElementById('durakPassBtn');const takeBtn=document.getElementById('durakTakeBtn');const surBtn=document.getElementById('durakSurrenderBtn');
   startBtn.style.display=(s.phase==='waiting'&&myIdx===0)?'block':'none';
   passBtn.style.display=(isMyAttack&&s.phase==='attack'&&s.table.length>0)?'block':'none';
   takeBtn.style.display=(isMyDefense&&s.phase==='defend')?'block':'none';
+  if(surBtn) surBtn.style.display=(s.phase==='over'||iAmOut||s.phase==='waiting')?'none':'block';
 }
 async function durakStartGame(){const r=await fetch('/api/durak/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:durakRoom,user_id:USER_ID})});const d=await r.json();if(!d.ok)tg?.showAlert?.(d.error);}
 function durakAction(action,card){if(!durakWs||durakWs.readyState!==1)return;durakWs.send(JSON.stringify({action,card}));}
 function durakChat(){const i=document.getElementById('durakChatInput');const t=i.value.trim();if(!t)return;durakWs?.send?.(JSON.stringify({action:'chat',text:t}));i.value='';}
+function durakSurrender(){if(!durakWs||durakWs.readyState!==1)return;const s=durakState;if(!s||s.your_left||s.phase==='over')return;if(!confirm('Сдаться? Вы выйдете из игры.'))return;durakWs.send(JSON.stringify({action:'surrender'}));}
 
 // ═══════════════ ШПИОН ═══════════════
 let spyWs=null,spyRoom=null,spyState=null;
@@ -466,10 +522,12 @@ function spyRender(){
   const isHost=s.host_id===USER_ID;
   document.getElementById('spyStartBtn').style.display=(s.phase==='waiting'&&isHost&&s.players.length>=3)?'block':'none';
   document.getElementById('spyVoteBtn').style.display=(s.phase==='discuss'&&isHost)?'block':'none';
+  document.getElementById('spyFinishBtn').style.display=(s.phase==='vote'&&isHost)?'block':'none';
   document.getElementById('spyResetBtn').style.display=(s.phase==='result'&&isHost)?'block':'none';
 }
 async function spyStartGame(){const r=await fetch('/api/spy/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:spyRoom,user_id:USER_ID})});const d=await r.json();if(!d.ok)tg?.showAlert?.(d.error);}
 async function spyToVote(){const r=await fetch('/api/spy/to_vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:spyRoom,user_id:USER_ID})});const d=await r.json();if(!d.ok)tg?.showAlert?.(d.error);}
+function spyFinishVote(){spyWs?.send?.(JSON.stringify({type:'finish_vote'}));}
 function spyReset(){spyWs?.send?.(JSON.stringify({type:'reset'}));}
 function spyChat(){const i=document.getElementById('spyChatInput');const t=i.value.trim();if(!t)return;spyWs?.send?.(JSON.stringify({type:'chat',text:t}));i.value='';}
 
