@@ -32,7 +32,7 @@
   .cell.X{color:#5aa0e0}
   .cell.O{color:#e05a5a}
   .msg{text-align:center;padding:20px;font-size:14px;letter-spacing:1px;color:#888;line-height:1.6}
-  .big{text-align:center;padding:20px;font-size:18px;font-weight:700;letter-spacing:2px}
+  .big{text-align:center;padding:14px;font-size:18px;font-weight:700;letter-spacing:2px}
   .player-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid #1a1a1a;margin-bottom:6px;font-size:13px;background:#0d0d0d;border-radius:6px}
   .player-row.me{border-color:#3d6fa5}
   .player-row.attacker{border-left:3px solid #ff8c00}
@@ -41,6 +41,10 @@
   .badge{font-size:9px;letter-spacing:1px;padding:2px 6px;border-radius:4px;background:#222;margin-left:4px}
   .badge.a{background:#ff8c00;color:#000}
   .badge.d{background:#dc3d3d;color:#fff}
+  .timer-bar{height:6px;background:#1a1a1a;border-radius:3px;overflow:hidden;margin:0 auto 14px;max-width:280px}
+  .timer-fill{height:100%;background:#44ff88;transition:width 1s linear,background 0.3s}
+  .timer-fill.warn{background:#ffaa00}
+  .timer-fill.danger{background:#ff4444}
 </style>
 </head>
 <body>
@@ -55,7 +59,7 @@
   <div class="msg" style="padding-top:30px">Скоро: Морской бой, Шашки,<br>Квиз, UNO</div>
 </div>
 
-<!-- КРЕСТИКИ: СОЗДАТЬ -->
+<!-- КРЕСТИКИ -->
 <div id="s-create" class="screen">
   <div id="createForm">
     <div class="field"><label>Ваше имя</label><input id="createName" type="text" placeholder="Игрок"></div>
@@ -71,14 +75,12 @@
   </div>
 </div>
 
-<!-- КРЕСТИКИ: ПРИСОЕДИНИТЬСЯ -->
 <div id="s-join" class="screen">
   <div class="field"><label>Ваше имя</label><input id="joinName" type="text" placeholder="Игрок"></div>
   <div class="field"><label>Код комнаты</label><input id="joinCode" type="tel" inputmode="numeric" maxlength="6" class="code" placeholder="000000"></div>
   <button class="btn" onclick="joinRoom()">ВОЙТИ</button>
 </div>
 
-<!-- КРЕСТИКИ: ИГРА -->
 <div id="s-game" class="screen">
   <div class="status"><span class="dot" id="wsDot"></span><span id="wsStatus">ПОДКЛЮЧЕНИЕ...</span></div>
   <div class="big" id="turnInfo">—</div>
@@ -134,6 +136,7 @@
 <div id="s-durakGame" class="screen">
   <div class="status"><span class="dot" id="durakDot"></span><span id="durakStatus">ПОДКЛЮЧЕНИЕ...</span></div>
   <div class="big" id="durakInfo">—</div>
+  <div class="timer-bar" id="durakTimerBar" style="display:none"><div class="timer-fill" id="durakTimerFill" style="width:100%"></div></div>
   <div class="msg" id="durakLog" style="padding:8px;font-size:12px"></div>
 
   <div style="display:flex;justify-content:space-between;margin:12px 0;font-size:12px;color:#888">
@@ -210,9 +213,7 @@ async function joinRoom() {
   code = c; startGame();
 }
 
-function startGame() {
-  go('game'); renderBoard(); connectWS();
-}
+function startGame() { go('game'); renderBoard(); connectWS(); }
 
 function renderBoard() {
   const b = document.getElementById('board');
@@ -364,7 +365,6 @@ function durakRender() {
   const isMyDefense = myIdx === s.defender_idx && s.phase === 'defend';
   const iAmOut = s.your_left;
 
-  // Заголовок
   let info = '—';
   if (s.phase === 'waiting') info = `ЖДЁМ ИГРОКОВ (${s.players.length}/${s.max_players})`;
   else if (s.phase === 'over') {
@@ -379,11 +379,25 @@ function durakRender() {
   else info = '⏳ ЖДЁМ ХОДА';
   document.getElementById('durakInfo').textContent = info;
 
+  // Таймер
+  const bar = document.getElementById('durakTimerBar');
+  const fill = document.getElementById('durakTimerFill');
+  if (s.phase === 'waiting' || s.phase === 'over') {
+    bar.style.display = 'none';
+  } else {
+    bar.style.display = 'block';
+    const rem = s.turn_remaining ?? 0;
+    const total = s.turn_limit || 30;
+    const pct = Math.max(0, Math.min(100, (rem / total) * 100));
+    fill.style.width = pct + '%';
+    fill.classList.toggle('warn', pct < 60 && pct >= 30);
+    fill.classList.toggle('danger', pct < 30);
+  }
+
   document.getElementById('durakTrump').textContent = RANK_NAMES[s.trump_card.r] + SUIT_NAMES[s.trump];
   document.getElementById('durakDeckCount').textContent = s.deck_count;
   document.getElementById('durakLog').textContent = (s.log || []).join('\n');
 
-  // Список игроков
   const pl = document.getElementById('durakPlayers');
   pl.innerHTML = (s.players || []).map(p => {
     const me = p.seat === myIdx;
@@ -400,7 +414,6 @@ function durakRender() {
     </div>`;
   }).join('');
 
-  // Стол
   const table = document.getElementById('durakTable');
   if (s.table.length === 0) {
     table.innerHTML = '<div style="color:#555;font-size:12px;padding:12px">Пусто</div>';
@@ -413,7 +426,6 @@ function durakRender() {
     `).join('');
   }
 
-  // Рука
   const hand = document.getElementById('durakHand');
   const canPlay = !iAmOut && s.phase !== 'over' && s.phase !== 'waiting';
   hand.innerHTML = (s.your_hand || []).map(c => durakCardEl(c, canPlay)).join('');
@@ -435,7 +447,6 @@ function durakRender() {
     };
   });
 
-  // Кнопки
   const startBtn = document.getElementById('durakStartBtn');
   const passBtn = document.getElementById('durakPassBtn');
   const takeBtn = document.getElementById('durakTakeBtn');
@@ -458,7 +469,6 @@ function durakAction(action, card) {
   durakWs.send(JSON.stringify({action, card}));
 }
 
-// Инпуты только цифры
 document.getElementById('joinCode')?.addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, ''); });
 document.getElementById('durakJoinCode')?.addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, ''); });
 </script>
