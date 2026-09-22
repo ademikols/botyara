@@ -23,6 +23,8 @@
   .code-box{border:1px solid #fff;padding:24px 18px;text-align:center;margin:16px 0}
   .code-box .lbl{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#777;margin-bottom:10px}
   .code-box .code{font-family:'SF Mono',monospace;font-size:38px;font-weight:700;letter-spacing:6px;margin-bottom:16px}
+  .code-tag{text-align:center;font-size:11px;letter-spacing:3px;color:#666;padding:6px 0 0;text-transform:uppercase}
+  .code-tag .code-num{color:#fff;font-weight:700;font-family:'SF Mono',monospace;font-size:14px}
   .status{text-align:center;font-size:12px;color:#888;padding:10px;letter-spacing:1px}
   .status .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4444;margin-right:6px}
   .status .dot.on{background:#44ff88}
@@ -52,6 +54,11 @@
   .chat-input{display:flex;gap:6px;margin-bottom:14px}
   .chat-input input{flex:1;background:#0d0d0d;border:1px solid #222;color:#fff;padding:11px 12px;font-size:14px;font-family:inherit;outline:none}
   .chat-input button{background:#fff;color:#000;border:none;padding:0 14px;font-weight:700;cursor:pointer;font-family:inherit}
+  .trump-box{display:flex;align-items:center;justify-content:center;gap:14px;border:2px solid #ffd23d;border-radius:10px;padding:12px 16px;margin:14px 0;background:linear-gradient(135deg,#1a1500,#0d0d0d)}
+  .trump-box .trump-label{font-size:12px;letter-spacing:3px;color:#ffd23d;font-weight:800;text-transform:uppercase}
+  .trump-box .trump-card{font-size:34px;font-weight:900;font-family:'SF Mono',monospace;line-height:1;padding:6px 12px;border-radius:8px;background:#0d0d0d;border:1px solid #444}
+  .trump-box .trump-card.red{color:#e05a5a}
+  .trump-box .trump-card.black{color:#fff}
   .hidden{display:none!important}
 </style>
 </head>
@@ -89,6 +96,7 @@
 </div>
 <div id="s-game" class="screen">
   <div class="status"><span class="dot" id="wsDot"></span><span id="wsStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+  <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="tttCodeTag">------</span></div>
   <div class="big" id="turnInfo">—</div>
   <div class="board" id="board"></div>
   <div class="msg" id="result"></div>
@@ -137,12 +145,17 @@
 </div>
 <div id="s-durakGame" class="screen">
   <div class="status"><span class="dot" id="durakDot"></span><span id="durakStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+  <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="durakCodeTag">------</span></div>
   <div class="big" id="durakInfo">—</div>
   <div class="timer-bar" id="durakTimerBar" style="display:none"><div class="timer-fill" id="durakTimerFill" style="width:100%"></div></div>
+  <div class="trump-box" id="durakTrumpBox" style="display:none">
+    <span class="trump-label">КОЗЫРЬ</span>
+    <span class="trump-card" id="durakTrumpCard">—</span>
+  </div>
   <div class="msg" id="durakLog" style="padding:8px;font-size:12px"></div>
   <div style="display:flex;justify-content:space-between;margin:12px 0;font-size:12px;color:#888">
-    <div>Козырь: <span id="durakTrump" style="color:#fff;font-weight:700"></span></div>
     <div>Колода: <span id="durakDeckCount" style="color:#fff;font-weight:700">0</span></div>
+    <div>В игре: <span id="durakPlayersCount" style="color:#fff;font-weight:700">0</span></div>
   </div>
   <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#777;margin-bottom:6px">ИГРОКИ</div>
   <div id="durakPlayers" style="margin-bottom:14px"></div>
@@ -187,6 +200,7 @@
 </div>
 <div id="s-spyGame" class="screen">
   <div class="status"><span class="dot" id="spyDot"></span><span id="spyStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+  <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="spyCodeTag">------</span></div>
   <div class="big" id="spyPhase">—</div>
   <div class="timer-bar" id="spyTimerBar" style="display:none"><div class="timer-fill" id="spyTimerFill" style="width:100%"></div></div>
   <div class="room-card" style="border:1px solid #fff;padding:14px;text-align:center;margin:12px 0;background:#0d0d0d">
@@ -246,7 +260,7 @@ async function joinRoom(){
   if (!d.ok) { tg?.showAlert?.(d.error); return; }
   code = c; startGame();
 }
-function startGame(){go('game');renderBoard();connectWS();}
+function startGame(){go('game');document.getElementById('tttCodeTag').textContent=code||'------';renderBoard();connectWS();}
 function renderBoard(){const b=document.getElementById('board');b.innerHTML='';for(let i=0;i<9;i++){const cell=document.createElement('div');cell.className='cell '+(board[i]||'');cell.textContent=board[i]||'';cell.onclick=()=>clickCell(i);b.appendChild(cell);}}
 function clickCell(i){if(!myTurn||winner||board[i]||!ws||ws.readyState!==1)return;ws.send(JSON.stringify({type:'move',index:i}));}
 function connectWS(){const proto=location.protocol==='https:'?'wss':'ws';ws=new WebSocket(`${proto}://${location.host}/ws/game/${code}?uid=${USER_ID}`);ws.onopen=()=>setDot(true);ws.onclose=()=>setDot(false);ws.onerror=()=>setDot(false);ws.onmessage=e=>handleWS(JSON.parse(e.data));}
@@ -284,7 +298,7 @@ async function durakJoin(){
   const d=await r.json();if(!d.ok){tg?.showAlert?.(d.error);return;}
   durakRoom=c;durakStart();
 }
-function durakStart(){go('durakGame');const proto=location.protocol==='https:'?'wss':'ws';durakWs=new WebSocket(`${proto}://${location.host}/ws/durak/${durakRoom}?uid=${USER_ID}`);durakWs.onopen=()=>durakDot(true);durakWs.onclose=()=>durakDot(false);durakWs.onmessage=e=>durakHandle(JSON.parse(e.data));}
+function durakStart(){go('durakGame');document.getElementById('durakCodeTag').textContent=durakRoom||'------';const proto=location.protocol==='https:'?'wss':'ws';durakWs=new WebSocket(`${proto}://${location.host}/ws/durak/${durakRoom}?uid=${USER_ID}`);durakWs.onopen=()=>durakDot(true);durakWs.onclose=()=>durakDot(false);durakWs.onmessage=e=>durakHandle(JSON.parse(e.data));}
 function durakDot(on){document.getElementById('durakDot').classList.toggle('on',on);document.getElementById('durakStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
 function durakHandle(msg){if(msg.type==='state'){durakState=msg.state;durakRender();}else if(msg.type==='error'){tg?.showAlert?.(msg.error);}}
 function durakCardEl(c,clickable){const red=c.s==='h'||c.s==='d';const color=red?'#e05a5a':'#fff';return `<div data-r="${c.r}" data-s="${c.s}" style="width:60px;height:86px;border:2px solid #222;border-radius:8px;background:#1a1a2e;color:${color};display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:20px;line-height:1.1;cursor:${clickable?'pointer':'default'};user-select:none;flex-shrink:0;gap:2px"><div>${RANK_NAMES[c.r]}</div><div style="font-size:22px">${SUIT_NAMES[c.s]}</div></div>`;}
@@ -303,8 +317,17 @@ function durakRender(){
   const bar=document.getElementById('durakTimerBar');const fill=document.getElementById('durakTimerFill');
   if(s.phase==='waiting'||s.phase==='over'){bar.style.display='none';}
   else{bar.style.display='block';const rem=s.turn_remaining??0;const total=s.turn_limit||30;const pct=Math.max(0,Math.min(100,(rem/total)*100));fill.style.width=pct+'%';fill.classList.toggle('warn',pct<60&&pct>=30);fill.classList.toggle('danger',pct<30);}
-  document.getElementById('durakTrump').textContent=RANK_NAMES[s.trump_card.r]+SUIT_NAMES[s.trump];
+  // Козырь крупным блоком
+  const trumpBox=document.getElementById('durakTrumpBox');
+  if(trumpBox&&s.trump_card){
+    trumpBox.style.display='flex';
+    const tc=document.getElementById('durakTrumpCard');
+    tc.textContent=RANK_NAMES[s.trump_card.r]+SUIT_NAMES[s.trump];
+    tc.classList.toggle('red',s.trump==='h'||s.trump==='d');
+    tc.classList.toggle('black',!(s.trump==='h'||s.trump==='d'));
+  }
   document.getElementById('durakDeckCount').textContent=s.deck_count;
+  document.getElementById('durakPlayersCount').textContent=s.players.filter(p=>!p.left).length;
   document.getElementById('durakLog').textContent=(s.log||[]).join('\n');
   const pl=document.getElementById('durakPlayers');
   pl.innerHTML=(s.players||[]).map(p=>{const me=p.seat===myIdx;const cls=['player-row'];if(me)cls.push('me');if(p.is_attacker)cls.push('attacker');if(p.is_defender)cls.push('defender');if(p.left)cls.push('left');const badges=(p.is_attacker?'<span class="badge a">АТАКУЕТ</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');return `<div class="${cls.join(' ')}"><div>${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div><div>🃏 ${p.hand_count}${p.left?' ✅':''}</div></div>`;}).join('');
@@ -368,7 +391,7 @@ async function spyJoin(){
   const d=await r.json();if(!d.ok){tg?.showAlert?.(d.error);return;}
   spyRoom=c;spyStart();
 }
-function spyStart(){go('spyGame');const proto=location.protocol==='https:'?'wss':'ws';spyWs=new WebSocket(`${proto}://${location.host}/ws/spy/${spyRoom}?uid=${USER_ID}`);spyWs.onopen=()=>spyDot(true);spyWs.onclose=()=>spyDot(false);spyWs.onmessage=e=>spyHandle(JSON.parse(e.data));}
+function spyStart(){go('spyGame');document.getElementById('spyCodeTag').textContent=spyRoom||'------';const proto=location.protocol==='https:'?'wss':'ws';spyWs=new WebSocket(`${proto}://${location.host}/ws/spy/${spyRoom}?uid=${USER_ID}`);spyWs.onopen=()=>spyDot(true);spyWs.onclose=()=>spyDot(false);spyWs.onmessage=e=>spyHandle(JSON.parse(e.data));}
 function spyDot(on){document.getElementById('spyDot').classList.toggle('on',on);document.getElementById('spyStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
 function spyHandle(msg){
   if(msg.type==='state'){spyState=msg.state;spyRender();}
