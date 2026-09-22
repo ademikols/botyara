@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Игры</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;min-height:100vh;overflow-x:hidden}
+  .top{padding:14px 16px;border-bottom:1px solid #1a1a1a;text-align:center}
+  .top h1{font-size:13px;letter-spacing:4px;font-weight:700;text-transform:uppercase}
+  .screen{display:none;padding:20px}
+  .screen.active{display:block}
+  .btn{width:100%;padding:16px;background:#fff;color:#000;border:1px solid #fff;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;margin-bottom:10px}
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:transparent;color:#fff}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#777;margin-bottom:7px}
+  .field input{width:100%;padding:15px;background:#0d0d0d;border:1px solid #222;color:#fff;font-family:inherit;font-size:15px;outline:none}
+  .field input:focus{border-color:#fff}
+  .field input.code{font-family:'SF Mono',monospace;font-size:26px;text-align:center;letter-spacing:8px;font-weight:700;padding-left:26px}
+  .code-box{border:1px solid #fff;padding:24px 18px;text-align:center;margin:16px 0}
+  .code-box .lbl{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#777;margin-bottom:10px}
+  .code-box .code{font-family:'SF Mono',monospace;font-size:38px;font-weight:700;letter-spacing:6px;margin-bottom:16px}
+  .status{text-align:center;font-size:12px;color:#888;padding:10px;letter-spacing:1px}
+  .status .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4444;margin-right:6px}
+  .status .dot.on{background:#44ff88}
+  .board{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:340px;margin:20px auto;aspect-ratio:1}
+  .cell{background:#0d0d0d;border:2px solid #222;display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:700;cursor:pointer;user-select:none}
+  .cell:active{border-color:#fff}
+  .cell.X{color:#5aa0e0}
+  .cell.O{color:#e05a5a}
+  .msg{text-align:center;padding:20px;font-size:14px;letter-spacing:1px;color:#888;line-height:1.6}
+  .big{text-align:center;padding:20px;font-size:20px;font-weight:700;letter-spacing:2px}
+</style>
+</head>
+<body>
+<div class="top"><h1>ИГРЫ</h1></div>
+
+<div id="s-menu" class="screen active">
+  <button class="btn" onclick="go('create')">КРЕСТИКИ-НОЛИКИ — СОЗДАТЬ</button>
+  <button class="btn ghost" onclick="go('join')">ПРИСОЕДИНИТЬСЯ ПО КОДУ</button>
+  <div class="msg" style="padding-top:30px">Скоро: Морской бой, Шашки,<br>Квиз, UNO</div>
+</div>
+
+<div id="s-create" class="screen">
+  <div id="createForm">
+    <div class="field"><label>Ваше имя</label><input id="createName" type="text" placeholder="Игрок"></div>
+    <button class="btn" onclick="createRoom()">СОЗДАТЬ</button>
+  </div>
+  <div id="createResult" style="display:none">
+    <div class="code-box">
+      <div class="lbl">КОД — ПЕРЕДАЙ ДРУГУ</div>
+      <div class="code" id="newCode">000000</div>
+      <button class="btn ghost" onclick="copyCode()" id="copyBtn">СКОПИРОВАТЬ</button>
+    </div>
+    <button class="btn" onclick="enterRoom()">ВОЙТИ В ИГРУ</button>
+  </div>
+</div>
+
+<div id="s-join" class="screen">
+  <div class="field"><label>Ваше имя</label><input id="joinName" type="text" placeholder="Игрок"></div>
+  <div class="field"><label>Код комнаты</label><input id="joinCode" type="tel" inputmode="numeric" maxlength="6" class="code" placeholder="000000"></div>
+  <button class="btn" onclick="joinRoom()">ВОЙТИ</button>
+</div>
+
+<div id="s-game" class="screen">
+  <div class="status"><span class="dot" id="wsDot"></span><span id="wsStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+  <div class="big" id="turnInfo">—</div>
+  <div class="board" id="board"></div>
+  <div class="msg" id="result"></div>
+  <button class="btn ghost" onclick="resetGame()">НОВАЯ ПАРТИЯ</button>
+  <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+tg?.ready(); tg?.expand();
+const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
+let USERNAME = 'guest' + String(USER_ID).slice(-4);
+
+let ws = null, code = null, mySymbol = null, board = [], turn = 'X', winner = null, myTurn = false;
+
+function go(s) {
+  document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+  document.getElementById('s-' + s).classList.add('active');
+}
+
+async function createRoom() {
+  USERNAME = document.getElementById('createName').value.trim() || USERNAME;
+  const r = await fetch('/api/room/create', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: USER_ID, username: USERNAME})
+  });
+  const d = await r.json();
+  if (!d.ok) { tg?.showAlert?.(d.error); return; }
+  code = d.code;
+  document.getElementById('newCode').textContent = d.code;
+  document.getElementById('createForm').style.display = 'none';
+  document.getElementById('createResult').style.display = 'block';
+}
+
+function copyCode() {
+  const c = document.getElementById('newCode').textContent;
+  navigator.clipboard.writeText(c).then(() => {
+    const b = document.getElementById('copyBtn');
+    b.textContent = 'СКОПИРОВАНО ✓';
+    setTimeout(() => b.textContent = 'СКОПИРОВАТЬ', 1500);
+  });
+}
+
+function enterRoom() { if (code) startGame(); }
+
+async function joinRoom() {
+  USERNAME = document.getElementById('joinName').value.trim() || USERNAME;
+  const c = document.getElementById('joinCode').value.trim();
+  if (c.length !== 6) { tg?.showAlert?.('Код из 6 цифр'); return; }
+  const r = await fetch('/api/room/join', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({code: c, user_id: USER_ID, username: USERNAME})
+  });
+  const d = await r.json();
+  if (!d.ok) { tg?.showAlert?.(d.error); return; }
+  code = c;
+  startGame();
+}
+
+function startGame() {
+  go('game');
+  renderBoard();
+  connectWS();
+}
+
+function renderBoard() {
+  const b = document.getElementById('board');
+  b.innerHTML = '';
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell ' + (board[i] || '');
+    cell.textContent = board[i] || '';
+    cell.onclick = () => clickCell(i);
+    b.appendChild(cell);
+  }
+}
+
+function clickCell(i) {
+  if (!myTurn || winner || board[i] || !ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({type: 'move', index: i}));
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/game/${code}?uid=${USER_ID}`);
+  ws.onopen = () => setDot(true);
+  ws.onclose = () => setDot(false);
+  ws.onerror = () => setDot(false);
+  ws.onmessage = e => handleWS(JSON.parse(e.data));
+}
+
+function setDot(on) {
+  document.getElementById('wsDot').classList.toggle('on', on);
+  document.getElementById('wsStatus').textContent = on ? 'В СЕТИ' : 'НЕТ СВЯЗИ';
+}
+
+function handleWS(msg) {
+  if (msg.type === 'init') {
+    mySymbol = msg.symbol;
+    board = msg.state.board;
+    turn = msg.state.turn;
+    winner = msg.state.winner;
+    updateUI();
+    renderBoard();
+  } else if (msg.type === 'state') {
+    board = msg.board;
+    turn = msg.turn;
+    winner = msg.winner;
+    updateUI();
+    renderBoard();
+  } else if (msg.type === 'error') {
+    document.getElementById('turnInfo').textContent = msg.error;
+  }
+}
+
+function updateUI() {
+  myTurn = (turn === mySymbol) && !winner;
+  const el = document.getElementById('turnInfo');
+  const res = document.getElementById('result');
+  if (winner === 'draw') {
+    el.textContent = 'НИЧЬЯ';
+    res.textContent = '';
+  } else if (winner) {
+    el.textContent = winner === mySymbol ? '🏆 ПОБЕДА' : '💀 ПОРАЖЕНИЕ';
+    res.textContent = '';
+  } else if (myTurn) {
+    el.textContent = 'ВАШ ХОД';
+    res.textContent = 'Вы — ' + mySymbol;
+  } else {
+    el.textContent = 'ЖДЁМ ПРОТИВНИКА...';
+    res.textContent = 'Вы — ' + (mySymbol || '?');
+  }
+}
+
+function resetGame() {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type: 'reset'}));
+}
+
+document.getElementById('joinCode').addEventListener('input', e => {
+  e.target.value = e.target.value.replace(/\D/g, '');
+});
+</script>
+</body>
+</html>
