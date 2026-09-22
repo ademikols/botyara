@@ -1,6 +1,8 @@
 import os
 import json
 import random
+import time
+import asyncio
 from aiohttp import web
 from aiogram import Router
 from aiogram.filters import Command
@@ -8,6 +10,8 @@ from aiogram.types import Message, WebAppInfo, InlineKeyboardMarkup, InlineKeybo
 
 PORT = int(os.getenv("PORT", "3000"))
 WEB_APP_URL = os.getenv("WEB_APP_URL", "").rstrip("/")
+
+TURN_LIMIT = 30  # секунд на ход. Меняй, если хочешь другой лимит.
 
 webapp_router = Router()
 webapp_router.message.filter(lambda m: m.chat.type == "private")
@@ -35,7 +39,6 @@ async def cmd_durak(m: Message):
     await m.answer("🃏 Дурак подкидной (2–4 игрока):", reply_markup=kb)
 
 
-# ═══════════════════════ ОБЩЕЕ ═══════════════════════
 rooms = {}
 durak_rooms = {}
 
@@ -57,7 +60,7 @@ async def handle_health(request):
     return web.json_response({"ok": True})
 
 
-# ═══════════════════════ КРЕСТИКИ-НОЛИКИ ═══════════════════════
+# ═══════════════════ КРЕСТИКИ-НОЛИКИ ═══════════════════
 def new_ttt():
     return {"board": [""] * 9, "turn": "X", "winner": None}
 
@@ -152,7 +155,7 @@ async def ws_handler(request):
     return ws
 
 
-# ═══════════════════════ ДУРАК (2–4 ИГРОКА) ═══════════════════════
+# ═══════════════════ ДУРАК (2–4 ИГРОКА + ТАЙМЕР) ═══════════════════
 RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "В", 12: "Д", 13: "К", 14: "Т"}
 SUIT_NAMES = {"h": "♥", "d": "♦", "c": "♣", "s": "♠"}
 
@@ -195,6 +198,7 @@ def new_durak(code, host_id, host_name, opts):
         "table": [], "attacker_idx": 0, "defender_idx": 1,
         "phase": "waiting", "durak_id": None, "is_draw": False,
         "clients": {}, "log": [],
+        "turn_started_at": 0,
     }
 
 
@@ -210,7 +214,6 @@ def active_indices(r):
 
 
 def next_active(r, from_idx, skip=0):
-    """Следующий активный игрок по кругу. skip — сколько активных пропустить."""
     n = len(r["players"])
     passed = 0
     for i in range(1, n * 2 + 1):
@@ -256,18 +259,26 @@ def check_end(r):
 
 
 def advance_roles(r):
-    """После отбоя/взятия — сдвигаем роли по кругу."""
     old_def = r["defender_idx"]
     active = active_indices(r)
     if len(active) < 2:
         check_end(r)
         return
-    # Новый атакующий — следующий активный после старого защитника
     new_att = next_active(r, old_def)
-    # Новый защитник — следующий активный после нового атакующего
     new_def = next_active(r, new_att)
     r["attacker_idx"] = new_att
     r["defender_idx"] = new_def
+
+
+def reset_turn_timer(r):
+    r["turn_started_at"] = int(time.time())
+
+
+def turn_remaining(r):
+    if r["phase"] in ("waiting", "over"):
+        return 0
+    started = r.get("turn_started_at") or int(time.time())
+    return max(0, TURN_LIMIT - (int(time.time()) - started))
 
 
 def public_state(r, for_uid):
@@ -278,8 +289,8 @@ def public_state(r, for_uid):
             "seat": i, "name": p["name"], "user_id": p["user_id"],
             "hand_count": len(p["hand"]) if not p.get("left") else 0,
             "left": p.get("left", False),
-            "is_attacker": i == r["attacker_idx"],
-            "is_defender": i == r["defender_idx"] and r["phase"] in ("attack", "defend"),
+            "is_attacker": i == r["attacker_idx"] and r["phase"] not in ("waiting", "over"),
+            "is_defender": i == r["defender_idx"] and r["phase"] == "defend",
         })
     me = r["players"][me_idx] if me_idx >= 0 else None
     return {
@@ -292,6 +303,8 @@ def public_state(r, for_uid):
         "your_left": me.get("left", False) if me else True,
         "players": players, "max_players": r["max_players"],
         "log": r["log"][-6:], "opts": r["opts"],
+        "turn_remaining": turn_remaining(r),
+        "turn_limit": TURN_LIMIT,
     }
 
 
@@ -329,7 +342,7 @@ async def durak_join(request):
         return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
     uid = d.get("user_id")
     if find_player(r, uid) >= 0:
-        return web.json_response({"ok": True, "code": code})  # уже внутри — просто пускаем
+        return web.json_response({"ok": True, "code": code})
     if r["phase"] != "waiting":
         return web.json_response({"ok": False, "error": "Игра уже началась"}, status=400)
     if len(r["players"]) >= r["max_players"]:
@@ -357,6 +370,7 @@ async def durak_start(request):
     r["attacker_idx"] = 0
     r["defender_idx"] = next_active(r, 0)
     r["log"].append(f"🎴 Игра началась! Козырь: {RANK_NAMES[r['trump_card']['r']]}{SUIT_NAMES[r['trump']]}")
+    reset_turn_timer(r)
     await durak_broadcast(r)
     return web.json_response({"ok": True})
 
@@ -395,13 +409,13 @@ def handle_attack(r, uid, card):
         if len(r["table"]) >= r["opts"]["throw_limit"]:
             return "Стол полон"
     else:
-        # Первый ход в раунде — только атакующий
         if idx != r["attacker_idx"]:
             return "Первым ходит атакующий"
     if not remove_card(p["hand"], card):
         return "Такой карты нет в руке"
     r["table"].append({"attack": card, "defend": None})
     r["phase"] = "defend"
+    reset_turn_timer(r)
     return None
 
 
@@ -421,6 +435,7 @@ def handle_defend(r, uid, card):
         return "Такой карты нет в руке"
     r["table"][-1]["defend"] = card
     r["phase"] = "attack"
+    reset_turn_timer(r)
     return None
 
 
@@ -440,7 +455,8 @@ def handle_take(r, uid):
     advance_roles(r)
     for i in range(len(r["players"])):
         refill_hand(r, i)
-    r["phase"] = "attack"
+    r["phase"] = "attack" if r["phase"] != "over" else "over"
+    reset_turn_timer(r)
     check_end(r)
     return None
 
@@ -460,7 +476,8 @@ def handle_pass(r, uid):
     advance_roles(r)
     for i in range(len(r["players"])):
         refill_hand(r, i)
-    r["phase"] = "attack"
+    r["phase"] = "attack" if r["phase"] != "over" else "over"
+    reset_turn_timer(r)
     check_end(r)
     return None
 
@@ -482,9 +499,57 @@ def handle_translate(r, uid, card):
     if not remove_card(p["hand"], card):
         return "Такой карты нет в руке"
     r["table"].append({"attack": card, "defend": None})
-    # Меняем роли: защитник становится тем, кого защищают (переводит атаку дальше)
     r["attacker_idx"], r["defender_idx"] = r["defender_idx"], r["attacker_idx"]
+    reset_turn_timer(r)
     return None
+
+
+def auto_action(r):
+    """Автоход при истечении таймера."""
+    if r["phase"] == "defend":
+        # Защитник берёт
+        r["log"].append(f"⏰ {r['players'][r['defender_idx']]['name']} не успел — ВЗЯЛ карты")
+        handle_take(r, r["players"][r["defender_idx"]]["user_id"])
+        return
+    if r["phase"] == "attack":
+        # Если на столе всё отбито — авто-бито. Если стол пуст — авто-ход младшей картой.
+        if r["table"] and all(p.get("defend") for p in r["table"]):
+            r["log"].append(f"⏰ {r['players'][r['attacker_idx']]['name']} не успел — БИТО")
+            handle_pass(r, r["players"][r["attacker_idx"]]["user_id"])
+        else:
+            p = r["players"][r["attacker_idx"]]
+            if p["hand"]:
+                c = sorted(p["hand"], key=lambda x: x["r"])[0]
+                r["log"].append(f"⏰ {r['players'][r['attacker_idx']]['name']} не успел — авт.-ход {RANK_NAMES[c['r']]}{SUIT_NAMES[c['s']]}")
+                handle_attack(r, p["user_id"], c)
+
+
+async def durak_timer_loop():
+    """Каждую секунду проверяет таймер хода и при истечении делает автоход."""
+    while True:
+        await asyncio.sleep(1)
+        try:
+            now_ts = int(time.time())
+            for code in list(durak_rooms.keys()):
+                r = durak_rooms.get(code)
+                if not r or r["phase"] in ("waiting", "over"):
+                    continue
+                if not r["clients"]:
+                    continue
+                started = r.get("turn_started_at") or now_ts
+                if not r.get("turn_started_at"):
+                    r["turn_started_at"] = now_ts
+                    continue
+                elapsed = now_ts - started
+                if elapsed >= TURN_LIMIT:
+                    auto_action(r)
+                    await durak_broadcast(r)
+                else:
+                    # Раз в 2 секунды рассылаем, чтобы клиент видел актуальный отсчёт
+                    if elapsed % 2 == 0:
+                        await durak_broadcast(r)
+        except Exception as e:
+            print(f"timer loop error: {e}", flush=True)
 
 
 async def durak_ws(request):
@@ -535,7 +600,7 @@ async def durak_ws(request):
     return ws
 
 
-# ═══════════════════════ ЗАПУСК ═══════════════════════
+# ═══════════════════ ЗАПУСК ═══════════════════
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle_index)
@@ -551,4 +616,5 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
+    asyncio.create_task(durak_timer_loop())
     print(f"🔧 Веб-сервер на 0.0.0.0:{PORT}", flush=True)
