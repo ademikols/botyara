@@ -16,7 +16,6 @@
   .btn:active{transform:scale(.98)}
   .btn.ghost{background:transparent;color:#fff}
   .btn.sm{padding:11px;font-size:11px;letter-spacing:1px}
-  .btn.danger{background:transparent;color:#ff4444;border-color:#ff4444}
   .field{margin-bottom:14px}
   .field label{display:block;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#777;margin-bottom:7px}
   .field input,.field select{width:100%;padding:15px;background:#0d0d0d;border:1px solid #222;color:#fff;font-family:inherit;font-size:15px;outline:none}
@@ -108,10 +107,8 @@
   <div class="status"><span class="dot" id="wsDot"></span><span id="wsStatus">ПОДКЛЮЧЕНИЕ...</span></div>
   <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="tttCodeTag">------</span></div>
   <div class="big" id="turnInfo">—</div>
-  <div class="timer-bar" id="tttTimerBar" style="display:none"><div class="timer-fill" id="tttTimerFill" style="width:100%"></div></div>
   <div class="board" id="board"></div>
   <div class="msg" id="result"></div>
-  <button class="btn danger" onclick="tttSurrender()" id="tttSurrenderBtn">СДАТЬСЯ</button>
   <button class="btn ghost" onclick="resetGame()">НОВАЯ ПАРТИЯ</button>
   <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
 </div>
@@ -197,7 +194,6 @@
     <button onclick="durakChat()">→</button>
   </div>
 
-  <button class="btn danger" id="durakSurrenderBtn" onclick="durakSurrender()">СДАТЬСЯ</button>
   <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
 </div>
 
@@ -266,7 +262,7 @@ function go(s) {
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 // ═══════════════ КРЕСТИКИ ═══════════════
-let ws = null, code = null, mySymbol = null, board = [], turn = 'X', winner = null, myTurn = false, tttEnded = false;
+let ws = null, code = null, mySymbol = null, board = [], turn = 'X', winner = null, myTurn = false;
 async function createRoom() {
   USERNAME = document.getElementById('createName').value.trim() || USERNAME;
   const r = await fetch('/api/room/create', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:USERNAME})});
@@ -294,33 +290,12 @@ function clickCell(i){if(!myTurn||winner||board[i]||!ws||ws.readyState!==1)retur
 function connectWS(){const proto=location.protocol==='https:'?'wss':'ws';ws=new WebSocket(`${proto}://${location.host}/ws/game/${code}?uid=${USER_ID}`);ws.onopen=()=>setDot(true);ws.onclose=()=>setDot(false);ws.onerror=()=>setDot(false);ws.onmessage=e=>handleWS(JSON.parse(e.data));}
 function setDot(on){document.getElementById('wsDot').classList.toggle('on',on);document.getElementById('wsStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
 function handleWS(msg){
-  if(msg.type==='init'){mySymbol=msg.symbol;board=msg.state.board;turn=msg.state.turn;winner=msg.state.winner;tttEnded=!!winner;updateUI();renderBoard();updateTimer(msg.turn_remaining,msg.turn_limit);}
-  else if(msg.type==='state'){board=msg.board;turn=msg.turn;winner=msg.winner;tttEnded=!!winner;updateUI();renderBoard();updateTimer(msg.turn_remaining,msg.turn_limit);}
+  if(msg.type==='init'){mySymbol=msg.symbol;board=msg.state.board;turn=msg.state.turn;winner=msg.state.winner;updateUI();renderBoard();}
+  else if(msg.type==='state'){board=msg.board;turn=msg.turn;winner=msg.winner;updateUI();renderBoard();}
   else if(msg.type==='error'){document.getElementById('turnInfo').textContent=msg.error;}
 }
-function updateTimer(rem,lim){
-  const bar=document.getElementById('tttTimerBar');const fill=document.getElementById('tttTimerFill');
-  if(!bar)return;
-  if(winner||rem===0||rem===undefined){bar.style.display='none';return;}
-  bar.style.display='block';
-  const total=lim||15;
-  const pct=Math.max(0,Math.min(100,(rem/total)*100));
-  fill.style.width=pct+'%';
-  fill.classList.toggle('warn',pct<60&&pct>=30);
-  fill.classList.toggle('danger',pct<30);
-}
-function updateUI(){
-  myTurn=(turn===mySymbol)&&!winner;
-  const el=document.getElementById('turnInfo');const res=document.getElementById('result');
-  const sb=document.getElementById('tttSurrenderBtn');
-  if(sb) sb.style.display=winner?'none':'block';
-  if(winner==='draw'){el.textContent='НИЧЬЯ';res.textContent='';}
-  else if(winner){el.textContent=winner===mySymbol?'🏆 ПОБЕДА':'💀 ПОРАЖЕНИЕ';res.textContent='';}
-  else if(myTurn){el.textContent='ВАШ ХОД';res.textContent='Вы — '+mySymbol;}
-  else{el.textContent='ЖДЁМ ПРОТИВНИКА...';res.textContent='Вы — '+(mySymbol||'?');}
-}
+function updateUI(){myTurn=(turn===mySymbol)&&!winner;const el=document.getElementById('turnInfo');const res=document.getElementById('result');if(winner==='draw'){el.textContent='НИЧЬЯ';res.textContent='';}else if(winner){el.textContent=winner===mySymbol?'🏆 ПОБЕДА':'💀 ПОРАЖЕНИЕ';res.textContent='';}else if(myTurn){el.textContent='ВАШ ХОД';res.textContent='Вы — '+mySymbol;}else{el.textContent='ЖДЁМ ПРОТИВНИКА...';res.textContent='Вы — '+(mySymbol||'?');}}
 function resetGame(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'reset'}));}
-function tttSurrender(){if(!ws||ws.readyState!==1||winner)return;if(!confirm('Сдаться?'))return;ws.send(JSON.stringify({type:'surrender'}));}
 
 // ═══════════════ ДУРАК ═══════════════
 const RANK_NAMES={6:'6',7:'7',8:'8',9:'9',10:'10',11:'В',12:'Д',13:'К',14:'Т'};
@@ -357,7 +332,7 @@ function durakRender(){
   let info='—';
   if(s.phase==='waiting')info=`ЖДЁМ ИГРОКОВ (${s.players.length}/${s.max_players})`;
   else if(s.phase==='over'){if(s.is_draw)info='🤝 НИЧЬЯ';else if(s.durak_id===USER_ID)info='💀 ВЫ ДУРАК';else info='🏆 ВЫ ПОБЕДИЛИ';}
-  else if(iAmOut)info='✅ ВЫ ВЫШЛИ ИЗ ИГРЫ';
+  else if(iAmOut)info='✅ ВЫ ВЫШЛИ — ЖДЁМ ОСТАЛЬНЫХ';
   else if(isMyDefense)info='🛡 ВАША ЗАЩИТА';
   else if(isMyAttack&&s.table.length===0)info='⚔ ВАШ ХОД — АТАКА';
   else if(isMyAttack&&s.phase==='attack')info='⚔ ПОДКИНЬТЕ ИЛИ ЖМИТЕ БИТО';
@@ -365,7 +340,7 @@ function durakRender(){
   document.getElementById('durakInfo').textContent=info;
 
   const bar=document.getElementById('durakTimerBar');const fill=document.getElementById('durakTimerFill');
-  if(s.phase==='waiting'||s.phase==='over'||iAmOut){bar.style.display='none';}
+  if(s.phase==='waiting'||s.phase==='over'){bar.style.display='none';}
   else{bar.style.display='block';const rem=s.turn_remaining??0;const total=s.turn_limit||30;const pct=Math.max(0,Math.min(100,(rem/total)*100));fill.style.width=pct+'%';fill.classList.toggle('warn',pct<60&&pct>=30);fill.classList.toggle('danger',pct<30);}
 
   if(s.trump_card){
@@ -381,7 +356,7 @@ function durakRender(){
   document.getElementById('durakLastLog').textContent=lastLog;
 
   const pl=document.getElementById('durakPlayers');
-  pl.innerHTML=(s.players||[]).map(p=>{const me=p.seat===myIdx;const cls=['player-row'];if(me)cls.push('me');if(p.is_attacker)cls.push('attacker');if(p.is_defender)cls.push('defender');if(p.left)cls.push('left');const badges=(p.is_attacker?'<span class="badge a">АТАКА</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');return `<div class="${cls.join(' ')}"><div>${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div><div>🃏 ${p.hand_count}${p.left?' 🏳️':''}</div></div>`;}).join('');
+  pl.innerHTML=(s.players||[]).map(p=>{const me=p.seat===myIdx;const cls=['player-row'];if(me)cls.push('me');if(p.is_attacker)cls.push('attacker');if(p.is_defender)cls.push('defender');if(p.left)cls.push('left');const badges=(p.is_attacker?'<span class="badge a">АТАКА</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');return `<div class="${cls.join(' ')}"><div>${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div><div>🃏 ${p.hand_count}${p.left?' ✅':''}</div></div>`;}).join('');
 
   const table=document.getElementById('durakTable');
   if(s.table.length===0)table.innerHTML='<div style="color:#555;font-size:11px;padding:10px">Пусто</div>';
@@ -408,16 +383,14 @@ function durakRender(){
     if(atBottom)chatBox.scrollTop=chatBox.scrollHeight;
   }
 
-  const startBtn=document.getElementById('durakStartBtn');const passBtn=document.getElementById('durakPassBtn');const takeBtn=document.getElementById('durakTakeBtn');const surBtn=document.getElementById('durakSurrenderBtn');
+  const startBtn=document.getElementById('durakStartBtn');const passBtn=document.getElementById('durakPassBtn');const takeBtn=document.getElementById('durakTakeBtn');
   startBtn.style.display=(s.phase==='waiting'&&myIdx===0)?'block':'none';
   passBtn.style.display=(isMyAttack&&s.phase==='attack'&&s.table.length>0)?'block':'none';
   takeBtn.style.display=(isMyDefense&&s.phase==='defend')?'block':'none';
-  if(surBtn) surBtn.style.display=(s.phase==='over'||iAmOut||s.phase==='waiting')?'none':'block';
 }
 async function durakStartGame(){const r=await fetch('/api/durak/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:durakRoom,user_id:USER_ID})});const d=await r.json();if(!d.ok)tg?.showAlert?.(d.error);}
 function durakAction(action,card){if(!durakWs||durakWs.readyState!==1)return;durakWs.send(JSON.stringify({action,card}));}
 function durakChat(){const i=document.getElementById('durakChatInput');const t=i.value.trim();if(!t)return;durakWs?.send?.(JSON.stringify({action:'chat',text:t}));i.value='';}
-function durakSurrender(){if(!durakWs||durakWs.readyState!==1)return;const s=durakState;if(!s||s.your_left||s.phase==='over')return;if(!confirm('Сдаться? Вы выйдете из игры.'))return;durakWs.send(JSON.stringify({action:'surrender'}));}
 
 // ═══════════════ ШПИОН ═══════════════
 let spyWs=null,spyRoom=null,spyState=null;
