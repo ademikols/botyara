@@ -34,6 +34,9 @@
   • список всех пользователей с ID (/users) и список забаненных с разбаном (/banned);
   • настройки прямо из бота, без перезапуска: лимит групп на человека, участников в группе, срок
     автоудаления + переключатели (регистрация, создание групп, пауза пересылки) — /settings, /limit;
+  • редактирование текстов (/rules, /help, /about, приветствие) — 📝 Тексты;
+  • управление списком команд (скрыть / переименовать описание) — ⌨️ Команды;
+  • расширенные настройки группы: название, описание, вход, каталог, очистка истории, кик всех;
   • рассылка всем (/broadcast), ответ на обращения из /support, бэкап базы (/backup).
 База старой версии (одна группа на человека / без каталога и ролей) обновляется автоматически
 при запуске.
@@ -74,12 +77,14 @@ TITLE_MAX = 40
 DESC_MAX = 200
 CATALOG_PAGE_SIZE = 5
 RELAY_TTL = 3 * 24 * 3600
+RELAY_TTL_DAYS = 3
 DEFAULT_MUTE_MIN = 10
 MAX_MUTE_MIN = 7 * 24 * 60
 MAX_TEXT_LEN = 3500
 
 NICK_CHANGES_PER_DAY = 3
 NICK_CHANGE_WINDOW = 24 * 3600
+NICK_CHANGE_WINDOW_H = 24
 
 INACTIVE_DAYS = 7
 INACTIVE_TTL = INACTIVE_DAYS * 24 * 3600
@@ -133,6 +138,19 @@ SETTINGS = {
     "MAX_MEMBERS": Setting(MAX_MEMBERS, 2, 5000, "Максимум участников в группе", "Участников в группе"),
     "INACTIVE_DAYS": Setting(INACTIVE_DAYS, 1, 365, "Дней без сообщений до автоудаления группы", "Автоудаление, дней"),
     "NICK_CHANGES_PER_DAY": Setting(NICK_CHANGES_PER_DAY, 1, 50, "Смен ника за 24 часа", "Смен ника / сутки"),
+    "NICK_CHANGE_WINDOW_H": Setting(24, 1, 168, "Окно подсчёта смен ника, часов", "Окно смен ника, ч"),
+    "TITLE_MAX": Setting(TITLE_MAX, 10, 200, "Макс. длина названия группы", "Длина названия"),
+    "DESC_MAX": Setting(DESC_MAX, 50, 1000, "Макс. длина описания группы", "Длина описания"),
+    "CATALOG_PAGE_SIZE": Setting(CATALOG_PAGE_SIZE, 1, 20, "Групп на странице каталога", "Групп на стр."),
+    "DEFAULT_MUTE_MIN": Setting(DEFAULT_MUTE_MIN, 1, 1000, "Мут по умолчанию, минут", "Мут по умолч."),
+    "MAX_MUTE_MIN": Setting(MAX_MUTE_MIN, 60, 43200, "Максимальный мут, минут", "Макс. мут, мин"),
+    "MAX_TEXT_LEN": Setting(MAX_TEXT_LEN, 500, 4000, "Макс. символов в сообщении", "Длина сообщ."),
+    "RELAY_TTL_DAYS": Setting(3, 1, 30, "Хранить связки сообщений, дней", "Хранить связки"),
+    "REPORT_MAX_PER_DAY": Setting(REPORT_MAX_PER_DAY, 1, 50, "Жалоб в сутки от одного", "Жалоб / сутки"),
+    "BAN_THRESHOLD_SHORT": Setting(BAN_THRESHOLD_SHORT, 1, 100, "Жалоб на короткий бан", "Порог бана 1"),
+    "BAN_THRESHOLD_LONG": Setting(BAN_THRESHOLD_LONG, 1, 200, "Жалоб на длинный бан", "Порог бана 2"),
+    "SUPPORT_COOLDOWN_H": Setting(SUPPORT_COOLDOWN_H, 1, 168, "Часов между /support", "Поддержка, ч"),
+    "ACTIVE_WINDOW_MIN": Setting(ACTIVE_WINDOW_MIN, 1, 120, "Окно онлайн в статистике, мин", "Окно онлайн"),
     "REG_OPEN": Setting(1, 0, 1, "Регистрация новых пользователей", "Регистрация", "bool"),
     "NEWGROUP_OPEN": Setting(1, 0, 1, "Создание новых групп", "Создание групп", "bool"),
     "RELAY_ON": Setting(1, 0, 1, "Пересылка сообщений (выкл = пауза)", "Пересылка", "bool"),
@@ -196,7 +214,7 @@ COMMANDS = [
 ]
 
 
-def rules_text() -> str:
+def rules_text_default() -> str:
     return f"""📜 <b>Правила бота:</b>
 
 1. Уважай собеседников — без мата, оскорблений и травли.
@@ -209,7 +227,7 @@ def rules_text() -> str:
 8. Администрация может изменять правила без предупреждения. Незнание правил не освобождает от бана."""
 
 
-def help_text() -> str:
+def help_text_default() -> str:
     return f"""❓ <b>Помощь</b>
 
 <b>Как общаться</b>
@@ -263,7 +281,7 @@ def help_text() -> str:
 /transfer ник — передать владение группой"""
 
 
-def about_text() -> str:
+def about_text_default() -> str:
     return f"""ℹ️ <b>О боте</b>
 
 Бот анонимных групп. Вас видят только под ником — ваш Telegram-аккаунт скрыт от всех.
@@ -277,6 +295,92 @@ def about_text() -> str:
 • Игры: /games (Шпион), /play (Mini App)
 
 Правила — /rules · Связь — /support"""
+
+
+def welcome_text_default() -> str:
+    return ("Создайте группу: /newgroup\n"
+            "Посмотрите каталог: /catalog\n"
+            "или откройте ссылку-приглашение от владельца группы.\n"
+            "Игры в Mini App — /play\n"
+            "Правила — /rules")
+
+
+TEXT_KEYS = {
+    "rules":   {"label": "📜 Правила (/rules)",              "default": rules_text_default},
+    "help":    {"label": "❓ Помощь (/help)",                "default": help_text_default},
+    "about":   {"label": "ℹ️ О боте (/about)",               "default": about_text_default},
+    "welcome": {"label": "🎉 Приветствие после регистрации", "default": welcome_text_default},
+}
+
+
+def get_text(key: str) -> str:
+    if key not in TEXT_KEYS:
+        return ""
+    s = one("SELECT value FROM settings WHERE key=?", (f"text_{key}",))
+    if s and s["value"]:
+        return s["value"]
+    return TEXT_KEYS[key]["default"]()
+
+
+def save_text(key: str, value: str):
+    run("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (f"text_{key}", value))
+
+
+def reset_text(key: str):
+    run("DELETE FROM settings WHERE key=?", (f"text_{key}",))
+
+
+def text_is_custom(key: str) -> bool:
+    s = one("SELECT value FROM settings WHERE key=?", (f"text_{key}",))
+    return bool(s and s["value"])
+
+
+def get_hidden_cmds() -> set:
+    s = one("SELECT value FROM settings WHERE key='hidden_cmds'")
+    if not s or not s["value"]:
+        return set()
+    return set(x for x in s["value"].split(",") if x)
+
+
+def save_hidden_cmds(s: set):
+    run("INSERT INTO settings(key,value) VALUES('hidden_cmds',?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (",".join(sorted(s)),))
+
+
+def get_cmd_desc_override(name: str) -> Optional[str]:
+    s = one("SELECT value FROM settings WHERE key=?", (f"cmddesc_{name}",))
+    return s["value"] if s and s["value"] else None
+
+
+def set_cmd_desc_override(name: str, desc: Optional[str]):
+    if desc:
+        run("INSERT INTO settings(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (f"cmddesc_{name}", desc))
+    else:
+        run("DELETE FROM settings WHERE key=?", (f"cmddesc_{name}",))
+
+
+def get_effective_commands() -> list:
+    hidden = get_hidden_cmds()
+    result = []
+    for name, default_desc in COMMANDS:
+        if name in hidden:
+            continue
+        desc = get_cmd_desc_override(name) or default_desc
+        result.append((name, desc))
+    return result
+
+
+async def refresh_commands():
+    try:
+        await bot.set_my_commands(
+            [BotCommand(command=c, description=d) for c, d in get_effective_commands()]
+        )
+    except TelegramAPIError as e:
+        log.warning("не удалось обновить список команд: %s", e)
 
 
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -449,7 +553,7 @@ def cfg(key: str) -> int:
 
 
 def load_settings():
-    global INACTIVE_TTL
+    global INACTIVE_TTL, RELAY_TTL, SUPPORT_COOLDOWN, NICK_CHANGE_WINDOW
     saved = {r["key"]: r["value"] for r in many("SELECT key, value FROM settings")}
     for key, s in SETTINGS.items():
         val = s.default
@@ -460,6 +564,9 @@ def load_settings():
                 pass
         globals()[key] = val
     INACTIVE_TTL = INACTIVE_DAYS * 24 * 3600
+    RELAY_TTL = RELAY_TTL_DAYS * 24 * 3600
+    SUPPORT_COOLDOWN = SUPPORT_COOLDOWN_H * 3600
+    NICK_CHANGE_WINDOW = NICK_CHANGE_WINDOW_H * 3600
 
 
 def save_setting(key: str, value: int):
@@ -1089,12 +1196,8 @@ async def finish_nick(m: Message, u, text: str):
         for r in many("SELECT group_id FROM members WHERE user_id=?", (uid,)):
             await announce(r["group_id"], f"✏️ <i>{esc(old)} теперь {esc(nick)}</i>", exclude=(uid,))
         return
-    await m.answer(f"✅ Ник <b>{esc(nick)}</b> сохранён!\n\n"
-                   "Создайте группу: /newgroup\n"
-                   "Посмотрите каталог: /catalog\n"
-                   "или откройте ссылку-приглашение от владельца группы.\n"
-                   "Игры в Mini App — /play\n"
-                   "Правила — /rules", reply_markup=main_kb(uid))
+    await m.answer(f"✅ Ник <b>{esc(nick)}</b> сохранён!\n\n" + get_text("welcome"),
+                   reply_markup=main_kb(uid))
     if token:
         await join_group(m, token)
 
@@ -2088,18 +2191,18 @@ async def panel_cb(c: CallbackQuery):
 @router.message(Command("help"))
 @router.message(F.text == B_HELP)
 async def cmd_help(m: Message):
-    await m.answer(help_text())
+    await m.answer(get_text("help"))
 
 
 @router.message(Command("about"))
 @router.message(F.text == B_ABOUT)
 async def cmd_about(m: Message):
-    await m.answer(about_text())
+    await m.answer(get_text("about"))
 
 
 @router.message(Command("rules"))
 async def cmd_rules(m: Message):
-    await m.answer(rules_text())
+    await m.answer(get_text("rules"))
 
 
 def support_wait(uid: int) -> int:
@@ -2347,6 +2450,7 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
         [_btn("🔎 Найти (ID/ник)", "adm:find"), _btn("🚫 Список банов", "adm:bl:0")],
         [_btn("⛔ Бан по ID", "adm:ban"), _btn("✅ Разбан по ID", "adm:unban")],
         [_btn("📋 Жалобы", "adm:rep"), _btn("⚙️ Настройки", "adm:cfg")],
+        [_btn("📝 Тексты", "adm:txts"), _btn("⌨️ Команды", "adm:cmds")],
         [_btn("📢 Рассылка", "adm:bc"), _btn("💾 Бэкап базы", "adm:bk")],
     ])
 
@@ -2628,6 +2732,7 @@ def admin_members_view(gid: int, offset: int = 0):
     nav = _nav_row(f"adm:gm:{gid}", offset, total)
     if nav:
         kb.append(nav)
+    kb.append([_btn("⚙️ Настройки группы", f"adm:gset:{gid}")])
     kb.append([_btn("🗂 К группам", "adm:gl:0"), _btn("◀️ Меню", "adm:menu")])
     return "\n".join(lines)[:4000], InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -2693,6 +2798,91 @@ def settings_view():
 
 def settings_back_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[_btn("⚙️ Настройки", "adm:cfg"), _btn("◀️ Меню", "adm:menu")]])
+
+
+def texts_view():
+    lines = ["📝 <b>Редактируемые тексты</b>",
+             "Нажмите ✏️ чтобы изменить или ↩️ чтобы сбросить к заводскому.", ""]
+    kb = []
+    for key, meta in TEXT_KEYS.items():
+        custom = "✏️" if text_is_custom(key) else "📄"
+        lines.append(f"{custom} {meta['label']}")
+        kb.append([_btn(f"{custom} {meta['label']}", f"adm:txt:{key}"),
+                   _btn("↩️", f"adm:txtreset:{key}")])
+    kb.append([_btn("◀️ Меню", "adm:menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def text_view(key: str):
+    if key not in TEXT_KEYS:
+        return "❌ Неизвестный текст.", admin_back_kb()
+    meta = TEXT_KEYS[key]
+    cur = get_text(key)
+    preview = cur[:1500] + ("\n…" if len(cur) > 1500 else "")
+    is_custom = text_is_custom(key)
+    lines = [
+        f"<b>{meta['label']}</b>",
+        f"Статус: {'✏️ отредактировано вручную' if is_custom else '📄 заводское'}",
+        f"Длина: {len(cur)} символов",
+        "",
+        "<b>Текущий текст:</b>",
+        "───────────────",
+        preview,
+        "───────────────",
+        "",
+        "Поддерживается HTML: &lt;b&gt;жирный&lt;/b&gt;, &lt;i&gt;курсив&lt;/i&gt;, &lt;code&gt;код&lt;/code&gt;.",
+    ]
+    kb = [[_btn("✏️ Изменить", f"adm:txtset:{key}")]]
+    if is_custom:
+        kb.append([_btn("↩️ Сбросить к заводскому", f"adm:txtreset:{key}")])
+    kb.append([_btn("◀️ К текстам", "adm:txts"), _btn("◀️ Меню", "adm:menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def commands_view():
+    hidden = get_hidden_cmds()
+    lines = ["⌨️ <b>Команды бота</b>",
+             "🚫 — скрыта из меню, ✏️ — изменено описание.", ""]
+    kb = []
+    for name, default_desc in COMMANDS:
+        is_hidden = name in hidden
+        override = get_cmd_desc_override(name)
+        desc = override or default_desc
+        status = "🚫" if is_hidden else "✅"
+        mark = " ✏️" if override else ""
+        lines.append(f"{status} <code>/{name}</code>{mark} — {esc(desc)}")
+        kb.append([
+            _btn(f"{status} /{name}", f"adm:cmdt:{name}"),
+            _btn("✏️", f"adm:cmded:{name}"),
+            _btn("↩️", f"adm:cmdreset:{name}"),
+        ])
+    kb.append([_btn("◀️ Меню", "adm:menu")])
+    return "\n".join(lines)[:4000], InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def admin_group_settings_view(gid: int):
+    g = one("SELECT * FROM groups WHERE id=?", (gid,))
+    if not g:
+        return "❌ Группа не найдена.", admin_back_kb()
+    lines = [
+        f"⚙️ <b>Настройки группы #{gid}</b>",
+        f"Название: <b>{esc(g['title'])}</b>",
+        f"Описание: {esc(g['description']) if g['description'] else '— нет —'}",
+        f"Участников: {count_members(gid)}/{MAX_MEMBERS}",
+        f"В каталоге: {'да' if g['is_public'] else 'нет'}",
+        f"Вход: {'закрыт' if g['is_closed'] else 'открыт'}",
+        f"Владелец: <code>{g['owner_id']}</code>",
+    ]
+    kb = [
+        [_btn("✏️ Название", f"adm:grn:{gid}"), _btn("📝 Описание", f"adm:grd:{gid}")],
+        [_btn(f"🌐 {'Убрать из' if g['is_public'] else 'В'} каталог", f"adm:gt:{gid}:public"),
+         _btn(f"🚪 {'Открыть' if g['is_closed'] else 'Закрыть'} вход", f"adm:gt:{gid}:closed")],
+        [_btn("🧹 Очистить историю", f"adm:gclear:{gid}"),
+         _btn("👥 Кикнуть всех", f"adm:gkickall:{gid}")],
+        [_btn("🗑 Удалить группу", f"adm:gd:{gid}:0")],
+        [_btn("◀️ К группам", "adm:gl:0"), _btn("◀️ Меню", "adm:menu")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def parse_setting(key: str, raw: str):
@@ -2846,6 +3036,58 @@ async def adm_input(m: Message):
     elif kind == "rp" and arg.isdigit():
         set_state(uid, "")
         await m.answer(await send_reply(int(arg), raw), reply_markup=admin_back_kb())
+    elif kind == "txtset" and arg in TEXT_KEYS:
+        if len(raw) > 3900:
+            await m.answer("✂️ Слишком длинно: максимум 3900 символов. Сократите и отправьте ещё раз или /cancel.")
+            return
+        set_state(uid, "")
+        save_text(arg, raw)
+        text, kb = text_view(arg)
+        await m.answer(f"✅ Текст обновлён.\n\n{text}", reply_markup=kb)
+    elif kind == "cmdedit":
+        if len(raw) > 200:
+            await m.answer("✂️ Слишком длинно: максимум 200 символов. Отправьте короче или /cancel.")
+            return
+        valid = any(name == arg for name, _ in COMMANDS)
+        if not valid:
+            set_state(uid, "")
+            await m.answer("❌ Такой команды нет.")
+            return
+        set_state(uid, "")
+        set_cmd_desc_override(arg, raw)
+        await refresh_commands()
+        text, kb = commands_view()
+        await m.answer(f"✅ Описание /{arg} обновлено.\n\n{text}", reply_markup=kb)
+    elif kind == "grn" and arg.isdigit():
+        gid = int(arg)
+        g = one("SELECT title FROM groups WHERE id=?", (gid,))
+        if not g:
+            set_state(uid, "")
+            await m.answer("❌ Группа не найдена.", reply_markup=admin_back_kb())
+            return
+        title, err = parse_title(raw)
+        if err:
+            await m.answer(f"{err}\nОтправьте ещё раз или /cancel.")
+            return
+        set_state(uid, "")
+        run("UPDATE groups SET title=? WHERE id=?", (title, gid))
+        await m.answer(f"✅ Название группы #{gid} изменено на «{esc(title)}».",
+                       reply_markup=admin_back_kb())
+    elif kind == "grd" and arg.isdigit():
+        gid = int(arg)
+        g = one("SELECT title FROM groups WHERE id=?", (gid,))
+        if not g:
+            set_state(uid, "")
+            await m.answer("❌ Группа не найдена.", reply_markup=admin_back_kb())
+            return
+        desc, err = parse_desc(raw)
+        if err:
+            await m.answer(f"{err}\nОтправьте ещё раз или /cancel.")
+            return
+        set_state(uid, "")
+        run("UPDATE groups SET description=? WHERE id=?", (desc, gid))
+        await m.answer("✅ Описание обновлено." if desc else "✅ Описание очищено.",
+                       reply_markup=admin_back_kb())
     else:
         set_state(uid, "")
         await m.answer("Кнопка устарела — откройте /admin заново.")
@@ -3149,6 +3391,116 @@ async def adm_cb(c: CallbackQuery):
             await c.message.answer(f"↩️ Напишите ответ на обращение #{sid} одним сообщением. Отмена — /cancel")
         elif act == "bk":
             await send_backup(uid)
+        elif act == "txts":
+            text, kb = texts_view()
+            await edit(c, text, kb)
+        elif act == "txt":
+            key = parts[2]
+            text, kb = text_view(key)
+            await edit(c, text, kb)
+        elif act == "txtset":
+            key = parts[2]
+            if key not in TEXT_KEYS:
+                await c.answer("Неизвестный текст", show_alert=True)
+                return
+            set_state(uid, f"adm:txtset:{key}")
+            cur = get_text(key)[:500]
+            await c.message.answer(
+                f"✏️ Отправьте новый текст для «{TEXT_KEYS[key]['label']}» одним сообщением.\n"
+                f"HTML-теги разрешены.\nОтмена — /cancel.\n\n"
+                f"<b>Текущий:</b>\n{cur}{'…' if len(get_text(key)) > 500 else ''}"
+            )
+        elif act == "txtreset":
+            key = parts[2]
+            if key not in TEXT_KEYS:
+                await c.answer("Неизвестный текст", show_alert=True)
+                return
+            reset_text(key)
+            text, kb = text_view(key)
+            await edit(c, text, kb)
+            await c.answer("Сброшено к заводскому")
+        elif act == "cmds":
+            text, kb = commands_view()
+            await edit(c, text, kb)
+        elif act == "cmdt":
+            name = parts[2]
+            valid = any(n == name for n, _ in COMMANDS)
+            if not valid:
+                await c.answer("Неизвестная команда", show_alert=True)
+                return
+            hidden = get_hidden_cmds()
+            if name in hidden:
+                hidden.discard(name)
+            else:
+                hidden.add(name)
+            save_hidden_cmds(hidden)
+            await refresh_commands()
+            text, kb = commands_view()
+            await edit(c, text, kb)
+        elif act == "cmded":
+            name = parts[2]
+            valid = any(n == name for n, _ in COMMANDS)
+            if not valid:
+                await c.answer("Неизвестная команда", show_alert=True)
+                return
+            set_state(uid, f"adm:cmdedit:{name}")
+            cur = get_cmd_desc_override(name) or next((d for n, d in COMMANDS if n == name), "")
+            await c.message.answer(
+                f"✏️ Отправьте новое описание для /{name} одним сообщением (до 200 символов).\n"
+                f"Отмена — /cancel.\n\n<b>Сейчас:</b> {esc(cur)}"
+            )
+        elif act == "cmdreset":
+            name = parts[2]
+            set_cmd_desc_override(name, None)
+            await refresh_commands()
+            text, kb = commands_view()
+            await edit(c, text, kb)
+            await c.answer("Описание сброшено")
+        elif act == "gset":
+            gid = int(parts[2])
+            text, kb = admin_group_settings_view(gid)
+            await edit(c, text, kb)
+        elif act == "grn":
+            gid = int(parts[2])
+            set_state(uid, f"adm:grn:{gid}")
+            g = one("SELECT title FROM groups WHERE id=?", (gid,))
+            await c.message.answer(
+                f"✏️ Отправьте новое название для группы #{gid} «{esc(g['title'])}».\n"
+                f"Отмена — /cancel."
+            )
+        elif act == "grd":
+            gid = int(parts[2])
+            set_state(uid, f"adm:grd:{gid}")
+            await c.message.answer(
+                f"📝 Отправьте новое описание для группы #{gid}. Пустое сообщение — очистить.\n"
+                f"Отмена — /cancel."
+            )
+        elif act == "gt":
+            gid, field = int(parts[2]), parts[3]
+            if field == "public":
+                run("UPDATE groups SET is_public=1-is_public WHERE id=?", (gid,))
+            elif field == "closed":
+                run("UPDATE groups SET is_closed=1-is_closed WHERE id=?", (gid,))
+            text, kb = admin_group_settings_view(gid)
+            await edit(c, text, kb)
+        elif act == "gclear":
+            gid = int(parts[2])
+            run("DELETE FROM relay WHERE group_id=?", (gid,))
+            run("DELETE FROM reports WHERE group_id=?", (gid,))
+            run("DELETE FROM stats WHERE group_id=?", (gid,))
+            run("DELETE FROM kicked_members WHERE group_id=?", (gid,))
+            await edit(c, f"🧹 История группы #{gid} очищена (связки, жалобы, статистика, кики).",
+                       admin_back_kb())
+        elif act == "gkickall":
+            gid = int(parts[2])
+            ids = [r["user_id"] for r in many("SELECT user_id FROM members WHERE group_id=?", (gid,))]
+            notes = {i: drop_member(i, gid) for i in ids}
+            for i in ids:
+                await notify(i, f"🚫 Вас исключили из группы #{gid} администратором бота." + notes[i],
+                             kb=bool(notes[i]))
+                await asyncio.sleep(0.04)
+            await edit(c, f"👥 Все участники группы #{gid} исключены ({len(ids)} чел.).",
+                       admin_back_kb())
     except (ValueError, IndexError, KeyError):
         await c.answer("Кнопка устарела — откройте /admin заново", show_alert=True)
         return
@@ -3178,7 +3530,7 @@ async def main():
         raise SystemExit("Укажите токен бота: export BOT_TOKEN=...")
     bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     BOT_USERNAME = (await bot.get_me()).username
-    await bot.set_my_commands([BotCommand(command=c, description=d) for c, d in COMMANDS])
+    await refresh_commands()
     dp = Dispatcher()
     dp.message.outer_middleware(SeenMiddleware())
     dp.callback_query.outer_middleware(SeenMiddleware())
