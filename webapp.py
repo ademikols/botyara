@@ -1,17 +1,20 @@
 import os
 import json
 import random
-import time
+import time as _time
 import asyncio
 from aiohttp import web
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 
+try:
+    from games import SPY_PACKS
+except Exception:
+    SPY_PACKS = {"clash": {"name": "Clash Royale", "words": ["Хог", "Мушкетёр", "Ведьма", "Гигант", "Скелеты", "Принц"]}}
+
 PORT = int(os.getenv("PORT", "3000"))
 WEB_APP_URL = os.getenv("WEB_APP_URL", "").rstrip("/")
-
-TURN_LIMIT = 30  # секунд на ход. Меняй, если хочешь другой лимит.
 
 webapp_router = Router()
 webapp_router.message.filter(lambda m: m.chat.type == "private")
@@ -25,28 +28,19 @@ async def cmd_play(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="🎮 Открыть игры", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
     ]])
-    await m.answer("🎮 Mini App с играми:", reply_markup=kb)
+    await m.answer("🎮 Mini App: Крестики-нолики · Дурак · Шпион", reply_markup=kb)
 
 
-@webapp_router.message(Command("durak"))
-async def cmd_durak(m: Message):
-    if not WEB_APP_URL:
-        await m.answer("❌ Не задана переменная WEB_APP_URL в Bothost.")
-        return
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🃏 Дурак", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
-    ]])
-    await m.answer("🃏 Дурак подкидной (2–4 игрока):", reply_markup=kb)
-
-
+# ═══════════════════════ ОБЩЕЕ ═══════════════════════
 rooms = {}
 durak_rooms = {}
+spy_rooms = {}
 
 
 def gen_code():
     while True:
         c = str(random.randint(100000, 999999))
-        if c not in rooms and c not in durak_rooms:
+        if c not in rooms and c not in durak_rooms and c not in spy_rooms:
             return c
 
 
@@ -60,7 +54,7 @@ async def handle_health(request):
     return web.json_response({"ok": True})
 
 
-# ═══════════════════ КРЕСТИКИ-НОЛИКИ ═══════════════════
+# ═══════════════════════ КРЕСТИКИ-НОЛИКИ ═══════════════════════
 def new_ttt():
     return {"board": [""] * 9, "turn": "X", "winner": None}
 
@@ -155,9 +149,10 @@ async def ws_handler(request):
     return ws
 
 
-# ═══════════════════ ДУРАК (2–4 ИГРОКА + ТАЙМЕР) ═══════════════════
+# ═══════════════════════ ДУРАК (2–4 ИГРОКА + ТАЙМЕР) ═══════════════════════
 RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "В", 12: "Д", 13: "К", 14: "Т"}
 SUIT_NAMES = {"h": "♥", "d": "♦", "c": "♣", "s": "♠"}
+TURN_LIMIT = 30
 
 
 def make_deck(size=36):
@@ -197,8 +192,7 @@ def new_durak(code, host_id, host_name, opts):
         "pending_hands": hands[1:], "deck": deck, "trump": trump, "trump_card": trump_card,
         "table": [], "attacker_idx": 0, "defender_idx": 1,
         "phase": "waiting", "durak_id": None, "is_draw": False,
-        "clients": {}, "log": [],
-        "turn_started_at": 0,
+        "clients": {}, "log": [], "turn_started_at": 0,
     }
 
 
@@ -207,10 +201,6 @@ def find_player(r, uid):
         if p["user_id"] == uid:
             return i
     return -1
-
-
-def active_indices(r):
-    return [i for i, p in enumerate(r["players"]) if not p.get("left")]
 
 
 def next_active(r, from_idx, skip=0):
@@ -260,7 +250,7 @@ def check_end(r):
 
 def advance_roles(r):
     old_def = r["defender_idx"]
-    active = active_indices(r)
+    active = [i for i, p in enumerate(r["players"]) if not p.get("left")]
     if len(active) < 2:
         check_end(r)
         return
@@ -271,17 +261,17 @@ def advance_roles(r):
 
 
 def reset_turn_timer(r):
-    r["turn_started_at"] = int(time.time())
+    r["turn_started_at"] = int(_time.time())
 
 
 def turn_remaining(r):
     if r["phase"] in ("waiting", "over"):
         return 0
-    started = r.get("turn_started_at") or int(time.time())
-    return max(0, TURN_LIMIT - (int(time.time()) - started))
+    started = r.get("turn_started_at") or int(_time.time())
+    return max(0, TURN_LIMIT - (int(_time.time()) - started))
 
 
-def public_state(r, for_uid):
+def public_state_durak(r, for_uid):
     me_idx = find_player(r, for_uid)
     players = []
     for i, p in enumerate(r["players"]):
@@ -303,8 +293,7 @@ def public_state(r, for_uid):
         "your_left": me.get("left", False) if me else True,
         "players": players, "max_players": r["max_players"],
         "log": r["log"][-6:], "opts": r["opts"],
-        "turn_remaining": turn_remaining(r),
-        "turn_limit": TURN_LIMIT,
+        "turn_remaining": turn_remaining(r), "turn_limit": TURN_LIMIT,
     }
 
 
@@ -314,7 +303,7 @@ async def durak_broadcast(r):
             r["clients"].pop(uid, None)
             continue
         try:
-            await ws.send_json({"type": "state", "state": public_state(r, uid)})
+            await ws.send_json({"type": "state", "state": public_state_durak(r, uid)})
         except Exception:
             r["clients"].pop(uid, None)
 
@@ -505,14 +494,11 @@ def handle_translate(r, uid, card):
 
 
 def auto_action(r):
-    """Автоход при истечении таймера."""
     if r["phase"] == "defend":
-        # Защитник берёт
         r["log"].append(f"⏰ {r['players'][r['defender_idx']]['name']} не успел — ВЗЯЛ карты")
         handle_take(r, r["players"][r["defender_idx"]]["user_id"])
         return
     if r["phase"] == "attack":
-        # Если на столе всё отбито — авто-бито. Если стол пуст — авто-ход младшей картой.
         if r["table"] and all(p.get("defend") for p in r["table"]):
             r["log"].append(f"⏰ {r['players'][r['attacker_idx']]['name']} не успел — БИТО")
             handle_pass(r, r["players"][r["attacker_idx"]]["user_id"])
@@ -525,31 +511,28 @@ def auto_action(r):
 
 
 async def durak_timer_loop():
-    """Каждую секунду проверяет таймер хода и при истечении делает автоход."""
     while True:
         await asyncio.sleep(1)
         try:
-            now_ts = int(time.time())
+            now_ts = int(_time.time())
             for code in list(durak_rooms.keys()):
                 r = durak_rooms.get(code)
                 if not r or r["phase"] in ("waiting", "over"):
                     continue
                 if not r["clients"]:
                     continue
-                started = r.get("turn_started_at") or now_ts
                 if not r.get("turn_started_at"):
                     r["turn_started_at"] = now_ts
                     continue
-                elapsed = now_ts - started
+                elapsed = now_ts - r["turn_started_at"]
                 if elapsed >= TURN_LIMIT:
                     auto_action(r)
                     await durak_broadcast(r)
                 else:
-                    # Раз в 2 секунды рассылаем, чтобы клиент видел актуальный отсчёт
                     if elapsed % 2 == 0:
                         await durak_broadcast(r)
         except Exception as e:
-            print(f"timer loop error: {e}", flush=True)
+            print(f"durak timer: {e}", flush=True)
 
 
 async def durak_ws(request):
@@ -570,7 +553,7 @@ async def durak_ws(request):
         await ws.close()
         return ws
     r["clients"][uid] = ws
-    await ws.send_json({"type": "state", "state": public_state(r, uid)})
+    await ws.send_json({"type": "state", "state": public_state_durak(r, uid)})
     try:
         async for msg in ws:
             if msg.type != web.WSMsgType.TEXT:
@@ -600,21 +583,297 @@ async def durak_ws(request):
     return ws
 
 
-# ═══════════════════ ЗАПУСК ═══════════════════
+# ═══════════════════════ ШПИОН ═══════════════════════
+VOTE_TIME_LIMIT = 90
+
+
+def new_spy_room(code, host_id, host_name, pack_id):
+    return {
+        "code": code, "host_id": host_id, "pack": pack_id,
+        "players": [{"user_id": host_id, "name": host_name, "vote": None}],
+        "phase": "waiting", "common_word": None, "spy_word": None, "spy_id": None,
+        "clients": {}, "chat": [], "vote_started_at": 0, "log": [],
+    }
+
+
+def spy_find(r, uid):
+    for i, p in enumerate(r["players"]):
+        if p["user_id"] == uid:
+            return i
+    return -1
+
+
+def spy_vote_remaining(r):
+    if r["phase"] != "vote":
+        return 0
+    return max(0, VOTE_TIME_LIMIT - int(_time.time() - r["vote_started_at"]))
+
+
+def spy_public(r, for_uid):
+    me_idx = spy_find(r, for_uid)
+    players = []
+    for i, p in enumerate(r["players"]):
+        players.append({
+            "seat": i, "name": p["name"], "user_id": p["user_id"],
+            "is_me": p["user_id"] == for_uid,
+            "has_voted": p["vote"] is not None,
+        })
+    reveal = r["phase"] == "result"
+    result = None
+    if reveal:
+        votes = {}
+        for p in r["players"]:
+            if p["vote"] is not None:
+                votes.setdefault(p["vote"], []).append(p["name"])
+        tally = {}
+        for p in r["players"]:
+            if p["vote"] is not None:
+                tally[p["vote"]] = tally.get(p["vote"], 0) + 1
+        top_id, top_cnt, tie = None, 0, False
+        for tid, cnt in tally.items():
+            if cnt > top_cnt:
+                top_id, top_cnt, tie = tid, cnt, False
+            elif cnt == top_cnt:
+                tie = True
+        spy_caught = (top_id == r["spy_id"]) and not tie
+        result = {
+            "spy_id": r["spy_id"],
+            "spy_name": next((p["name"] for p in r["players"] if p["user_id"] == r["spy_id"]), "?"),
+            "common_word": r["common_word"], "spy_word": r["spy_word"],
+            "votes": votes, "voted_id": top_id,
+            "voted_name": next((p["name"] for p in r["players"] if p["user_id"] == top_id), "—") if top_id else "—",
+            "votes_count": top_cnt, "tie": tie, "spy_caught": spy_caught,
+            "winner": "civilians" if spy_caught else "spy",
+        }
+    return {
+        "code": r["code"], "pack": r["pack"],
+        "pack_name": SPY_PACKS.get(r["pack"], {}).get("name", r["pack"]),
+        "phase": r["phase"], "host_id": r["host_id"],
+        "players": players, "your_idx": me_idx,
+        "chat": r["chat"][-50:], "vote_remaining": spy_vote_remaining(r),
+        "result": result, "log": r["log"][-6:],
+    }
+
+
+async def spy_broadcast(r):
+    for uid, ws in list(r["clients"].items()):
+        if ws.closed:
+            r["clients"].pop(uid, None)
+            continue
+        try:
+            await ws.send_json({"type": "state", "state": spy_public(r, uid)})
+        except Exception:
+            r["clients"].pop(uid, None)
+
+
+async def spy_create(request):
+    d = await request.json()
+    pack = d.get("pack") or "clash"
+    if pack not in SPY_PACKS:
+        pack = next(iter(SPY_PACKS.keys()))
+    code = gen_code()
+    spy_rooms[code] = new_spy_room(code, d.get("user_id"), d.get("username") or "Хозяин", pack)
+    return web.json_response({"ok": True, "code": code})
+
+
+async def spy_join(request):
+    d = await request.json()
+    code = str(d.get("code", "")).strip()
+    r = spy_rooms.get(code)
+    if not r:
+        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+    uid = d.get("user_id")
+    if spy_find(r, uid) >= 0:
+        return web.json_response({"ok": True, "code": code})
+    if r["phase"] != "waiting":
+        return web.json_response({"ok": False, "error": "Игра уже началась"}, status=400)
+    if len(r["players"]) >= 15:
+        return web.json_response({"ok": False, "error": "Комната заполнена (макс 15)"}, status=400)
+    r["players"].append({"user_id": uid, "name": d.get("username") or f"Игрок {len(r['players'])+1}", "vote": None})
+    r["log"].append(f"➕ {d.get('username') or 'Игрок'} зашёл")
+    await spy_broadcast(r)
+    return web.json_response({"ok": True, "code": code})
+
+
+async def spy_start(request):
+    d = await request.json()
+    code = str(d.get("code", "")).strip()
+    uid = d.get("user_id")
+    r = spy_rooms.get(code)
+    if not r:
+        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+    if r["host_id"] != uid:
+        return web.json_response({"ok": False, "error": "Только хозяин может начать"}, status=403)
+    if len(r["players"]) < 3:
+        return web.json_response({"ok": False, "error": "Нужно минимум 3 игрока"}, status=400)
+    pool = list(dict.fromkeys(SPY_PACKS[r["pack"]]["words"]))
+    if len(pool) < 2:
+        return web.json_response({"ok": False, "error": "В паке мало слов"}, status=400)
+    common, spy = random.sample(pool, 2)
+    r["common_word"] = common
+    r["spy_word"] = spy
+    spy_player = random.choice(r["players"])
+    r["spy_id"] = spy_player["user_id"]
+    r["phase"] = "discuss"
+    r["log"].append("🎭 Игра началась! Все получили слова. Обсуждайте.")
+    for p in r["players"]:
+        ws = r["clients"].get(p["user_id"])
+        if ws and not ws.closed:
+            word = spy if p["user_id"] == r["spy_id"] else common
+            try:
+                await ws.send_json({"type": "your_word", "word": word,
+                                    "pack_name": SPY_PACKS[r["pack"]]["name"]})
+            except Exception:
+                pass
+    await spy_broadcast(r)
+    return web.json_response({"ok": True})
+
+
+async def spy_to_vote(request):
+    d = await request.json()
+    code = str(d.get("code", "")).strip()
+    uid = d.get("user_id")
+    r = spy_rooms.get(code)
+    if not r:
+        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+    if r["host_id"] != uid:
+        return web.json_response({"ok": False, "error": "Только хозяин может запустить голосование"}, status=403)
+    if r["phase"] != "discuss":
+        return web.json_response({"ok": False, "error": "Сейчас не фаза обсуждения"}, status=400)
+    r["phase"] = "vote"
+    r["vote_started_at"] = int(_time.time())
+    for p in r["players"]:
+        p["vote"] = None
+    r["log"].append(f"🗳 Голосование началось! У вас {VOTE_TIME_LIMIT} сек.")
+    await spy_broadcast(r)
+    return web.json_response({"ok": True})
+
+
+def spy_finish_vote(r):
+    r["phase"] = "result"
+
+
+async def spy_ws(request):
+    code = request.match_info.get("code")
+    try:
+        uid = int(request.query.get("uid", "0"))
+    except ValueError:
+        uid = 0
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    r = spy_rooms.get(code)
+    if not r:
+        await ws.send_json({"type": "error", "error": "Комната не найдена"})
+        await ws.close()
+        return ws
+    if spy_find(r, uid) < 0:
+        await ws.send_json({"type": "error", "error": "Вы не в этой игре"})
+        await ws.close()
+        return ws
+    r["clients"][uid] = ws
+    await ws.send_json({"type": "state", "state": spy_public(r, uid)})
+    if r["phase"] in ("discuss", "vote") and r["spy_id"] is not None:
+        word = r["spy_word"] if uid == r["spy_id"] else r["common_word"]
+        try:
+            await ws.send_json({"type": "your_word", "word": word,
+                                "pack_name": SPY_PACKS[r["pack"]]["name"]})
+        except Exception:
+            pass
+    try:
+        async for msg in ws:
+            if msg.type != web.WSMsgType.TEXT:
+                continue
+            try:
+                d = json.loads(msg.data)
+            except Exception:
+                continue
+            act = d.get("type")
+            if act == "chat":
+                text = (d.get("text") or "").strip()[:300]
+                if text:
+                    name = next((p["name"] for p in r["players"] if p["user_id"] == uid), "?")
+                    r["chat"].append({"user": name, "text": text})
+                    if len(r["chat"]) > 200:
+                        r["chat"] = r["chat"][-200:]
+                    await spy_broadcast(r)
+            elif act == "vote":
+                if r["phase"] != "vote":
+                    await ws.send_json({"type": "error", "error": "Сейчас не голосование"})
+                    continue
+                target = d.get("target_id")
+                if target == uid:
+                    await ws.send_json({"type": "error", "error": "Нельзя голосовать за себя"})
+                    continue
+                me = next((p for p in r["players"] if p["user_id"] == uid), None)
+                if me:
+                    me["vote"] = target
+                if all(p["vote"] is not None for p in r["players"]):
+                    spy_finish_vote(r)
+                    r["log"].append("🗳 Все проголосовали.")
+                await spy_broadcast(r)
+            elif act == "reset":
+                if r["host_id"] != uid:
+                    continue
+                r["phase"] = "waiting"
+                r["common_word"] = None
+                r["spy_word"] = None
+                r["spy_id"] = None
+                r["chat"] = []
+                for p in r["players"]:
+                    p["vote"] = None
+                r["log"].append("🔄 Новая игра — слова сброшены.")
+                await spy_broadcast(r)
+    finally:
+        r["clients"].pop(uid, None)
+    return ws
+
+
+async def spy_timer_loop():
+    while True:
+        await asyncio.sleep(1)
+        try:
+            now_ts = int(_time.time())
+            for code in list(spy_rooms.keys()):
+                r = spy_rooms.get(code)
+                if not r or r["phase"] != "vote":
+                    continue
+                if not r["clients"]:
+                    continue
+                if now_ts - r["vote_started_at"] >= VOTE_TIME_LIMIT:
+                    spy_finish_vote(r)
+                    r["log"].append("⏰ Время вышло — показываем результат.")
+                    await spy_broadcast(r)
+                else:
+                    if (now_ts - r["vote_started_at"]) % 3 == 0:
+                        await spy_broadcast(r)
+        except Exception as e:
+            print(f"spy timer: {e}", flush=True)
+
+
+# ═══════════════════════ ЗАПУСК ═══════════════════════
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle_index)
     app.router.add_get("/app.html", handle_index)
     app.router.add_get("/health", handle_health)
+    # Крестики
     app.router.add_post("/api/room/create", api_create)
     app.router.add_post("/api/room/join", api_join)
     app.router.add_get("/ws/game/{code}", ws_handler)
+    # Дурак
     app.router.add_post("/api/durak/create", durak_create)
     app.router.add_post("/api/durak/join", durak_join)
     app.router.add_post("/api/durak/start", durak_start)
     app.router.add_get("/ws/durak/{code}", durak_ws)
+    # Шпион
+    app.router.add_post("/api/spy/create", spy_create)
+    app.router.add_post("/api/spy/join", spy_join)
+    app.router.add_post("/api/spy/start", spy_start)
+    app.router.add_post("/api/spy/to_vote", spy_to_vote)
+    app.router.add_get("/ws/spy/{code}", spy_ws)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     asyncio.create_task(durak_timer_loop())
+    asyncio.create_task(spy_timer_loop())
     print(f"🔧 Веб-сервер на 0.0.0.0:{PORT}", flush=True)
