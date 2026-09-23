@@ -11,7 +11,7 @@ from aiogram.types import Message, WebAppInfo, InlineKeyboardMarkup, InlineKeybo
 try:
     from games import SPY_PACKS
 except Exception:
-    SPY_PACKS = {"clash": {"name": "Clash Royale", "words": ["Хог", "Мушкетёр", "Ведьма", "Гигант", "Скелеты", "Принц"]}}
+    SPY_PACKS = {"clash": {"name": "Clash Royale", "words": ["Хог", "Мушкетер", "Ведьма", "Гигант", "Скелеты", "Принц"]}}
 
 PORT = int(os.getenv("PORT", "3000"))
 WEB_APP_URL = os.getenv("WEB_APP_URL", "").rstrip("/")
@@ -26,12 +26,12 @@ webapp_router.message.filter(lambda m: m.chat.type == "private")
 @webapp_router.message(Command("play"))
 async def cmd_play(m: Message):
     if not WEB_APP_URL:
-        await m.answer("Не задана переменная WEB_APP_URL в Bothost.")
+        await m.answer("Ne zadana peremennaya WEB_APP_URL v Bothost.")
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Открыть игры", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
+        InlineKeyboardButton(text="Otkryt igry", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
     ]])
-    await m.answer("Mini App: Крестики-нолики, Дурак, Шпион", reply_markup=kb)
+    await m.answer("Mini App: Krestiki, Durak, Shpion", reply_markup=kb)
 
 
 rooms = {}
@@ -56,7 +56,7 @@ async def handle_health(request):
     return web.json_response({"ok": True})
 
 
-# ═══════════════════════ КРЕСТИКИ-НОЛИКИ ═══════════════════════
+# ================= Krestiki-noliki =================
 def new_ttt():
     return {"board": [""] * 9, "turn": "X", "winner": None}
 
@@ -91,7 +91,7 @@ async def api_create(request):
     d = await request.json()
     code = gen_code()
     rooms[code] = {
-        "host_id": d.get("user_id"), "host_name": d.get("username") or "Игрок 1",
+        "host_id": d.get("user_id"), "host_name": d.get("username") or "Igrok 1",
         "guest_id": None, "guest_name": None,
         "state": new_ttt(), "clients": set(),
         "turn_started_at": int(_time.time()),
@@ -104,11 +104,11 @@ async def api_join(request):
     code = str(d.get("code", "")).strip()
     r = rooms.get(code)
     if not r:
-        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+        return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     if r["guest_id"] is not None:
-        return web.json_response({"ok": False, "error": "Комната уже занята"}, status=400)
+        return web.json_response({"ok": False, "error": "Komnata uje zanyata"}, status=400)
     r["guest_id"] = d.get("user_id")
-    r["guest_name"] = d.get("username") or "Игрок 2"
+    r["guest_name"] = d.get("username") or "Igrok 2"
     ttt_reset_timer(r)
     return web.json_response({"ok": True, "code": code})
 
@@ -123,7 +123,7 @@ async def ws_handler(request):
     await ws.prepare(request)
     r = rooms.get(code)
     if not r:
-        await ws.send_json({"type": "error", "error": "Комната не найдена"})
+        await ws.send_json({"type": "error", "error": "Komnata ne naidena"})
         await ws.close()
         return ws
     if uid == r["host_id"]:
@@ -131,7 +131,7 @@ async def ws_handler(request):
     elif uid == r["guest_id"]:
         symbol = "O"
     else:
-        await ws.send_json({"type": "error", "error": "Вы не в этой комнате"})
+        await ws.send_json({"type": "error", "error": "Vy ne v etoi komnate"})
         await ws.close()
         return ws
     r["clients"].add(ws)
@@ -202,8 +202,8 @@ async def ws_handler(request):
     return ws
 
 
-# ═══════════════════════ ДУРАК ═══════════════════════
-RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "В", 12: "Д", 13: "К", 14: "Т"}
+# ================= Durak =================
+RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "V", 12: "D", 13: "K", 14: "T"}
 SUIT_NAMES = {"h": "H", "d": "D", "c": "C", "s": "S"}
 
 
@@ -283,7 +283,7 @@ def check_left(r):
     for p in r["players"]:
         if not p.get("left") and not p["hand"]:
             p["left"] = True
-            r["log"].append(f"{p['name']} вышел")
+            r["log"].append(f"{p['name']} vyshel")
 
 
 def check_end(r):
@@ -295,10 +295,10 @@ def check_end(r):
         r["phase"] = "over"
         if not active:
             r["is_draw"] = True
-            r["log"].append("Ничья — все вышли одновременно")
+            r["log"].append("Nichya - vse vyshli")
         else:
             r["durak_id"] = active[0]["user_id"]
-            r["log"].append(f"{active[0]['name']} — дурак!")
+            r["log"].append(f"{active[0]['name']} - durak!")
 
 
 def advance_roles(r):
@@ -377,7 +377,7 @@ async def durak_create(request):
     opts = {"deck_size": size, "translate": bool(d.get("translate", False)),
             "throw_limit": 6, "max_players": mp, "turn_limit": tl}
     code = gen_code()
-    durak_rooms[code] = new_durak(code, d.get("user_id"), d.get("username") or "Хозяин", opts)
+    durak_rooms[code] = new_durak(code, d.get("user_id"), d.get("username") or "Hozain", opts)
     return web.json_response({"ok": True, "code": code, "max_players": mp})
 
 
@@ -386,18 +386,18 @@ async def durak_join(request):
     code = str(d.get("code", "")).strip()
     r = durak_rooms.get(code)
     if not r:
-        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+        return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     uid = d.get("user_id")
     if find_player(r, uid) >= 0:
         return web.json_response({"ok": True, "code": code})
     if r["phase"] != "waiting":
-        return web.json_response({"ok": False, "error": "Игра уже началась"}, status=400)
+        return web.json_response({"ok": False, "error": "Igra uje nachalas"}, status=400)
     if len(r["players"]) >= r["max_players"]:
-        return web.json_response({"ok": False, "error": "Комната заполнена"}, status=400)
+        return web.json_response({"ok": False, "error": "Komnata zapolnena"}, status=400)
     hand = r["pending_hands"].pop(0)
-    name = d.get("username") or f"Игрок {len(r['players']) + 1}"
+    name = d.get("username") or f"Igrok {len(r['players']) + 1}"
     r["players"].append({"user_id": uid, "name": name, "hand": hand, "left": False})
-    r["log"].append(f"{name} зашёл в игру")
+    r["log"].append(f"{name} zashel v igru")
     await durak_broadcast(r)
     return web.json_response({"ok": True, "code": code})
 
@@ -408,15 +408,15 @@ async def durak_start(request):
     uid = d.get("user_id")
     r = durak_rooms.get(code)
     if not r:
-        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+        return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     if r["players"][0]["user_id"] != uid:
-        return web.json_response({"ok": False, "error": "Только хозяин может начать"}, status=403)
+        return web.json_response({"ok": False, "error": "Tolko hozain"}, status=403)
     if len(r["players"]) < 2:
-        return web.json_response({"ok": False, "error": "Нужно минимум 2 игрока"}, status=400)
+        return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka"}, status=400)
     r["phase"] = "attack"
     r["attacker_idx"] = 0
     r["defender_idx"] = next_active(r, 0)
-    r["log"].append(f"Игра началась. Козырь: {RANK_NAMES[r['trump_card']['r']]}{SUIT_NAMES[r['trump']]}")
+    r["log"].append(f"Igra nachalas. Kozyr: {RANK_NAMES[r['trump_card']['r']]}{SUIT_NAMES[r['trump']]}")
     reset_turn_timer(r)
     await durak_broadcast(r)
     return web.json_response({"ok": True})
@@ -441,28 +441,28 @@ def remove_card(hand, card):
 
 def handle_attack(r, uid, card):
     if r["phase"] not in ("attack", "defend"):
-        return "Сейчас не время ходить"
+        return "Ne vremya hodit"
     if r["phase"] == "defend" and r["table"] and not r["table"][-1].get("defend"):
-        return "Защитник ещё не отбил предыдущую карту"
+        return "Zashitnik ne otbil"
     idx = find_player(r, uid)
     if idx < 0 or r["players"][idx].get("left"):
-        return "Вы не в игре"
+        return "Vy ne v igre"
     if idx == r["defender_idx"]:
-        return "Защитник не подкидывает"
+        return "Zashitnik ne podkidyvaet"
     p = r["players"][idx]
     if r["table"]:
         if card["r"] not in table_ranks(r):
-            return "Подкидывать можно только карты рангов со стола"
+            return "Podkidyvat mojno tolko rangi so stola"
         if len(r["table"]) >= r["opts"]["throw_limit"]:
-            return "Стол полон"
+            return "Stol polon"
     else:
         if idx != r["attacker_idx"]:
-            return "Первым ходит атакующий"
+            return "Pervym hodit atakuyshiy"
     if not remove_card(p["hand"], card):
-        return "Такой карты нет в руке"
+        return "Takoi karty net v ruke"
     cs = f"{RANK_NAMES[card['r']]}{SUIT_NAMES[card['s']]}"
     if r["table"]:
-        r["log"].append(f"{p['name']}: {cs} (подкинул)")
+        r["log"].append(f"{p['name']}: {cs} (podkinul)")
     else:
         r["log"].append(f"{p['name']}: {cs}")
     r["table"].append({"attack": card, "defend": None})
@@ -473,21 +473,21 @@ def handle_attack(r, uid, card):
 
 def handle_defend(r, uid, card):
     if r["phase"] != "defend":
-        return "Сейчас не фаза защиты"
+        return "Ne faza zashity"
     idx = find_player(r, uid)
     if idx != r["defender_idx"]:
-        return "Вы не защитник"
+        return "Vy ne zashitnik"
     if not r["table"] or r["table"][-1].get("defend"):
-        return "Нет карты для отбоя"
+        return "Net karty dlya otboya"
     attack = r["table"][-1]["attack"]
     if not beats(attack, card, r["trump"]):
-        return "Эта карта не бьёт"
+        return "Eta karta ne bet"
     p = r["players"][idx]
     if not remove_card(p["hand"], card):
-        return "Такой карты нет в руке"
+        return "Takoi karty net v ruke"
     cs = f"{RANK_NAMES[card['r']]}{SUIT_NAMES[card['s']]}"
     ac = f"{RANK_NAMES[attack['r']]}{SUIT_NAMES[attack['s']]}"
-    r["log"].append(f"{p['name']}: {cs} бьёт {ac}")
+    r["log"].append(f"{p['name']}: {cs} bet {ac}")
     r["table"][-1]["defend"] = card
     r["phase"] = "attack"
     reset_turn_timer(r)
@@ -496,10 +496,10 @@ def handle_defend(r, uid, card):
 
 def handle_take(r, uid):
     if r["phase"] != "defend":
-        return "Сейчас не фаза защиты"
+        return "Ne faza zashity"
     idx = find_player(r, uid)
     if idx != r["defender_idx"]:
-        return "Вы не защитник"
+        return "Vy ne zashitnik"
     p = r["players"][idx]
     cnt = len(r["table"])
     for pair in r["table"]:
@@ -508,7 +508,7 @@ def handle_take(r, uid):
             p["hand"].append(pair["defend"])
     p["hand"].sort(key=card_value, reverse=True)
     r["table"] = []
-    r["log"].append(f"{p['name']} взял {cnt} карт")
+    r["log"].append(f"{p['name']} vzyal {cnt} kart")
     advance_roles(r)
     for i in range(len(r["players"])):
         refill_hand(r, i)
@@ -520,17 +520,17 @@ def handle_take(r, uid):
 
 def handle_pass(r, uid):
     if r["phase"] != "attack":
-        return "Сейчас не фаза атаки"
+        return "Ne faza ataki"
     idx = find_player(r, uid)
     if idx != r["attacker_idx"]:
-        return "Завершить раунд может только атакующий"
+        return "Zavershit mojet tolko atakuyshiy"
     if not r["table"]:
-        return "Нечего завершать"
+        return "Nechto zavershat"
     for pair in r["table"]:
         if not pair.get("defend"):
-            return "Защитник ещё не отбил все карты"
+            return "Zashitnik ne otbil vse karty"
     r["table"] = []
-    r["log"].append("БИТО")
+    r["log"].append("BITO")
     advance_roles(r)
     for i in range(len(r["players"])):
         refill_hand(r, i)
@@ -542,20 +542,20 @@ def handle_pass(r, uid):
 
 def handle_translate(r, uid, card):
     if not r["opts"]["translate"]:
-        return "Переводной отключён"
+        return "Perevodnoi otkluchen"
     if r["phase"] != "defend":
-        return "Не фаза защиты"
+        return "Ne faza zashity"
     idx = find_player(r, uid)
     if idx != r["defender_idx"]:
-        return "Вы не защитник"
+        return "Vy ne zashitnik"
     if len(r["table"]) != 1 or r["table"][0].get("defend"):
-        return "Перевод доступен только когда на столе одна неотбитая карта"
+        return "Perevod tolko odna neotbitaya karta"
     attack = r["table"][0]["attack"]
     if card["r"] != attack["r"]:
-        return "Перевод только картой того же ранга"
+        return "Perevod tolko kartoi togo je ranga"
     p = r["players"][idx]
     if not remove_card(p["hand"], card):
-        return "Такой карты нет в руке"
+        return "Takoi karty net v ruke"
     r["table"].append({"attack": card, "defend": None})
     r["attacker_idx"], r["defender_idx"] = r["defender_idx"], r["attacker_idx"]
     reset_turn_timer(r)
@@ -565,13 +565,13 @@ def handle_translate(r, uid, card):
 def handle_surrender(r, uid):
     idx = find_player(r, uid)
     if idx < 0:
-        return "Вы не в игре"
+        return "Vy ne v igre"
     p = r["players"][idx]
     if p.get("left"):
         return None
     p["left"] = True
     p["hand"] = []
-    r["log"].append(f"{p['name']} сдался")
+    r["log"].append(f"{p['name']} sdalsya")
     if r["phase"] in ("attack", "defend"):
         active = [i for i, x in enumerate(r["players"]) if not x.get("left")]
         if len(active) < 2:
@@ -587,6 +587,46 @@ def handle_surrender(r, uid):
     return None
 
 
+def auto_action(r):
+    if r["phase"] == "defend":
+        r["log"].append(f"{r['players'][r['defender_idx']]['name']} ne uspel - VZYAL karty")
+        handle_take(r, r["players"][r["defender_idx"]]["user_id"])
+        return
+    if r["phase"] == "attack":
+        if r["table"] and all(p.get("defend") for p in r["table"]):
+            r["log"].append(f"{r['players'][r['attacker_idx']]['name']} ne uspel - BITO")
+            handle_pass(r, r["players"][r["attacker_idx"]]["user_id"])
+        else:
+            p = r["players"][r["attacker_idx"]]
+            if p["hand"]:
+                c = sorted(p["hand"], key=lambda x: x["r"])[0]
+                r["log"].append(f"{r['players'][r['attacker_idx']]['name']} ne uspel - avtohod")
+                handle_attack(r, p["user_id"], c)
+
+
+async def durak_watchdog():
+    """Raz v 2 sek proveryaet, ne istek li taimer hoda."""
+    while True:
+        await asyncio.sleep(2)
+        try:
+            now_ts = int(_time.time())
+            for code in list(durak_rooms.keys()):
+                r = durak_rooms.get(code)
+                if not r:
+                    continue
+                if r["phase"] not in ("attack", "defend"):
+                    continue
+                if not r["clients"]:
+                    continue
+                started = r.get("turn_started_at") or now_ts
+                limit = r.get("turn_limit", TURN_LIMIT)
+                if now_ts - started >= limit:
+                    auto_action(r)
+                    await durak_broadcast(r)
+        except Exception as e:
+            print(f"durak watchdog error: {e}", flush=True)
+
+
 async def durak_ws(request):
     code = request.match_info.get("code")
     try:
@@ -597,11 +637,11 @@ async def durak_ws(request):
     await ws.prepare(request)
     r = durak_rooms.get(code)
     if not r:
-        await ws.send_json({"type": "error", "error": "Комната не найдена"})
+        await ws.send_json({"type": "error", "error": "Komnata ne naidena"})
         await ws.close()
         return ws
     if find_player(r, uid) < 0:
-        await ws.send_json({"type": "error", "error": "Вы не в этой игре"})
+        await ws.send_json({"type": "error", "error": "Vy ne v etoi igre"})
         await ws.close()
         return ws
     r["clients"][uid] = ws
@@ -646,7 +686,7 @@ async def durak_ws(request):
     return ws
 
 
-# ═══════════════════════ ШПИОН ═══════════════════════
+# ================= Shpion =================
 VOTE_TIME_LIMIT = 90
 
 
@@ -704,7 +744,7 @@ def spy_public(r, for_uid):
             "spy_name": next((p["name"] for p in r["players"] if p["user_id"] == r["spy_id"]), "?"),
             "common_word": r["common_word"], "spy_word": r["spy_word"],
             "votes": votes, "voted_id": top_id,
-            "voted_name": next((p["name"] for p in r["players"] if p["user_id"] == top_id), "—") if top_id else "—",
+            "voted_name": next((p["name"] for p in r["players"] if p["user_id"] == top_id), "-") if top_id else "-",
             "votes_count": top_cnt, "tie": tie, "spy_caught": spy_caught,
             "winner": "civilians" if spy_caught else "spy",
         }
@@ -735,7 +775,7 @@ async def spy_create(request):
     if pack not in SPY_PACKS:
         pack = next(iter(SPY_PACKS.keys()))
     code = gen_code()
-    spy_rooms[code] = new_spy_room(code, d.get("user_id"), d.get("username") or "Хозяин", pack)
+    spy_rooms[code] = new_spy_room(code, d.get("user_id"), d.get("username") or "Hozain", pack)
     return web.json_response({"ok": True, "code": code})
 
 
@@ -744,16 +784,16 @@ async def spy_join(request):
     code = str(d.get("code", "")).strip()
     r = spy_rooms.get(code)
     if not r:
-        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+        return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     uid = d.get("user_id")
     if spy_find(r, uid) >= 0:
         return web.json_response({"ok": True, "code": code})
     if r["phase"] != "waiting":
-        return web.json_response({"ok": False, "error": "Игра уже началась"}, status=400)
+        return web.json_response({"ok": False, "error": "Igra uje nachalas"}, status=400)
     if len(r["players"]) >= 15:
-        return web.json_response({"ok": False, "error": "Комната заполнена, максимум 15"}, status=400)
-    r["players"].append({"user_id": uid, "name": d.get("username") or f"Игрок {len(r['players'])+1}", "vote": None})
-    r["log"].append(f"{d.get('username') or 'Игрок'} зашёл")
+        return web.json_response({"ok": False, "error": "Komnata zapolnena"}, status=400)
+    r["players"].append({"user_id": uid, "name": d.get("username") or f"Igrok {len(r['players'])+1}", "vote": None})
+    r["log"].append(f"{d.get('username') or 'Igrok'} zashel")
     await spy_broadcast(r)
     return web.json_response({"ok": True, "code": code})
 
@@ -764,21 +804,21 @@ async def spy_start(request):
     uid = d.get("user_id")
     r = spy_rooms.get(code)
     if not r:
-        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+        return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     if r["host_id"] != uid:
-        return web.json_response({"ok": False, "error": "Только хозяин может начать"}, status=403)
+        return web.json_response({"ok": False, "error": "Tolko hozain"}, status=403)
     if len(r["players"]) < 3:
-        return web.json_response({"ok": False, "error": "Нужно минимум 3 игрока"}, status=400)
+        return web.json_response({"ok": False, "error": "Nujno minimum 3 igroka"}, status=400)
     pool = list(dict.fromkeys(SPY_PACKS[r["pack"]]["words"]))
     if len(pool) < 2:
-        return web.json_response({"ok": False, "error": "В паке мало слов"}, status=400)
+        return web.json_response({"ok": False, "error": "V pake malo slov"}, status=400)
     common, spy = random.sample(pool, 2)
     r["common_word"] = common
     r["spy_word"] = spy
     spy_player = random.choice(r["players"])
     r["spy_id"] = spy_player["user_id"]
     r["phase"] = "discuss"
-    r["log"].append("Игра началась. Все получили слова.")
+    r["log"].append("Igra nachalas.")
     for p in r["players"]:
         ws = r["clients"].get(p["user_id"])
         if ws and not ws.closed:
@@ -798,22 +838,44 @@ async def spy_to_vote(request):
     uid = d.get("user_id")
     r = spy_rooms.get(code)
     if not r:
-        return web.json_response({"ok": False, "error": "Комната не найдена"}, status=404)
+        return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     if r["host_id"] != uid:
-        return web.json_response({"ok": False, "error": "Только хозяин может запустить голосование"}, status=403)
+        return web.json_response({"ok": False, "error": "Tolko hozain"}, status=403)
     if r["phase"] != "discuss":
-        return web.json_response({"ok": False, "error": "Сейчас не фаза обсуждения"}, status=400)
+        return web.json_response({"ok": False, "error": "Ne faza obsujdeniya"}, status=400)
     r["phase"] = "vote"
     r["vote_started_at"] = int(_time.time())
     for p in r["players"]:
         p["vote"] = None
-    r["log"].append(f"Голосование началось. У вас {VOTE_TIME_LIMIT} секунд.")
+    r["log"].append(f"Golosovanie nachalos. {VOTE_TIME_LIMIT} sek.")
     await spy_broadcast(r)
     return web.json_response({"ok": True})
 
 
 def spy_finish_vote(r):
     r["phase"] = "result"
+
+
+async def spy_watchdog():
+    """Raz v 2 sek proveryaet, ne isteklo li vremya golosovaniya."""
+    while True:
+        await asyncio.sleep(2)
+        try:
+            now_ts = int(_time.time())
+            for code in list(spy_rooms.keys()):
+                r = spy_rooms.get(code)
+                if not r:
+                    continue
+                if r["phase"] != "vote":
+                    continue
+                if not r["clients"]:
+                    continue
+                if now_ts - r["vote_started_at"] >= VOTE_TIME_LIMIT:
+                    spy_finish_vote(r)
+                    r["log"].append("Vremya vyshlo.")
+                    await spy_broadcast(r)
+        except Exception as e:
+            print(f"spy watchdog error: {e}", flush=True)
 
 
 async def spy_ws(request):
@@ -826,11 +888,11 @@ async def spy_ws(request):
     await ws.prepare(request)
     r = spy_rooms.get(code)
     if not r:
-        await ws.send_json({"type": "error", "error": "Комната не найдена"})
+        await ws.send_json({"type": "error", "error": "Komnata ne naidena"})
         await ws.close()
         return ws
     if spy_find(r, uid) < 0:
-        await ws.send_json({"type": "error", "error": "Вы не в этой игре"})
+        await ws.send_json({"type": "error", "error": "Vy ne v etoi igre"})
         await ws.close()
         return ws
     r["clients"][uid] = ws
@@ -861,18 +923,18 @@ async def spy_ws(request):
                     await spy_broadcast(r)
             elif act == "vote":
                 if r["phase"] != "vote":
-                    await ws.send_json({"type": "error", "error": "Сейчас не голосование"})
+                    await ws.send_json({"type": "error", "error": "Ne golosovanie"})
                     continue
                 target = d.get("target_id")
                 if target == uid:
-                    await ws.send_json({"type": "error", "error": "Нельзя голосовать за себя"})
+                    await ws.send_json({"type": "error", "error": "Nelzya za sebya"})
                     continue
                 me = next((p for p in r["players"] if p["user_id"] == uid), None)
                 if me:
                     me["vote"] = target
                 if all(p["vote"] is not None for p in r["players"]):
                     spy_finish_vote(r)
-                    r["log"].append("Все проголосовали.")
+                    r["log"].append("Vse progolosovali.")
                 await spy_broadcast(r)
             elif act == "reset":
                 if r["host_id"] != uid:
@@ -884,7 +946,7 @@ async def spy_ws(request):
                 r["chat"] = []
                 for p in r["players"]:
                     p["vote"] = None
-                r["log"].append("Новая игра, слова сброшены.")
+                r["log"].append("Novaya igra.")
                 await spy_broadcast(r)
             elif act == "finish_vote":
                 if r["phase"] != "vote":
@@ -892,14 +954,14 @@ async def spy_ws(request):
                 if r["host_id"] != uid:
                     continue
                 spy_finish_vote(r)
-                r["log"].append("Хозяин завершил голосование.")
+                r["log"].append("Hozain zavershil golosovanie.")
                 await spy_broadcast(r)
     finally:
         r["clients"].pop(uid, None)
     return ws
 
 
-# ═══════════════════════ ЗАПУСК ═══════════════════════
+# ================= Zapusk =================
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle_index)
@@ -920,4 +982,6 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
+    asyncio.create_task(durak_watchdog())
+    asyncio.create_task(spy_watchdog())
     print(f"Web server started on 0.0.0.0:{PORT}", flush=True)
