@@ -31,7 +31,7 @@ async def cmd_play(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Otkryt igry", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
     ]])
-    await m.answer("Mini App: Krestiki, Durak, Shpion", reply_markup=kb)
+    await m.answer("Mini App: Krestiki, Durak, Shpion, Haxball", reply_markup=kb)
 
 
 rooms = {}
@@ -55,6 +55,12 @@ async def handle_index(request):
     if os.path.exists("app.html"):
         return web.FileResponse("app.html")
     return web.Response(text="app.html not found", status=404)
+
+
+async def handle_haxball_page(request):
+    if os.path.exists("haxball.html"):
+        return web.FileResponse("haxball.html")
+    return web.Response(text="haxball.html not found", status=404)
 
 
 async def handle_health(request):
@@ -475,8 +481,6 @@ async def durak_start(request):
 
 
 async def durak_restart(request):
-    """Novaya partiya. Vozvrashchaem vseh, kto ne surrender.
-    Te, kto otvalilsya po timeout ili vyshel po kartam - igrayut snova."""
     d = await request.json()
     code = str(d.get("code", "")).strip()
     uid = d.get("user_id")
@@ -486,8 +490,6 @@ async def durak_restart(request):
     if r["players"][0]["user_id"] != uid:
         return web.json_response({"ok": False, "error": "Tolko hozain"}, status=403)
 
-    # Ostavlyaem vseh, kto NE salsya sam (surrender).
-    # Timeout i out_of_cards - vremennye, ih vozvrashchaem.
     active = [p for p in r["players"] if p.get("leave_reason") != "surrender"]
     if len(active) < 2:
         return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka (kto-to sdalsya" }, status=400)
@@ -895,7 +897,7 @@ async def spy_create(request):
 
 async def spy_join(request):
     d = await request.json()
-    code = str(d.get("code", "")).strip()
+V    code = str(d.get("code", "")).stripremya()
     r = spy_rooms.get(code)
     if not r:
         return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
@@ -906,7 +908,7 @@ async def spy_join(request):
         return web.json_response({"ok": False, "error": "Igra uje nachalas"}, status=400)
     if len(r["players"]) >= 15:
         return web.json_response({"ok": False, "error": "Komnata zapolnena"}, status=400)
-    r["players"].append({"user_id": uid, "name": d.get("username") or f"Igrok {len(r['players'])+1}", "vote": None})
+    r["players"].append({"user_id": uid, "name": d.get("username") or f"Igroк {len(r['players'])+1}", "vote": None})
     r["log"].append(f"{d.get('username') or 'Igrok'} zashel")
     await spy_broadcast(r)
     return web.json_response({"ok": True, "code": code})
@@ -1002,7 +1004,7 @@ async def spy_watchdog():
                     continue
                 if now_ts - r["vote_started_at"] >= VOTE_TIME_LIMIT:
                     spy_finish_vote(r)
-                    r["log"].append("Vremya vyshlo.")
+                    r["log"].append(" vyshlo.")
                     await spy_broadcast(r)
         except Exception as e:
             print(f"spy watchdog error: {e}", flush=True)
@@ -1096,6 +1098,7 @@ async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle_index)
     app.router.add_get("/app.html", handle_index)
+    app.router.add_get("/haxball.html", handle_haxball_page)
     app.router.add_get("/health", handle_health)
     app.router.add_post("/api/room/create", api_create)
     app.router.add_post("/api/room/join", api_join)
@@ -1113,9 +1116,15 @@ async def start_web_server():
     app.router.add_post("/api/spy/start", spy_start)
     app.router.add_post("/api/spy/to_vote", spy_to_vote)
     app.router.add_get("/ws/spy/{code}", spy_ws)
+
+    # --- HAXBALL ---
+    from haxball import register_haxball_routes, haxball_watchdog
+    register_haxball_routes(app)
+
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     asyncio.create_task(durak_watchdog())
     asyncio.create_task(spy_watchdog())
+    asyncio.create_task(haxball_watchdog())
     print(f"Web server started on 0.0.0.0:{PORT}", flush=True)
