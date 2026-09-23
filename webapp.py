@@ -596,16 +596,14 @@ def auto_action(r):
         if r["table"] and all(p.get("defend") for p in r["table"]):
             r["log"].append(f"{r['players'][r['attacker_idx']]['name']} ne uspel - BITO")
             handle_pass(r, r["players"][r["attacker_idx"]]["user_id"])
+        elif r["table"]:
+            return
         else:
-            p = r["players"][r["attacker_idx"]]
-            if p["hand"]:
-                c = sorted(p["hand"], key=lambda x: x["r"])[0]
-                r["log"].append(f"{r['players'][r['attacker_idx']]['name']} ne uspel - avtohod")
-                handle_attack(r, p["user_id"], c)
+            r["log"].append(f"{r['players'][r['attacker_idx']]['name']} ne shodil vovremya - SDALSYA")
+            handle_surrender(r, r["players"][r["attacker_idx"]]["user_id"])
 
 
 async def durak_watchdog():
-    """Raz v 2 sek proveryaet, ne istek li taimer hoda."""
     while True:
         await asyncio.sleep(2)
         try:
@@ -857,7 +855,6 @@ def spy_finish_vote(r):
 
 
 async def spy_watchdog():
-    """Raz v 2 sek proveryaet, ne isteklo li vremya golosovaniya."""
     while True:
         await asyncio.sleep(2)
         try:
