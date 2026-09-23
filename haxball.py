@@ -17,11 +17,12 @@ FIELD_H = 400
 GOAL_TOP = 150
 GOAL_BOTTOM = 250
 GOAL_DEPTH = 18
+CORNER_R = 40.0
 
 PLAYER_R = 15
 BALL_R = 8
 
-KICK_RANGE = PLAYER_R + BALL_R + 4
+KICK_RANGE = PLAYER_R + BALL_R + 8
 KICK_POWER = 400.0
 KICK_VEL_BONUS = 1.1
 KICK_COOLDOWN = 0.28
@@ -32,6 +33,10 @@ WALL_BOUNCE = 0.85
 PLAYER_BALL_BOUNCE = 0.85
 PLAYER_PLAYER_BOUNCE = 0.55
 
+BOUNCE_VALUES = {"low": 0.70, "normal": 0.85, "high": 0.95}
+FIELD_COLORS = ("gray", "green", "blue", "dark")
+SPEED_VALUES = (80, 100, 120)
+
 TELEPORT_GUARD = 200.0
 
 TICK_HZ = 60
@@ -40,7 +45,20 @@ MAX_SUBSTEP = 0.005
 BROADCAST_INTERVAL = 0.033
 
 GOAL_PAUSE_TIME = 2.0
+COUNTDOWN_TIME = 5.0
 ROOM_TTL_EMPTY = 60.0
+
+SLOT_X = {
+    "left": {1: 330.0, 2: 170.0, 3: 60.0},
+    "right": {1: 510.0, 2: 670.0, 3: 780.0},
+}
+
+CORNERS = (
+    (CORNER_R, CORNER_R, -1, -1),
+    (FIELD_W - CORNER_R, CORNER_R, 1, -1),
+    (CORNER_R, FIELD_H - CORNER_R, -1, 1),
+    (FIELD_W - CORNER_R, FIELD_H - CORNER_R, 1, 1),
+)
 
 ROOMS = {}
 
@@ -78,11 +96,9 @@ class Player:
         self.spawn()
 
     def spawn(self):
-        cy = FIELD_H / 2.0
-        base_x = FIELD_W * 0.25 if self.team == "left" else FIELD_W * 0.75
-        offset = (self.slot - 1) * 50 - 25
-        self.x = base_x
-        self.y = clamp(cy + offset, PLAYER_R, FIELD_H - PLAYER_R)
+        default_x = 330.0 if self.team == "left" else 510.0
+        self.x = SLOT_X[self.team].get(self.slot, default_x)
+        self.y = FIELD_H / 2.0
         self.vx = 0.0
         self.vy = 0.0
 
@@ -102,7 +118,8 @@ class Player:
 
 
 class Room:
-    def __init__(self, code, name, host_id, max_players, win_score, match_time):
+    def __init__(self, code, name, host_id, max_players, win_score, match_time,
+                 field_color="gray", player_speed=100, ball_bounce="normal"):
         self.code = code
         self.name = (name or "Игра")[:24]
         self.host_id = host_id
@@ -110,6 +127,10 @@ class Room:
         self.win_score = win_score
         self.match_time_total = match_time
         self.timer = float(match_time)
+        self.field_color = field_color
+        self.player_speed = player_speed
+        self.ball_bounce = ball_bounce
+        self.wall_bounce = BOUNCE_VALUES.get(ball_bounce, WALL_BOUNCE)
         self.phase = "waiting"
         self.score = {"left": 0, "right": 0}
         self.winner = None
@@ -117,6 +138,7 @@ class Room:
         self.players = {}
         self.ball = {"x": FIELD_W / 2.0, "y": FIELD_H / 2.0, "vx": 0.0, "vy": 0.0}
         self.goal_pause_until = 0.0
+        self.countdown_end = 0.0
         self.last_tick = time.monotonic()
         self.last_broadcast = 0.0
         self.empty_since = None
@@ -157,14 +179,34 @@ class Room:
         p = Player(user_id, name, team, slot)
         self.players[user_id] = p
         self.empty_since = None
-        if len(self.players) >= 2 and self.phase == "waiting":
-            self.start_match()
         return True, None
 
-    def start_match(self):
-        self.phase = "battle"
-        self.timer = float(self.match_time_total)
+    def begin_countdown(self, now):
         self.reset_positions()
+        self.phase = "countdown"
+        self.countdown_end = now + COUNTDOWN_TIME
+
+    def begin_match(self):
+        if self.phase != "waiting":
+            return False, "bad_phase"
+        if len(self.players) < 2:
+            return False, "not_enough_players"
+        self.score = {"left": 0, "right": 0}
+        self.winner = None
+        self.phase_after_pause = "battle"
+        self.timer = float(self.match_time_total)
+        self.begin_countdown(time.monotonic())
+        return True, None
+
+    def restart(self):
+        if self.phase != "over":
+            return False, "bad_phase"
+        self.score = {"left": 0, "right": 0}
+        self.winner = None
+        self.phase_after_pause = "battle"
+        self.timer = float(self.match_time_total)
+        self.begin_countdown(time.monotonic())
+        return True, None
 
     def reset_positions(self):
         self.ball = {"x": FIELD_W / 2.0, "y": FIELD_H / 2.0, "vx": 0.0, "vy": 0.0}
@@ -184,6 +226,10 @@ class Room:
     def snapshot(self, for_uid):
         now = time.monotonic()
         me = self.players.get(for_uid)
+        if self.phase == "countdown":
+            countdown_left = round(max(0.0, self.countdown_end - now), 2)
+        else:
+            countdown_left = 0.0
         return {
             "type": "state",
             "state": {
@@ -201,6 +247,11 @@ class Room:
                 "winner": self.winner,
                 "win_score": self.win_score,
                 "max_players": self.max_players,
+                "countdown_left": countdown_left,
+                "field_color": self.field_color,
+                "player_speed": self.player_speed,
+                "ball_bounce": self.ball_bounce,
+                "host_id": self.host_id,
             },
         }
 
@@ -211,6 +262,25 @@ class Room:
             x = clamp(x, -GOAL_DEPTH + 2, FIELD_W + GOAL_DEPTH - 2)
         else:
             x = clamp(x, PLAYER_R, FIELD_W - PLAYER_R)
+
+        cx = None
+        cy = None
+        if x < CORNER_R:
+            cx = CORNER_R
+        elif x > FIELD_W - CORNER_R:
+            cx = FIELD_W - CORNER_R
+        if y < CORNER_R:
+            cy = CORNER_R
+        elif y > FIELD_H - CORNER_R:
+            cy = FIELD_H - CORNER_R
+        if cx is not None and cy is not None:
+            dx = x - cx
+            dy = y - cy
+            d = math.hypot(dx, dy)
+            lim = CORNER_R - PLAYER_R
+            if d > lim and d > 0:
+                x = cx + dx / d * lim
+                y = cy + dy / d * lim
         return x, y
 
     def apply_move(self, user_id, data):
@@ -256,35 +326,60 @@ class Room:
             self._substep(step)
         self.check_goal()
 
+    def _corner_collide(self, b):
+        # Мяч не может быть ближе (CORNER_R - BALL_R) к центру угла.
+        # Если ближе — выталкиваем наружу и отражаем скорость.
+        bounce = self.wall_bounce
+        lim = CORNER_R - BALL_R
+        for cx, cy, sx, sy in CORNERS:
+            dx = b["x"] - cx
+            dy = b["y"] - cy
+            # работаем только в "своём" угловом квадрате
+            if dx * sx > 0 or dy * sy > 0:
+                continue
+            d = math.hypot(dx, dy)
+            if d < lim and d > 0.001:
+                ux = dx / d
+                uy = dy / d
+                b["x"] = cx + ux * lim
+                b["y"] = cy + uy * lim
+                dot = b["vx"] * ux + b["vy"] * uy
+                if dot < 0:
+                    b["vx"] -= (1 + bounce) * dot * ux
+                    b["vy"] -= (1 + bounce) * dot * uy
+
     def _substep(self, dt):
         b = self.ball
+        bounce = self.wall_bounce
         b["x"] += b["vx"] * dt
         b["y"] += b["vy"] * dt
         b["vx"] *= BALL_FRICTION
         b["vy"] *= BALL_FRICTION
 
+        self._corner_collide(b)
+
         if b["y"] - BALL_R < 0:
             b["y"] = BALL_R
-            b["vy"] = -b["vy"] * WALL_BOUNCE
+            b["vy"] = -b["vy"] * bounce
         elif b["y"] + BALL_R > FIELD_H:
             b["y"] = FIELD_H - BALL_R
-            b["vy"] = -b["vy"] * WALL_BOUNCE
+            b["vy"] = -b["vy"] * bounce
 
         in_goal_y = GOAL_TOP < b["y"] < GOAL_BOTTOM
         if not in_goal_y:
             if b["x"] - BALL_R < 0:
                 b["x"] = BALL_R
-                b["vx"] = -b["vx"] * WALL_BOUNCE
+                b["vx"] = -b["vx"] * bounce
             elif b["x"] + BALL_R > FIELD_W:
                 b["x"] = FIELD_W - BALL_R
-                b["vx"] = -b["vx"] * WALL_BOUNCE
+                b["vx"] = -b["vx"] * bounce
         else:
             if b["x"] - BALL_R < -GOAL_DEPTH:
                 b["x"] = -GOAL_DEPTH + BALL_R
-                b["vx"] = -b["vx"] * WALL_BOUNCE
+                b["vx"] = -b["vx"] * bounce
             elif b["x"] + BALL_R > FIELD_W + GOAL_DEPTH:
                 b["x"] = FIELD_W + GOAL_DEPTH - BALL_R
-                b["vx"] = -b["vx"] * WALL_BOUNCE
+                b["vx"] = -b["vx"] * bounce
 
         for p in self.players.values():
             dx = b["x"] - p.x
@@ -361,8 +456,10 @@ class Room:
             if self.phase_after_pause == "over":
                 self.phase = "over"
             else:
-                self.phase = "battle"
-                self.reset_positions()
+                self.begin_countdown(now)
+
+        if self.phase == "countdown" and now >= self.countdown_end:
+            self.phase = "battle"
 
         if self.phase == "battle":
             self.physics_step(dt)
@@ -382,6 +479,9 @@ async def handle_create(request):
     max_players = data.get("max_players", 4)
     win_score = data.get("win_score", 5)
     match_time = data.get("match_time", 180)
+    field_color = data.get("field_color", "gray")
+    player_speed = data.get("player_speed", 100)
+    ball_bounce = data.get("ball_bounce", "normal")
 
     if not user_id:
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
@@ -391,9 +491,20 @@ async def handle_create(request):
         win_score = 5
     if match_time not in (60, 120, 180, 300):
         match_time = 180
+    if field_color not in FIELD_COLORS:
+        field_color = "gray"
+    try:
+        player_speed = int(player_speed)
+    except (TypeError, ValueError):
+        player_speed = 100
+    if player_speed not in SPEED_VALUES:
+        player_speed = 100
+    if ball_bounce not in BOUNCE_VALUES:
+        ball_bounce = "normal"
 
     code = gen_code()
-    room = Room(code, game_name, user_id, max_players, win_score, match_time)
+    room = Room(code, game_name, user_id, max_players, win_score, match_time,
+                field_color, player_speed, ball_bounce)
     ROOMS[code] = room
     room.add_player(user_id, user_name)
     return web.json_response({"ok": True, "code": code})
@@ -417,6 +528,46 @@ async def handle_join(request):
     if not ok:
         return web.json_response({"ok": False, "error": err})
     return web.json_response({"ok": True, "code": code})
+
+
+async def handle_start(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_json"}, status=400)
+
+    code = str(data.get("code", "")).strip()
+    user_id = str(data.get("user_id", "")).strip()
+
+    room = ROOMS.get(code)
+    if not room:
+        return web.json_response({"ok": False, "error": "not_found"})
+    if user_id != room.host_id:
+        return web.json_response({"ok": False, "error": "not_host"})
+    ok, err = room.begin_match()
+    if not ok:
+        return web.json_response({"ok": False, "error": err})
+    return web.json_response({"ok": True})
+
+
+async def handle_restart(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_json"}, status=400)
+
+    code = str(data.get("code", "")).strip()
+    user_id = str(data.get("user_id", "")).strip()
+
+    room = ROOMS.get(code)
+    if not room:
+        return web.json_response({"ok": False, "error": "not_found"})
+    if user_id != room.host_id:
+        return web.json_response({"ok": False, "error": "not_host"})
+    ok, err = room.restart()
+    if not ok:
+        return web.json_response({"ok": False, "error": err})
+    return web.json_response({"ok": True})
 
 
 async def handle_list(request):
@@ -468,6 +619,8 @@ async def handle_ws(request):
 def register_haxball_routes(app):
     app.router.add_post("/api/haxball/create", handle_create)
     app.router.add_post("/api/haxball/join", handle_join)
+    app.router.add_post("/api/haxball/start", handle_start)
+    app.router.add_post("/api/haxball/restart", handle_restart)
     app.router.add_get("/api/haxball/list", handle_list)
     app.router.add_get("/ws/haxball/{code}", handle_ws)
 
@@ -490,7 +643,6 @@ async def haxball_watchdog():
         for code in dead_codes:
             ROOMS.pop(code, None)
 
-        # Параллельная рассылка — не блокирует тик физики
         if sends:
             await asyncio.gather(
                 *[ws.send_json(snap) for ws, snap in sends],
