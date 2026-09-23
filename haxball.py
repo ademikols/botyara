@@ -1,585 +1,479 @@
 import asyncio
 import json
 import math
-import random
-import string
-import time as _time
-from dataclasses import dataclass, field
-from typing import Dict, Optional
+import time
+import uuid
 from aiohttp import web
-from datetime import datetime
 
-FIELD_WIDTH = 840
-FIELD_HEIGHT = 400
-FIELD_HALF_WIDTH = FIELD_WIDTH / 2
-FIELD_HALF_HEIGHT = FIELD_HEIGHT / 2
-
-PLAYER_RADIUS = 15
-BALL_RADIUS = 8
-GOAL_HEIGHT = 100
-GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
-
-MAX_SPEED = 260.0
-FRICTION = 0.82
-WALL_ELASTICITY = 0.85
-PLAYER_PLAYER_ELASTICITY = 0.55
-PLAYER_BALL_ELASTICITY = 0.85
-BALL_FRICTION = 0.994
-KICK_FORCE = 400.0
-KICK_COOLDOWN = 0.28
-KICK_BONUS_FROM_PLAYER_VEL = 1.10
-
-TICK_RATE = 60
-DT = 1.0 / TICK_RATE
-SNAPSHOT_RATE = 30
-SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
-
-DEFAULT_MAX_PLAYERS = 6
-DEFAULT_WIN_SCORE = 5
-DEFAULT_MATCH_TIME = 180.0
+FIELD_W = 840
+FIELD_H = 400
+GOAL_TOP = 150
+GOAL_BOTTOM = 250
+GOAL_DEPTH = 18
+PLAYER_R = 15
+BALL_R = 8
+KICK_DIST = PLAYER_R + BALL_R + 4
+KICK_FORCE = 400
+KICK_BOOST = 1.1
+K           ICK elif_COOLDOWN = 0.28
+BALL_FRICT selfION =.score[" 0.994
+RESTITUTION_WALL = 0right.85
+RESTITUTION_PLAYER = 0.85
+MAX_TELEPORT = 200
 GOAL_PAUSE = 2.0
 
-LEFT_SPAWN = [(140.0, 100.0), (140.0, 200.0), (140.0, 300.0)]
-RIGHT_SPAWN = [(700.0, 100.0), (700.0, 200.0), (700.0, 300.0)]
+games = {}
 
 
-@dataclass
 class Player:
-    user_id: int
-    name: str
-    team: str
-    slot: int = 0
-    x: float = 0.0
-    y: float = 0.0
-    vx: float = 0.0
-    vy: float = 0.0
-    kick: bool = False
-    kick_cd: float = 0.0
-    kick_glow: float = 0.0
-
-    def to_dict(self):
-        return {
-            "user_id": self.user_id,
-            "name": self.name,
-            "x": round(self.x, 2),
-            "y": round(self.y, 2),
-            "vx": round(self.vx, 2),
-            "vy": round(self.vy, 2),
-            "team": self.team,
-            "slot": self.slot,
-            "kick_glow": round(self.kick_glow, 2),
-        }
+    def __init__(self, uid, name):
+        self.uid = uid
+        self.name = name
+        self.ws = None
+        self.team = None
+        self.slot = 0
+        self.x = 0.0
+        self.y = 0.0
+        self.vx = 0.0
+        self.vy = 0.0
+        self.kick_glow = 0
+        self.last_kick = 0.0
 
 
-@dataclass
 class Ball:
-    x: float = FIELD_HALF_WIDTH
-    y: float = FIELD_HALF_HEIGHT
-    vx: float = 0.0
-    vy: float = 0.0
-
-    def to_dict(self):
-        return {
-            "x": round(self.x, 2),
-            "y": round(self.y, 2),
-            "vx": round(self.vx, 2),
-            "vy": round(self.vy, 2),
-        }
+    def __init__(self):
+        self.x = FIELD_W / 2
+        self.y = FIELD_H / 2
+        self.vx = 0.0
+        self.vy = 0.0
 
 
-@dataclass
-class HaxballGame:
-    code: str
-    name: str
-    host_id: int
-    host_name: str
-    max_players: int = DEFAULT_MAX_PLAYERS
-    win_score: int = DEFAULT_WIN_SCORE
-    match_time: float = DEFAULT_MATCH_TIME
-    created_at: datetime = field(default_factory=datetime.now)
-    players: Dict[int, Player] = field(default_factory=dict)
-    ball: Ball = field(default_factory=Ball)
-    score: Dict[str, int] = field(default_factory=lambda: {"left": 0, "right": 0})
-    phase: str = "waiting"
-    timer: float = DEFAULT_MATCH_TIME
-    pause_until: float = 0.0
-    winner: Optional[str] = None
-    sockets: Dict[int, web.WebSocketResponse] = field(default_factory=dict)
-    last_goal_team: Optional[str] = None
+class Game:
+    def __init__(self, code, name, max_players, win_score, match_time):
+        self.code = code
+        self.name = name
+        self.max_players = max_players
+        self.win_score = win_score
+        self.match_time = match_time
+        self.phase = "waiting"
+        self.score = {"left": 0, "right": 0}
+        self.timer = float(match_time)
+        self.players = []
+        self.ball = Ball()
+        self.winner = None
+        self.goal_time = 0.0
 
-    def to_state(self, my_user_id: int) -> dict:
-        my_player = self.players.get(my_user_id)
-        my_side = my_player.team if my_player else None
+    def add_player(self, uid, name):
+        for p in self.players:
+            if p.uid == uid:
+                p.name = name
+                return p
+        if len(self.players) >= self.max_players:
+            return None
+        p = Player(uid, name)
+        left_c = sum(1 for x in self.players if x.team == "left")
+        right_c = sum(1 for x in self.players if x.team == "right")
+        if left_c <= right_c:
+            p.team = "left"
+            p.slot = left_c + 1
+        else:
+            p.team = "right"
+            p.slot = right_c + 1
+        self.reset_player_pos(p)
+        self.players.append(p)
+        if len(self.players) == self.max_players and self.phase == "waiting":
+            self.start_match()
+        return p
+
+    def reset_player_pos(self, p):
+        if p.team == "left":
+            p.x = 200.0
+        else:
+            p.x = FIELD_W - 200.0
+        p.y = FIELD_H / 2
+        p.vx = 0.0
+        p.vy = 0.0
+
+    def start_match(self):
+        self.phase = "battle"
+        self.score = {"left": 0, "right": 0}
+        self.timer = float(self.match_time)
+        self.reset_positions()
+
+    def reset_positions(self):
+        self.ball.x = FIELD_W / 2
+        self.ball.y = FIELD_H / 2
+        self.ball.vx = 0.0
+        self.ball.vy = 0.0
+        for p in self.players:
+            self.reset_player_pos(p)
+
+    def clamp_player(self, p):
+        if p.x < PLAYER_R:
+            p.x = PLAYER_R
+        if p.x > FIELD_W - PLAYER_R:
+            p.x = FIELD_W - PLAYER_R
+        if p.y < PLAYER_R:
+            p.y = PLAYER_R
+        if p.y > FIELD_H - PLAYER_R:
+            p.y = FIELD_H - PLAYER_R
+
+    def update_physics(self, dt):
+        # Таймер идёт ВСЕГДА, когда матч активен или на паузе после гола
+        if self.phase in ("battle", "goal_pause"):
+            self.timer -= dt
+            if self.timer <= 0:
+                self.timer = 0.0
+                self.end_match()
+                return
+
+        if self.phase != "battle":
+            return
+
+        # Движение мяча
+        self.ball.x += self.ball.vx * dt
+        self.ball.y += self.ball.vy * dt
+        self.ball.vx *= BALL_FRICTION
+        self.ball.vy *= BALL_FRICTION
+
+        # Стены Y
+        if self.ball.y - BALL_R < 0:
+            self.ball.y = BALL_R
+            self.ball.vy = -self.ball.vy * RESTITUTION_WALL
+        elif self.ball.y + BALL_R > FIELD_H:
+            self.ball.y = FIELD_H - BALL_R
+            self.ball.vy = -self.ball.vy * RESTITUTION_WALL
+
+        # Стены X
+        is_in_goal_y = GOAL_TOP < self.ball.y < GOAL_BOTTOM
+        if self.ball.x - BALL_R < 0:
+            if is_in_goal_y:
+                if self.ball.x + BALL_R < -GOAL_DEPTH:
+                    self.ball.x = -GOAL_DEPTH + BALL_R
+                    self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+                if self.ball.x < 0:
+                    self.handle_goal("right")
+            else:
+                self.ball.x = BALL_R
+                self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+
+        if self.ball.x + BALL_R > FIELD_W:
+            if is_in_goal_y:
+                if self.ball.x - BALL_R > FIELD_W + GOAL_DEPTH:
+                    self.ball.x = FIELD_W + GOAL_DEPTH - BALL_R
+                    self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+                if self.ball.x > FIELD_W:
+                    self.handle_goal("left")
+            else:
+                self.ball.x = FIELD_W - BALL_R
+                self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+
+        # Мяч - игроки
+        for p in self.players:
+            dx = self.ball.x - p.x
+            dy = self.ball.y - p.y
+            dist = math.hypot(dx, dy)
+            if dist < 0.0001:
+                # Мяч в центре игрока — вытолкнуть
+                self.ball.y = p.y - (BALL_R + PLAYER_R)
+                continue
+            if dist < BALL_R + PLAYER_R:
+                overlap = BALL_R + PLAYER_R - dist
+                nx = dx / dist
+                ny = dy / dist
+                self.ball.x += nx * overlap
+                self.ball.y += ny * overlap
+                rel_vx = self.ball.vx - p.vx
+                rel_vy = self.ball.vy - p.vy
+                vel_along_norm = rel_vx * nx + rel_vy * ny
+                if vel_along_norm < 0:
+                    j = -(1 + RESTITUTION_PLAYER) * vel_along_norm
+                    self.ball.vx += j * nx
+                    self.ball.vy += j * ny
+
+        # Игрок - игрок
+        for i in range(len(self.players)):
+            for j in range(i + 1, len(self.players)):
+                p1 = self.players[i]
+                p2 = self.players[j]
+                dx = p2.x - p1.x
+                dy = p2.y - p1.y
+                dist = math.hypot(dx, dy)
+                if 0 < dist < PLAYER_R * 2:
+                    overlap = PLAYER_R * 2 - dist
+                    nx = dx / dist
+                    ny = dy / dist
+                    p1.x -= nx * overlap * 0.5
+                    p1.y -= ny * overlap * 0.5
+                    p2.x += nx * overlap * 0.5
+                    p2.y += ny * overlap * 0.5
+
+        # Клампим всех после столкновений
+        for p in self.players:
+            self.clamp_player(p)
+
+        # Клампим мяч по Y после столкновений
+        if self.ball.y < BALL_R:
+            self.ball.y = BALL_R
+        if self.ball.y > FIELD_H - BALL_R:
+            self.ball.y = FIELD_H - BALL_R
+
+    def handle_goal(self, team):
+        if self.phase != "battle":
+            return
+        self.score[team] += 1
+        if self.score[team] >= self.win_score:
+            self.end_match(team)
+        else:
+            self.phase = "goal_pause"
+            self.goal_time = time.time()
+
+    def end_match(self, winner=None):
+        self.phase = "over"
+        if winner:
+            self.winner = winner
+        else:
+            if self.score["left"] > self.score["right"]:
+                self.winner = "left"
+"] > self.score["left"]:
+                self.winner = "right"
+            else:
+                self.winner = "draw"
+
+    def get_state(self, viewer_uid):
+        my_side = None
+        for p in self.players:
+            if p.uid == viewer_uid:
+                my_side = p.team
+                break
+        # Всех игроков показываем, даже отключённых
+        players_out = [{
+            "user_id": p.uid,
+            "name": p.name,
+            "x": p.x,
+            "y": p.y,
+            "vx": p.vx,
+            "vy": p.vy,
+            "team": p.team,
+            "slot": p.slot,
+            "kick_glow": p.kick_glow,
+            "online": p.ws is not None,
+        } for p in self.players]
+
         return {
             "phase": self.phase,
             "score": dict(self.score),
             "timer": max(0, int(self.timer)),
-            "players": [p.to_dict() for p in self.players.values()],
-            "ball": self.ball.to_dict(),
+            "players": players_out,
+            "ball": {
+                "x": self.ball.x, "y": self.ball.y,
+                "vx": self.ball.vx, "vy": self.ball.vy,
+            },
             "my_side": my_side,
             "winner": self.winner,
-            "last_goal_team": self.last_goal_team,
-            "max_players": self.max_players,
             "win_score": self.win_score,
-            "match_time": int(self.match_time),
+            "max_players": self.max_players,
         }
 
 
-games: Dict[str, HaxballGame] = {}
-player_games: Dict[int, str] = {}
-
-
-def generate_code():
-    return "".join(random.choices(string.digits, k=6))
-
-
-def team_count(game, team):
-    return sum(1 for p in game.players.values() if p.team == team)
-
-
-def pick_team(game):
-    lc = team_count(game, "left")
-    rc = team_count(game, "right")
-    cap = max(1, game.max_players // 2)
-    if lc < rc:
-        return "left"
-    if rc < lc:
-        return "right"
-    if lc < cap:
-        return "left"
-    if rc < cap:
-        return "right"
-    return None
-
-
-def spawn_for(team, slot):
-    arr = LEFT_SPAWN if team == "left" else RIGHT_SPAWN
-    return arr[min(slot, len(arr) - 1)]
-
-
-def reset_ball(game):
-    game.ball.x = FIELD_HALF_WIDTH
-    game.ball.y = FIELD_HALF_HEIGHT
-    game.ball.vx = 0.0
-    game.ball.vy = 0.0
-
-
-def reset_positions(game):
-    for p in game.players.values():
-        p.vx = p.vy = 0.0
-        p.kick = False
-        p.kick_cd = 0.0
-        x, y = spawn_for(p.team, p.slot)
-        p.x = x
-        p.y = y
-
-
-def clamp_player(p):
-    if p.x < PLAYER_RADIUS: p.x = PLAYER_RADIUS
-    if p.x > FIELD_WIDTH - PLAYER_RADIUS: p.x = FIELD_WIDTH - PLAYER_RADIUS
-    if p.y < PLAYER_RADIUS: p.y = PLAYER_RADIUS
-    if p.y > FIELD_HEIGHT - PLAYER_RADIUS: p.y = FIELD_HEIGHT - PLAYER_RADIUS
-
-
-def update_ball(ball, dt):
-    k = BALL_FRICTION ** (dt * 60.0)
-    ball.vx *= k
-    ball.vy *= k
-    ball.x += ball.vx * dt
-    ball.y += ball.vy * dt
-
-    in_goal_y = GOAL_OFFSET_Y < ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
-
-    if ball.x - BALL_RADIUS < 0 and not in_goal_y:
-        ball.x = BALL_RADIUS
-        ball.vx = abs(ball.vx) * WALL_ELASTICITY
-    if ball.x + BALL_RADIUS > FIELD_WIDTH and not in_goal_y:
-        ball.x = FIELD_WIDTH - BALL_RADIUS
-        ball.vx = -abs(ball.vx) * WALL_ELASTICITY
-    if ball.y - BALL_RADIUS < 0:
-        ball.y = BALL_RADIUS
-        ball.vy = abs(ball.vy) * WALL_ELASTICITY
-    if ball.y + BALL_RADIUS > FIELD_HEIGHT:
-        ball.y = FIELD_HEIGHT - BALL_RADIUS
-        ball.vy = -abs(ball.vy) * WALL_ELASTICITY
-
-
-def check_goal(ball):
-    in_goal_y = GOAL_OFFSET_Y < ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
-    if not in_goal_y:
-        return None
-    if ball.x + BALL_RADIUS < 0:
-        return "right"
-    if ball.x - BALL_RADIUS > FIELD_WIDTH:
-        return "left"
-    return None
-
-
-def resolve_player_player(p1, p2):
-    dx = p2.x - p1.x
-    dy = p2.y - p1.y
-    dist = math.hypot(dx, dy)
-    min_dist = PLAYER_RADIUS * 2
-    if dist >= min_dist or dist < 0.0001:
-        return
-    nx = dx / dist
-    ny = dy / dist
-    overlap = min_dist - dist
-    p1.x -= nx * overlap * 0.5
-    p1.y -= ny * overlap * 0.5
-    p2.x += nx * overlap * 0.5
-    p2.y += ny * overlap * 0.5
-
-
-def resolve_player_ball(player, ball):
-    dx = ball.x - player.x
-    dy = ball.y - player.y
-    dist = math.hypot(dx, dy)
-    min_dist = PLAYER_RADIUS + BALL_RADIUS
-    if dist >= min_dist:
-        return False
-    if dist < 0.0001:
-        ball.y = player.y - min_dist
-        ball.x = player.x
-        return False
-    nx = dx / dist
-    ny = dy / dist
-    overlap = min_dist - dist
-    ball.x += nx * overlap * 1.0
-    ball.y += ny * overlap * 1.0
-
-    if player.kick and player.kick_cd <= 0:
-        ball.vx = nx * KICK_FORCE + player.vx * KICK_BONUS_FROM_PLAYER_VEL
-        ball.vy = ny * KICK_FORCE + player.vy * KICK_BONUS_FROM_PLAYER_VEL
-        player.kick_cd = KICK_COOLDOWN
-        player.kick_glow = 0.25
-        return True
-
-    rvx = ball.vx - player.vx
-    rvy = ball.vy - player.vy
-    vel_n = rvx * nx + rvy * ny
-    if vel_n < 0:
-        e = PLAYER_BALL_ELASTICITY
-        m_player = 3.0
-        m_ball = 1.0
-        j = -(1 + e) * vel_n / (1.0 / m_player + 1.0 / m_ball)
-        ball.vx += j / m_ball * nx
-        ball.vy += j / m_ball * ny
-    return False
-
-
-def step_physics(game, dt):
-    for p in game.players.values():
-        clamp_player(p)
-        if p.kick_cd > 0:
-            p.kick_cd = max(0.0, p.kick_cd - dt)
-        if p.kick_glow > 0:
-            p.kick_glow = max(0.0, p.kick_glow - dt)
-
-    players = list(game.players.values())
-    for i in range(len(players)):
-        for j in range(i + 1, len(players)):
-            resolve_player_player(players[i], players[j])
-
-    for p in players:
-        clamp_player(p)
-
-    update_ball(game.ball, dt)
-
-    for p in players:
-        resolve_player_ball(p, game.ball)
-
-    in_goal_y = GOAL_OFFSET_Y < game.ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
-    if game.ball.x < BALL_RADIUS and not in_goal_y:
-        game.ball.x = BALL_RADIUS
-    if game.ball.x > FIELD_WIDTH - BALL_RADIUS and not in_goal_y:
-        game.ball.x = FIELD_WIDTH - BALL_RADIUS
-    if game.ball.y < BALL_RADIUS:
-        game.ball.y = BALL_RADIUS
-    if game.ball.y > FIELD_HEIGHT - BALL_RADIUS:
-        game.ball.y = FIELD_HEIGHT - BALL_RADIUS
-
-
-def update_game_physics(game, dt):
-    if game.phase != "battle":
-        return
-    if dt > 1.0 / 15.0:
-        dt = 1.0 / 15.0
-
-    max_sub_dt = 0.005
-    n_sub = max(1, int(math.ceil(dt / max_sub_dt)))
-    if n_sub > 30:
-        n_sub = 30
-        dt = 30 * max_sub_dt
-    sub_dt = dt / n_sub
-    for _ in range(n_sub):
-        step_physics(game, sub_dt)
-
-    goal = check_goal(game.ball)
-    if goal:
-        game.score[goal] += 1
-        game.last_goal_team = goal
-        reset_ball(game)
-        reset_positions(game)
-        if game.score[goal] >= game.win_score:
-            game.phase = "over"
-            game.winner = goal
-        else:
-            game.phase = "goal_pause"
-            game.pause_until = asyncio.get_event_loop().time() + GOAL_PAUSE
-
-
-async def _kick_from_old_game(user_id):
-    old_code = player_games.get(user_id)
-    if not old_code:
-        return
-    old_game = games.get(old_code)
-    if not old_game:
-        player_games.pop(user_id, None)
-        return
-    old_game.players.pop(user_id, None)
-    ws = old_game.sockets.pop(user_id, None)
-    if ws and not ws.closed:
-        try:
-            await ws.close()
-        except Exception:
-            pass
-
-
-async def handle_create(request):
+async def api_create(request):
     try:
         data = await request.json()
     except Exception:
         data = {}
-    user_id = data.get("user_id")
-    user_name = (data.get("user_name") or "Player")[:24]
-    game_name = (data.get("game_name") or "Haxball")[:32]
-
-    if not user_id:
+    uid = data.get("user_id")
+    name = (data.get("user_name") or "Player")[:24]
+    if not uid:
         return web.json_response({"ok": False, "error": "No user_id"})
 
     try:
-        max_players = int(data.get("max_players", DEFAULT_MAX_PLAYERS))
+        max_players = int(data.get("max_players", 2))
     except (TypeError, ValueError):
-        max_players = DEFAULT_MAX_PLAYERS
+        max_players = 2
     if max_players not in (2, 4, 6):
-        max_players = DEFAULT_MAX_PLAYERS
+        max_players = 2
 
     try:
-        win_score = int(data.get("win_score", DEFAULT_WIN_SCORE))
+        win_score = int(data.get("win_score", 5))
     except (TypeError, ValueError):
-        win_score = DEFAULT_WIN_SCORE
+        win_score = 5
     if win_score not in (3, 5, 7, 10):
-        win_score = DEFAULT_WIN_SCORE
+        win_score = 5
 
     try:
-        match_time = int(data.get("match_time", DEFAULT_MATCH_TIME))
+        match_time = int(data.get("match_time", 180))
     except (TypeError, ValueError):
-        match_time = int(DEFAULT_MATCH_TIME)
+        match_time = 180
     if match_time not in (60, 120, 180, 300):
-        match_time = int(DEFAULT_MATCH_TIME)
+        match_time = 180
 
-    await _kick_from_old_game(user_id)
-
-    code = generate_code()
+    code = uuid.uuid4().hex[:6].upper()
     while code in games:
-        code = generate_code()
+        code = uuid.uuid4().hex[:6].upper()
 
-    game = HaxballGame(
-        code=code, name=game_name, host_id=user_id, host_name=user_name,
-        max_players=max_players, win_score=win_score, match_time=float(match_time),
-    )
-    game.timer = float(match_time)
-    p = Player(user_id=user_id, name=user_name, team="left", slot=0)
-    p.x, p.y = spawn_for("left", 0)
-    game.players[user_id] = p
-    games[code] = game
-    player_games[user_id] = code
+    g = Game(code, (data.get("game_name") or "Game")[:30], max_players, win_score, match_time)
+    # Хост сразу добавлен в игроки
+    g.add_player(uid, name)
+    games[code] = g
     return web.json_response({"ok": True, "code": code})
 
 
-async def handle_join(request):
+async def api_join(request):
     try:
         data = await request.json()
     except Exception:
         data = {}
-    code = str(data.get("code") or "").strip()
-    user_id = data.get("user_id")
-    user_name = (data.get("user_name") or "Player")[:24]
-
-    if not code or not user_id:
-        return web.json_response({"ok": False, "error": "No code or user_id"})
-    if code not in games:
-        return web.json_response({"ok": False, "error": "Game not found"})
-
-    game = games[code]
-
-    if user_id in game.players:
-        player_games[user_id] = code
+    code = str(data.get("code") or "").strip().upper()
+    uid = data.get("user_id")
+    name = (data.get("user_name") or "Player")[:24]
+    g = games.get(code)
+    if not g:
+        return web.json_response({"ok": False, "error": "Комната не найдена"})
+    if g.phase == "over":
+        return web.json_response({"ok": False, "error": "Игра уже закончилась"})
+    existing = next((x for x in g.players if x.uid == uid), None)
+    if existing:
         return web.json_response({"ok": True, "code": code})
-
-    if game.phase == "over":
-        return web.json_response({"ok": False, "error": "Game already finished"})
-    if len(game.players) >= game.max_players:
-        return web.json_response({"ok": False, "error": "Game is full"})
-
-    team = pick_team(game)
-    if team is None:
-        return web.json_response({"ok": False, "error": "Teams are full"})
-
-    await _kick_from_old_game(user_id)
-
-    slot = team_count(game, team)
-    p = Player(user_id=user_id, name=user_name, team=team, slot=slot)
-    p.x, p.y = spawn_for(team, slot)
-    game.players[user_id] = p
-    player_games[user_id] = code
-
-    if game.phase == "waiting" and len(game.players) >= 2:
-        game.phase = "battle"
-        game.timer = game.match_time
-        game.score = {"left": 0, "right": 0}
-        reset_ball(game)
-        reset_positions(game)
-
+    p = g.add_player(uid, name)
+    if not p:
+        return web.json_response({"ok": False, "error": "Комната полная"})
     return web.json_response({"ok": True, "code": code})
 
 
-async def handle_list(request):
+async def api_list(request):
     items = []
-    for code, game in games.items():
-        if game.phase == "over":
+    for code, g in games.items():
+        if g.phase not in ("waiting", "battle"):
             continue
         items.append({
-            "code": code, "name": game.name,
-            "host": game.host_name,
-            "players": len(game.players),
-            "max": game.max_players,
+            "code": code,
+            "name": g.name,
+            "host": g.players[0].name if g.players else "Unknown",
+            "players": len(g.players),
+            "max": g.max_players,
         })
     return web.json_response({"ok": True, "items": items})
 
 
-async def handle_websocket(request):
-    code = request.match_info.get("code")
+async def ws_handler(request):
+    code = request.match_info.get("code", "").upper()
     try:
-        user_id = int(request.query.get("uid", "0"))
+        uid = int(request.query.get("uid", "0"))
     except ValueError:
-        user_id = 0
+        uid = 0
+    g = games.get(code)
+    if not g:
+        return web.Response(status=404)
+
+    p = next((x for x in g.players if x.uid == uid), None)
+    if not p:
+        return web.Response(status=403)
 
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
-
-    game = games.get(code)
-    if not game or user_id not in game.players:
-        try:
-            await ws.send_json({"type": "error", "error": "Not in game"})
-        except Exception:
-            pass
-        await ws.close()
-        return ws
-
-    game.sockets[user_id] = ws
+    p.ws = ws
 
     try:
-        await ws.send_json({"type": "state", "state": game.to_state(user_id)})
+        await ws.send_json({"type": "state", "state": g.get_state(uid)})
     except Exception:
         pass
 
     try:
         async for msg in ws:
-            if msg.type == web.WSMsgType.TEXT:
+            if msg.type != web.WSMsgType.TEXT:
+                continue
+            try:
+                data = json.loads(msg.data)
+            except Exception:
+                continue
+            if data.get("action") == "move" and g.phase == "battle":
                 try:
-                    data = json.loads(msg.data)
-                except Exception:
+                    nx = float(data.get("x", p.x))
+                    ny = float(data.get("y", p.y))
+                except (TypeError, ValueError):
                     continue
-                player = game.players.get(user_id)
-                if not player:
-                    continue
-                if data.get("action") == "move":
+                if math.hypot(nx - p.x, ny - p.y) < MAX_TELEPORT:
+                    p.x = nx
+                    p.y = ny
+                    g.clamp_player(p)
                     try:
-                        nx = float(data.get("x", player.x))
-                        ny = float(data.get("y", player.y))
-                        nvx = float(data.get("vx", 0.0))
-                        nvy = float(data.get("vy", 0.0))
+                        p.vx = float(data.get("vx", p.vx))
+                        p.vy = float(data.get("vy", p.vy))
                     except (TypeError, ValueError):
-                        continue
-                    if math.hypot(nx - player.x, ny - player.y) < 200:
-                        player.x = nx
-                        player.y = ny
-                    player.vx = nvx
-                    player.vy = nvy
-                    player.kick = bool(data.get("kick"))
-            elif msg.type == web.WSMsgType.ERROR:
-                break
-    finally:
-        game.sockets.pop(user_id, None)
-        if not game.sockets:
-            for uid in list(game.players.keys()):
-                player_games.pop(uid, None)
-            games.pop(code, None)
+                        pass
 
+                if data.get("kick") and time.time() - p.last_kick > KICK_COOLDOWN:
+                    p.last_kick = time.time()
+                    p.kick_glow = 1.0
+                    dist = math.hypot(g.ball.x - p.x, g.ball.y - p.y)
+                    if 0 < dist < KICK_DIST:
+                        nx_k = (g.ball.x - p.x) / dist
+                        ny_k = (g.ball.y - p.y) / dist
+                        g.ball.vx = nx_k * KICK_FORCE + p.vx * KICK_BOOST
+                        g.ball.vy = ny_k * KICK_FORCE + p.vy * KICK_BOOST
+    finally:
+        p.ws = None
     return ws
 
 
+def register_haxball_routes(app):
+    app.router.add_post('/api/haxball/create', api_create)
+    app.router.add_post('/api/haxball/join', api_join)
+    app.router.add_get('/api/haxball/list', api_list)
+    app.router.add_get('/ws/haxball/{code}', ws_handler)
+
+
 async def haxball_watchdog():
-    tick_counter = 0
-    loop = asyncio.get_event_loop()
-    last = _time.monotonic()
+    fps = 60
+    tick_time = 1.0 / fps
+    broadcast_interval = 0.03
+    last_broadcast = time.time()
+
     while True:
         try:
-            now_real = _time.monotonic()
-            real_dt = now_real - last
-            last = now_real
-            if real_dt > 1.0 / 15.0:
-                real_dt = 1.0 / 15.0
-            if real_dt <= 0:
-                real_dt = DT
-
-            tick_counter += 1
-            now = loop.time()
+            start_t = time.time()
 
             for code in list(games.keys()):
-                game = games.get(code)
-                if not game:
+                g = games.get(code)
+                if not g:
                     continue
 
-                if game.phase == "battle":
-                    game.timer -= real_dt
-                    if game.timer <= 0:
-                        game.timer = 0
-                        game.phase = "over"
-                        if game.score["left"] > game.score["right"]:
-                            game.winner = "left"
-                        elif game.score["right"] > game.score["left"]:
-                            game.winner = "right"
-                        else:
-                            game.winner = "draw"
-                    else:
-                        update_game_physics(game, real_dt)
+                # Удаляем игру, если нет никого онлайн и матч не ждёт
+                if g.phase != "waiting" and not any(p.ws for p in g.players):
+                    games.pop(code, None)
+                    continue
 
-                elif game.phase == "goal_pause":
-                    if now >= game.pause_until:
-                        game.phase = "battle"
+                # Подшаги физики
+                steps = max(1, int(math.ceil(tick_time / 0.005)))
+                step_dt = tick_time / steps
+                for _ in range(steps):
+                    g.update_physics(step_dt)
 
-                if tick_counter % SNAPSHOT_EVERY == 0 and game.sockets:
-                    for uid, ws in list(game.sockets.items()):
-                        if ws.closed:
-                            game.sockets.pop(uid, None)
-                            continue
-                        try:
-                            await ws.send_json({"type": "state", "state": game.to_state(uid)})
-                        except Exception:
-                            game.sockets.pop(uid, None)
+                # Пауза после гола
+                if g.phase == "goal_pause" and time.time() - g.goal_time > GOAL_PAUSE:
+                    g.reset_positions()
+                    g.phase = "battle"
 
-            elapsed = _time.monotonic() - now_real
-            await asyncio.sleep(max(0.0, DT - elapsed))
+                # Угасание свечения
+                for p in g.players:
+                    if p.kick_glow > 0:
+                        p.kick_glow = max(0.0, p.kick_glow - tick_time * 5)
+
+            # Рассылка
+            now = time.time()
+            if now - last_broadcast >= broadcast_interval:
+                last_broadcast = now
+                for g in games.values():
+                    for p in g.players:
+                        if p.ws and not p.ws.closed:
+                            try:
+                                state = g.get_state(p.uid)
+                                await p.ws.send_json({"type": "state", "state": state})
+                            except Exception:
+                                pass
+
+            elapsed = time.time() - start_t
+            await asyncio.sleep(max(0.0, tick_time - elapsed))
         except Exception as e:
             print(f"[haxball] watchdog error: {e}")
-            await asyncio.sleep(0.05)
-
-
-def register_haxball_routes(app):
-    app.router.add_post("/api/haxball/create", handle_create)
-    app.router.add_post("/api/haxball/join", handle_join)
-    app.router.add_get("/api/haxball/list", handle_list)
-    app.router.add_get("/ws/haxball/{code}", handle_websocket)
+            await asyncio.sleep(0.1)
