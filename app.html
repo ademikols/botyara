@@ -22,6 +22,9 @@
   .field input,.field select{width:100%;padding:15px;background:#0d0d0d;border:1px solid #222;color:#fff;font-family:inherit;font-size:15px;outline:none}
   .field input:focus,.field select:focus{border-color:#fff}
   .field input.code{font-family:'SF Mono',monospace;font-size:26px;text-align:center;letter-spacing:8px;font-weight:700;padding-left:26px}
+  .checkbox-row{display:flex;align-items:center;gap:10px;padding:12px;background:#0d0d0d;border:1px solid #222;margin-bottom:14px;cursor:pointer}
+  .checkbox-row input[type=checkbox]{width:20px;height:20px;accent-color:#fff}
+  .checkbox-row span{font-size:13px;color:#ccc}
   .code-box{border:1px solid #fff;padding:24px 18px;text-align:center;margin:16px 0}
   .code-box .lbl{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#777;margin-bottom:10px}
   .code-box .code{font-family:'SF Mono',monospace;font-size:38px;font-weight:700;letter-spacing:6px;margin-bottom:16px}
@@ -37,11 +40,13 @@
   .cell.O{color:#e05a5a}
   .msg{text-align:center;padding:14px;font-size:13px;letter-spacing:1px;color:#888;line-height:1.5}
   .big{text-align:center;padding:8px;font-size:15px;font-weight:700;letter-spacing:2px}
-  .player-row{display:flex;justify-content:space-between;align-items:center;padding:5px 9px;border:1px solid #1a1a1a;margin-bottom:3px;font-size:12px;background:#0d0d0d;border-radius:6px}
+  .player-row{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border:1px solid #1a1a1a;margin-bottom:4px;font-size:12px;background:#0d0d0d;border-radius:6px}
   .player-row.me{border-color:#3d6fa5}
   .player-row.attacker{border-left:3px solid #ff8c00}
   .player-row.defender{border-left:3px solid #dc3d3d}
-  .player-row.left{opacity:.4;text-decoration:line-through}
+  .player-row.left{opacity:.5}
+  .player-row.left .name{text-decoration:line-through}
+  .player-row .reason{font-size:10px;color:#888;margin-top:2px;letter-spacing:.5px}
   .badge{font-size:8px;letter-spacing:1px;padding:1px 5px;border-radius:3px;background:#222;margin-left:4px}
   .badge.a{background:#ff8c00;color:#000}
   .badge.d{background:#dc3d3d;color:#fff}
@@ -95,6 +100,11 @@
   .chat-full-input input{flex:1;background:#0d0d0d;border:1px solid #222;color:#fff;padding:10px 11px;font-size:14px;font-family:inherit;outline:none;border-radius:6px}
   .chat-full-input button{background:#fff;color:#000;border:none;padding:0 16px;font-weight:700;cursor:pointer;font-family:inherit;border-radius:6px}
 
+  .lobby-card{border:1px solid #222;background:#0d0d0d;padding:12px;margin-bottom:8px;border-radius:8px;cursor:pointer}
+  .lobby-card:active{border-color:#fff}
+  .lobby-card .title{font-size:14px;font-weight:700;margin-bottom:4px}
+  .lobby-card .meta{font-size:11px;color:#888;letter-spacing:.5px}
+
   .hidden{display:none!important}
 </style>
 </head>
@@ -107,12 +117,19 @@
   <button class="btn" onclick="go('spyCreate')">🕵️ ШПИОН</button>
 </div>
 
+<!-- КРЕСТИКИ: создать -->
 <div id="s-create" class="screen">
   <button class="back-btn" onclick="go('menu')">← НАЗАД</button>
   <div id="createForm">
     <div class="field"><label>Ваше имя</label><input id="createName" type="text" placeholder="Игрок"></div>
+    <div class="field"><label>Название лобби</label><input id="createLobbyName" type="text" placeholder="Комната Ивана"></div>
+    <div class="checkbox-row" onclick="togglePublic('createPublic')">
+      <input type="checkbox" id="createPublic">
+      <span>Публичное лобби (видно всем)</span>
+    </div>
     <button class="btn" onclick="createRoom()">СОЗДАТЬ КОМНАТУ</button>
     <div class="divider"></div>
+    <button class="btn ghost" onclick="openTttList()">📋 ОТКРЫТЫЕ ЛОББИ</button>
     <button class="btn ghost" onclick="go('join')">ВОЙТИ ПО КОДУ</button>
   </div>
   <div id="createResult" style="display:none">
@@ -142,10 +159,12 @@
   <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
 </div>
 
+<!-- ДУРАК: создать -->
 <div id="s-durakCreate" class="screen">
   <button class="back-btn" onclick="go('menu')">← НАЗАД</button>
   <div id="durakCreateForm">
     <div class="field"><label>Ваше имя</label><input id="durakName" type="text" placeholder="Игрок"></div>
+    <div class="field"><label>Название лобби</label><input id="durakLobbyName" type="text" placeholder="Дурак у Вани"></div>
     <div class="field"><label>Игроков</label>
       <select id="durakMaxPlayers">
         <option value="2">2 игрока (1 на 1)</option>
@@ -170,13 +189,17 @@
         <option value="90">90 секунд</option>
       </select>
     </div>
-    <div class="field">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none">
-        <input type="checkbox" id="durakTranslate" style="width:auto"> Переводной
-      </label>
+    <div class="checkbox-row" onclick="togglePublic('durakPublic')">
+      <input type="checkbox" id="durakPublic">
+      <span>Публичное лобби (видно всем)</span>
+    </div>
+    <div class="checkbox-row" onclick="togglePublic('durakTranslate')">
+      <input type="checkbox" id="durakTranslate">
+      <span>Переводной</span>
     </div>
     <button class="btn" onclick="durakCreate()">СОЗДАТЬ КОМНАТУ</button>
     <div class="divider"></div>
+    <button class="btn ghost" onclick="openDurakList()">📋 ОТКРЫТЫЕ ЛОББИ</button>
     <button class="btn ghost" onclick="go('durakJoin')">ВОЙТИ ПО КОДУ</button>
   </div>
   <div id="durakCreateResult" style="display:none">
@@ -231,6 +254,7 @@
         <button class="btn sm" id="durakStartBtn" style="flex:1;display:none;margin:0" onclick="durakStartGame()">НАЧАТЬ ИГРУ</button>
         <button class="btn sm" id="durakPassBtn" style="flex:1;display:none;margin:0" onclick="durakAction('pass')">БИТО</button>
         <button class="btn sm" id="durakTakeBtn" style="flex:1;display:none;margin:0" onclick="durakAction('take')">ВЗЯТЬ</button>
+        <button class="btn sm" id="durakRestartBtn" style="flex:1;display:none;margin:0" onclick="durakRestart()">🔄 НОВАЯ ПАРТИЯ</button>
       </div>
       <div style="display:flex;gap:6px">
         <button class="btn sm danger" id="durakSurrenderBtn" style="flex:1;margin:0" onclick="durakSurrender()">СДАТЬСЯ</button>
@@ -248,13 +272,20 @@
   </div>
 </div>
 
+<!-- ШПИОН: создать -->
 <div id="s-spyCreate" class="screen">
   <button class="back-btn" onclick="go('menu')">← НАЗАД</button>
   <div id="spyCreateForm">
     <div class="field"><label>Ваше имя</label><input id="spyName" type="text" placeholder="Игрок"></div>
+    <div class="field"><label>Название лобби</label><input id="spyLobbyName" type="text" placeholder="Шпион у Пети"></div>
     <div class="field"><label>Пак слов</label><select id="spyPack"></select></div>
+    <div class="checkbox-row" onclick="togglePublic('spyPublic')">
+      <input type="checkbox" id="spyPublic">
+      <span>Публичное лобби (видно всем)</span>
+    </div>
     <button class="btn" onclick="spyCreate()">СОЗДАТЬ КОМНАТУ</button>
     <div class="divider"></div>
+    <button class="btn ghost" onclick="openSpyList()">📋 ОТКРЫТЫЕ ЛОББИ</button>
     <button class="btn ghost" onclick="go('spyJoin')">ВОЙТИ ПО КОДУ</button>
   </div>
   <div id="spyCreateResult" style="display:none">
@@ -316,11 +347,22 @@
   </div>
 </div>
 
+<!-- СПИСОК ОТКРЫТЫХ ЛОББИ -->
+<div id="s-lobbies" class="screen">
+  <button class="back-btn" onclick="goBackFromLobbies()">← НАЗАД</button>
+  <div class="big" id="lobbiesTitle">ОТКРЫТЫЕ ЛОББИ</div>
+  <div id="lobbiesList"><div class="msg">Загрузка...</div></div>
+  <button class="btn ghost" onclick="reloadLobbies()">🔄 Обновить</button>
+</div>
+
 <script>
 const tg = window.Telegram?.WebApp;
 tg?.ready(); tg?.expand();
 const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
 let USERNAME = 'guest' + String(USER_ID).slice(-4);
+
+let lobbiesFrom = 'create'; // 'create' | 'durakCreate' | 'spyCreate'
+let lobbiesType = 'ttt';    // 'ttt' | 'durak' | 'spy'
 
 function go(s) {
   document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
@@ -328,14 +370,110 @@ function go(s) {
   if (s !== 'durakGame' && s !== 'spyGame') window.scrollTo(0, 0);
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function togglePublic(id){
+  const el=document.getElementById(id);
+  el.checked=!el.checked;
+}
 
-// ═══════════════ КРЕСТИКИ ═══════════════
+// =================== ЛОББИ-СПИСКИ ===================
+function goBackFromLobbies(){
+  go(lobbiesFrom);
+}
+async function openTttList(){
+  lobbiesFrom = 'create';
+  lobbiesType = 'ttt';
+  document.getElementById('lobbiesTitle').textContent = 'ОТКРЫТЫЕ КРЕСТИКИ';
+  go('lobbies');
+  await reloadLobbies();
+}
+async function openDurakList(){
+  lobbiesFrom = 'durakCreate';
+  lobbiesType = 'durak';
+  document.getElementById('lobbiesTitle').textContent = 'ОТКРЫТЫЕ ДУРАКИ';
+  go('lobbies');
+  await reloadLobbies();
+}
+async function openSpyList(){
+  lobbiesFrom = 'spyCreate';
+  lobbiesType = 'spy';
+  document.getElementById('lobbiesTitle').textContent = 'ОТКРЫТЫЕ ШПИОНЫ';
+  go('lobbies');
+  await reloadLobbies();
+}
+async function reloadLobbies(){
+  const box = document.getElementById('lobbiesList');
+  box.innerHTML = '<div class="msg">Загрузка...</div>';
+  try{
+    const url = lobbiesType === 'ttt' ? '/api/room/list'
+              : lobbiesType === 'durak' ? '/api/durak/list'
+              : '/api/spy/list';
+    const r = await fetch(url);
+    const d = await r.json();
+    if(!d.ok || !d.items || !d.items.length){
+      box.innerHTML = '<div class="msg">Открытых лобби пока нет 😔<br><br>Создай своё или зайди по коду.</div>';
+      return;
+    }
+    box.innerHTML = d.items.map(it => {
+      const meta = `${it.players}/${it.max} · ${escapeHtml(it.host)}`;
+      const extra = it.turn_limit ? ` · ход ${it.turn_limit} сек` : (it.pack_name ? ` · ${escapeHtml(it.pack_name)}` : '');
+      return `<div class="lobby-card" onclick="joinFromList('${it.code}')">
+        <div class="title">${escapeHtml(it.name)}</div>
+        <div class="meta">${meta}${extra}</div>
+      </div>`;
+    }).join('');
+  } catch(e){
+    box.innerHTML = '<div class="msg">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+async function joinFromList(code){
+  if(lobbiesType === 'ttt'){
+    const name = prompt('Ваше имя для игры:', USERNAME);
+    if(!name) return;
+    USERNAME = name.trim() || USERNAME;
+    const r = await fetch('/api/room/join', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, user_id:USER_ID, username:USERNAME})
+    });
+    const d = await r.json();
+    if(!d.ok){ tg?.showAlert?.(d.error); return; }
+    code = d.code; startGame();
+  } else if(lobbiesType === 'durak'){
+    const name = prompt('Ваше имя для игры:', USERNAME);
+    if(!name) return;
+    USERNAME = name.trim() || USERNAME;
+    const r = await fetch('/api/durak/join', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, user_id:USER_ID, username:USERNAME})
+    });
+    const d = await r.json();
+    if(!d.ok){ tg?.showAlert?.(d.error); return; }
+    durakRoom = d.code; durakStart();
+  } else if(lobbiesType === 'spy'){
+    const name = prompt('Ваше имя для игры:', USERNAME);
+    if(!name) return;
+    USERNAME = name.trim() || USERNAME;
+    const r = await fetch('/api/spy/join', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, user_id:USER_ID, username:USERNAME})
+    });
+    const d = await r.json();
+    if(!d.ok){ tg?.showAlert?.(d.error); return; }
+    spyRoom = d.code; spyStart();
+  }
+}
+
+// =================== КРЕСТИКИ ===================
 let ws = null, code = null, mySymbol = null, board = [], turn = 'X', winner = null, myTurn = false;
 let tttDeadline = null, tttTick = null, tttTimeoutSent = false;
 
 async function createRoom() {
   USERNAME = document.getElementById('createName').value.trim() || USERNAME;
-  const r = await fetch('/api/room/create', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:USERNAME})});
+  const lobbyName = document.getElementById('createLobbyName').value.trim();
+  const isPublic = document.getElementById('createPublic').checked;
+  const r = await fetch('/api/room/create', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({user_id:USER_ID, username:USERNAME, name:lobbyName, public:isPublic})
+  });
   const d = await r.json();
   if (!d.ok) { tg?.showAlert?.(d.error); return; }
   code = d.code;
@@ -393,12 +531,18 @@ function updateUI(){
 function resetGame(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'reset'}));}
 function tttSurrender(){if(!ws||ws.readyState!==1||winner)return;if(!confirm('Сдаться?'))return;ws.send(JSON.stringify({type:'surrender'}));}
 
-// ═══════════════ ДУРАК ═══════════════
+// =================== ДУРАК ===================
 const RANK_NAMES={6:'6',7:'7',8:'8',9:'9',10:'10',11:'В',12:'Д',13:'К',14:'Т'};
 const SUIT_NAMES={h:'♥',d:'♦',c:'♣',s:'♠'};
 let durakWs=null,durakRoom=null,durakState=null;
 let durakUnread=0, durakActiveTab='game', durakLastChatLen=0;
 let durakDeadline = null, durakTick = null;
+
+const LEAVE_REASON = {
+  surrender: 'сдался',
+  timeout: 'не сходил вовремя',
+  out_of_cards: 'вышел',
+};
 
 function durakSwitchTab(tab){
   durakActiveTab=tab;
@@ -418,7 +562,6 @@ function durakUpdateBadge(){
   if(durakUnread>0){el.textContent=durakUnread;el.style.display='inline-block';}
   else el.style.display='none';
 }
-
 function updateDurakTimer(){
   const s = durakState; if(!s) return;
   const bar=document.getElementById('durakTimerBar'); const fill=document.getElementById('durakTimerFill');
@@ -443,11 +586,13 @@ function startDurakTick(){
 
 async function durakCreate(){
   const name=document.getElementById('durakName').value.trim()||USERNAME;
+  const lobbyName=document.getElementById('durakLobbyName').value.trim();
   const deckSize=parseInt(document.getElementById('durakDeck').value,10);
   const maxPlayers=parseInt(document.getElementById('durakMaxPlayers').value,10);
   const turnLimit=parseInt(document.getElementById('durakTurnLimit').value,10);
   const translate=document.getElementById('durakTranslate').checked;
-  const r=await fetch('/api/durak/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:name,deck_size:deckSize,max_players:maxPlayers,turn_limit:turnLimit,translate})});
+  const isPublic=document.getElementById('durakPublic').checked;
+  const r=await fetch('/api/durak/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:name,name:lobbyName,public:isPublic,deck_size:deckSize,max_players:maxPlayers,turn_limit:turnLimit,translate})});
   const d=await r.json();if(!d.ok){tg?.showAlert?.(d.error);return;}
   durakRoom=d.code;document.getElementById('durakCode').textContent=d.code;
   document.getElementById('durakWaitingMsg').textContent=`Ждём игроков... нужно ${maxPlayers} · ход ${turnLimit} сек`;
@@ -473,14 +618,16 @@ function durakRender(){
   let info='—';
   if(s.phase==='waiting')info=`ЖДЁМ ИГРОКОВ (${s.players.length}/${s.max_players})`;
   else if(s.phase==='over'){if(s.is_draw)info='🤝 НИЧЬЯ';else if(s.durak_id===USER_ID)info='💀 ВЫ ДУРАК';else info='🏆 ВЫ ПОБЕДИЛИ';}
-  else if(iAmOut)info='✅ ВЫ ВЫШЛИ ИЗ ИГРЫ';
+  else if(iAmOut){
+    const r = LEAVE_REASON[s.your_leave_reason] || 'вышли из игры';
+    info = '✅ ВЫ ВЫШЛИ (' + r + ')';
+  }
   else if(isMyDefense)info='🛡 ВАША ЗАЩИТА';
   else if(isMyAttack&&s.table.length===0)info='⚔ ВАШ ХОД — АТАКА';
   else if(isMyAttack&&s.phase==='attack')info='⚔ ПОДКИНЬТЕ ИЛИ ЖМИТЕ БИТО';
   else info='⏳ ЖДЁМ ХОДА';
   document.getElementById('durakInfo').textContent=info;
 
-  // Таймер: обновляем deadline и запускаем плавный тик
   if(s.phase==='waiting'||s.phase==='over'||iAmOut){
     durakDeadline = null;
   } else if (s.turn_remaining !== undefined && s.turn_remaining !== null) {
@@ -501,7 +648,23 @@ function durakRender(){
   document.getElementById('durakLastLog').textContent=lastLog;
 
   const pl=document.getElementById('durakPlayers');
-  pl.innerHTML=(s.players||[]).map(p=>{const me=p.seat===myIdx;const cls=['player-row'];if(me)cls.push('me');if(p.is_attacker)cls.push('attacker');if(p.is_defender)cls.push('defender');if(p.left)cls.push('left');const badges=(p.is_attacker?'<span class="badge a">АТАКА</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');return `<div class="${cls.join(' ')}"><div>${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div><div>🃏 ${p.hand_count}${p.left?' 🏳️':''}</div></div>`;}).join('');
+  pl.innerHTML=(s.players||[]).map(p=>{
+    const me=p.seat===myIdx;
+    const cls=['player-row'];
+    if(me)cls.push('me');
+    if(p.is_attacker)cls.push('attacker');
+    if(p.is_defender)cls.push('defender');
+    if(p.left)cls.push('left');
+    const badges=(p.is_attacker?'<span class="badge a">АТАКА</span>':'')+(p.is_defender?'<span class="badge d">ЗАЩИТА</span>':'');
+    const reason = p.left && p.leave_reason ? `<div class="reason">${LEAVE_REASON[p.leave_reason]||p.leave_reason}</div>` : '';
+    return `<div class="${cls.join(' ')}">
+      <div>
+        <div class="name">${me?'👉 ':''}${escapeHtml(p.name)} ${badges}</div>
+        ${reason}
+      </div>
+      <div>🃏 ${p.hand_count}${p.left?' 🏳️':''}</div>
+    </div>`;
+  }).join('');
 
   const table=document.getElementById('durakTable');
   if(s.table.length===0)table.innerHTML='<div style="color:#555;font-size:11px;padding:10px">Пусто</div>';
@@ -535,18 +698,33 @@ function durakRender(){
     if(atBottom)chatBox.scrollTop=chatBox.scrollHeight;
   }
 
-  const startBtn=document.getElementById('durakStartBtn');const passBtn=document.getElementById('durakPassBtn');const takeBtn=document.getElementById('durakTakeBtn');const surBtn=document.getElementById('durakSurrenderBtn');
+  const startBtn=document.getElementById('durakStartBtn');
+  const passBtn=document.getElementById('durakPassBtn');
+  const takeBtn=document.getElementById('durakTakeBtn');
+  const surBtn=document.getElementById('durakSurrenderBtn');
+  const restartBtn=document.getElementById('durakRestartBtn');
   startBtn.style.display=(s.phase==='waiting'&&myIdx===0)?'block':'none';
   passBtn.style.display=(isMyAttack&&s.phase==='attack'&&s.table.length>0)?'block':'none';
   takeBtn.style.display=(isMyDefense&&s.phase==='defend')?'block':'none';
   if(surBtn) surBtn.style.display=(s.phase==='over'||iAmOut||s.phase==='waiting')?'none':'block';
+  if(restartBtn){
+    // Показываем новую партию только хозяину и когда игра закончилась или все сдались
+    const showRestart = s.is_host && (s.phase==='over' || s.players.filter(p=>!p.left).length < 2);
+    restartBtn.style.display = showRestart ? 'block' : 'none';
+  }
 }
 async function durakStartGame(){const r=await fetch('/api/durak/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:durakRoom,user_id:USER_ID})});const d=await r.json();if(!d.ok)tg?.showAlert?.(d.error);}
+async function durakRestart(){
+  if(!confirm('Начать новую партию с теми же игроками?')) return;
+  const r=await fetch('/api/durak/restart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:durakRoom,user_id:USER_ID})});
+  const d=await r.json();
+  if(!d.ok)tg?.showAlert?.(d.error);
+}
 function durakAction(action,card){if(!durakWs||durakWs.readyState!==1)return;durakWs.send(JSON.stringify({action,card}));}
 function durakChat(){const i=document.getElementById('durakChatInput');const t=i.value.trim();if(!t)return;durakWs?.send?.(JSON.stringify({action:'chat',text:t}));i.value='';}
 function durakSurrender(){if(!durakWs||durakWs.readyState!==1)return;const s=durakState;if(!s||s.your_left||s.phase==='over')return;if(!confirm('Сдаться? Вы выйдете из игры.'))return;durakWs.send(JSON.stringify({action:'surrender'}));}
 
-// ═══════════════ ШПИОН ═══════════════
+// =================== ШПИОН ===================
 let spyWs=null,spyRoom=null,spyState=null;
 let spyUnread=0, spyActiveTab='game', spyLastChatLen=0;
 
@@ -579,8 +757,10 @@ function spyInitPacks(){const sel=document.getElementById('spyPack');if(!sel)ret
 spyInitPacks();
 async function spyCreate(){
   const name=document.getElementById('spyName').value.trim()||USERNAME;
+  const lobbyName=document.getElementById('spyLobbyName').value.trim();
   const pack=document.getElementById('spyPack').value;
-  const r=await fetch('/api/spy/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:name,pack})});
+  const isPublic=document.getElementById('spyPublic').checked;
+  const r=await fetch('/api/spy/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:name,name:lobbyName,public:isPublic,pack})});
   const d=await r.json();if(!d.ok){tg?.showAlert?.(d.error);return;}
   spyRoom=d.code;document.getElementById('spyCode').textContent=d.code;
   document.getElementById('spyCreateForm').style.display='none';
@@ -634,7 +814,7 @@ function spyRender(){
     rbox.style.display='block';
     rbox.innerHTML=`${winnerText}<div style="margin-top:8px;font-size:14px">Шпион: <b>${escapeHtml(r.spy_name)}</b></div><div style="font-size:12px;color:#aaa;margin-bottom:6px">Общее слово: <b>${escapeHtml(r.common_word)}</b> · Слово шпиона: <b>${escapeHtml(r.spy_word)}</b></div><div style="font-size:11px;letter-spacing:1px;color:#777;margin-bottom:4px">ГОЛОСА:</div>${votesText}`;
   }else rbox.style.display='none';
-  const isHost=s.host_id===USER_ID;
+  const isHost=s.is_host;
   document.getElementById('spyStartBtn').style.display=(s.phase==='waiting'&&isHost&&s.players.length>=3)?'block':'none';
   document.getElementById('spyVoteBtn').style.display=(s.phase==='discuss'&&isHost)?'block':'none';
   document.getElementById('spyFinishBtn').style.display=(s.phase==='vote'&&isHost)?'block':'none';
@@ -658,7 +838,7 @@ function spyFinishVote(){spyWs?.send?.(JSON.stringify({type:'finish_vote'}));}
 function spyReset(){spyWs?.send?.(JSON.stringify({type:'reset'}));}
 function spyChat(){const i=document.getElementById('spyChatInput');const t=i.value.trim();if(!t)return;spyWs?.send?.(JSON.stringify({type:'chat',text:t}));i.value='';}
 
-// ═══════════════ ИНИЦИАЛИЗАЦИЯ ═══════════════
+// =================== ИНИЦИАЛИЗАЦИЯ ===================
 document.getElementById('joinCode')?.addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
 document.getElementById('durakJoinCode')?.addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
 document.getElementById('spyJoinCode')?.addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
