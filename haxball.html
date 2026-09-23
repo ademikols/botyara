@@ -36,20 +36,19 @@
 
   #s-game{position:fixed;top:0;left:0;background:#000;overflow:hidden;touch-action:none;display:none;transform-origin:center center}
   #s-game.active{display:block}
-
   .canvas-wrap{position:absolute;inset:0}
   #hb-canvas{width:100%;height:100%;display:block;touch-action:none}
 
-  .game-top{position:absolute;top:0;left:0;right:0;z-index:10;padding:4px 14px 16px;
-    background:linear-gradient(to bottom,rgba(0,0,0,0.8),rgba(0,0,0,0.3) 60%,transparent);
+  .game-top{position:absolute;top:0;left:0;right:0;z-index:10;padding:4px 14px 14px;
+    background:linear-gradient(to bottom,rgba(0,0,0,0.7),rgba(0,0,0,0.2) 60%,transparent);
     pointer-events:none;text-align:center}
   .score-row{display:flex;align-items:center;justify-content:center;gap:14px;font-size:22px;font-weight:900;font-family:'SF Mono',monospace;line-height:1.1}
   .score-left{color:#4a8cff}
   .score-right{color:#ff5555}
   .score-sep{color:#555}
-  .meta-row{font-size:10px;color:#aaa;letter-spacing:1px;padding-top:1px}
+  .meta-row{font-size:10px;color:#ccc;letter-spacing:1px;padding-top:1px}
   .meta-row b{color:#fff}
-  .phase-info{font-size:11px;color:#ccc;letter-spacing:1px;padding-top:1px;min-height:14px}
+  .phase-info{font-size:11px;color:#ddd;letter-spacing:1px;padding-top:1px;min-height:14px}
   .phase-info.win{color:#44ff88;font-weight:700}
   .phase-info.lose{color:#ff4444;font-weight:700}
 
@@ -73,7 +72,7 @@
     letter-spacing:2px;text-transform:uppercase;cursor:pointer;touch-action:none;
     box-shadow:0 6px 20px rgba(255,64,64,0.35);
     text-shadow:0 1px 2px rgba(0,0,0,0.5);
-    opacity:0.5;
+    opacity:0.55;
     transition:transform .06s,opacity .08s}
   #hbKick:active{transform:scale(0.94);opacity:0.9}
 
@@ -165,9 +164,8 @@ const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
 let USERNAME = tg?.initDataUnsafe?.user?.first_name || ('guest' + String(USER_ID).slice(-4));
 document.getElementById('hbName').value = USERNAME;
 
-// КОНСТАНТЫ
 const FIELD_W = 840, FIELD_H = 400;
-const PLAYER_R = 15, BALL_R = 7;
+const PLAYER_R = 15, BALL_R = 8;
 const GOAL_H = 100, GOAL_Y = (FIELD_H - GOAL_H) / 2;
 const MAX_SPEED = 260.0;
 const FRICTION = 0.82;
@@ -197,7 +195,7 @@ const HB = {
   prevState: null, nextState: null,
   prevTs: 0, nextTs: 0,
   me: {x: 0, y: 0, vx: 0, vy: 0, kick_cd: 0, kick_glow: 0},
-  myTeam: null,
+  myTeam: null, mySlot: 0,
   ballRender: {x: FIELD_W/2, y: FIELD_H/2},
   othersRender: [],
   predInit: false,
@@ -323,6 +321,7 @@ function hbOnServerState(s){
   }
 
   const sMe = (s.players || []).find(p => p.user_id === USER_ID);
+  if (sMe) { HB.mySlot = sMe.slot || 0; }
 
   if (!HB.predInit){
     if (sMe){ HB.me.x = sMe.x; HB.me.y = sMe.y; HB.me.vx = 0; HB.me.vy = 0; }
@@ -493,7 +492,6 @@ function hbLoop(){
   HB.raf = requestAnimationFrame(hbLoop);
 }
 
-// Сглаженная интерполяция — без пинга
 function hbUpdateInterp(now){
   const a = HB.prevState, b = HB.nextState;
   if (!b){
@@ -518,6 +516,7 @@ function hbUpdateInterp(now){
         user_id: pb.user_id,
         name: pb.name,
         team: pb.team,
+        slot: pb.slot || 0,
         x: pa.x + (pb.x - pa.x) * t,
         y: pa.y + (pb.y - pa.y) * t,
         kick_glow: pb.kick_glow || 0,
@@ -526,7 +525,6 @@ function hbUpdateInterp(now){
   }
   HB.othersRender = out;
 
-  // Мяч с экспоненциальным сглаживанием
   let targetX, targetY;
   if (a && a.ball && b.ball){
     targetX = a.ball.x + (b.ball.x - a.ball.x) * t;
@@ -540,11 +538,9 @@ function hbUpdateInterp(now){
     const dy = targetY - HB.ballRender.y;
     const d = Math.hypot(dx, dy);
     if (d > 120){
-      // Большой разрыв — телепорт (рестарт после гола)
       HB.ballRender.x = targetX;
       HB.ballRender.y = targetY;
     } else {
-      // Плавное догоняние
       HB.ballRender.x += dx * 0.35;
       HB.ballRender.y += dy * 0.35;
     }
@@ -590,115 +586,144 @@ function hbLocalTick(dt){
 }
 
 // ============================================================
-// РЕНДЕР — аутентичный Haxball
+// РЕНДЕР — как в Haxball (серое поле, белая разметка)
 // ============================================================
 function hbRender(){
   const ctx = HB.ctx;
 
-  // Фон вокруг поля (серый, как "аут")
-  ctx.fillStyle = '#2a2a2a';
+  // Фон вне поля — тёмный
+  ctx.fillStyle = '#1c1c1c';
   ctx.fillRect(0, 0, FIELD_W, FIELD_H);
 
-  // Поле — зелёное
-  ctx.fillStyle = '#5a8a3a';
+  // Поле — серое, с лёгкими полосами
+  ctx.fillStyle = '#5a5a5a';
   ctx.fillRect(0, 0, FIELD_W, FIELD_H);
 
-  // Разметка — белая
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  // Полосы на поле (чуть темнее)
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  for (let i = 0; i < 8; i += 2){
+    ctx.fillRect(i * (FIELD_W/8), 0, FIELD_W/8, FIELD_H);
+  }
+
+  // ====== ВОРОТА — снаружи поля ======
+  const GOAL_DEPTH = 18;
+
+  // Задние "стенки" ворот
+  ctx.fillStyle = '#3a3a3a';
+  ctx.fillRect(-GOAL_DEPTH, GOAL_Y, GOAL_DEPTH, GOAL_H);
+  ctx.fillRect(FIELD_W, GOAL_Y, GOAL_DEPTH, GOAL_H);
+
+  // Верхняя и нижняя линии ворот
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-GOAL_DEPTH, GOAL_Y); ctx.lineTo(0, GOAL_Y);
+  ctx.moveTo(-GOAL_DEPTH, GOAL_Y + GOAL_H); ctx.lineTo(0, GOAL_Y + GOAL_H);
+  ctx.moveTo(FIELD_W, GOAL_Y); ctx.lineTo(FIELD_W + GOAL_DEPTH, GOAL_Y);
+  ctx.moveTo(FIELD_W, GOAL_Y + GOAL_H); ctx.lineTo(FIELD_W + GOAL_DEPTH, GOAL_Y + GOAL_H);
+  ctx.stroke();
+
+  // Дальняя стенка ворот (левая/правая)
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-GOAL_DEPTH, GOAL_Y); ctx.lineTo(-GOAL_DEPTH, GOAL_Y + GOAL_H);
+  ctx.moveTo(FIELD_W + GOAL_DEPTH, GOAL_Y); ctx.lineTo(FIELD_W + GOAL_DEPTH, GOAL_Y + GOAL_H);
+  ctx.stroke();
+
+  // ====== РАЗМЕТКА ПОЛЯ ======
+  ctx.strokeStyle = '#fff';
   ctx.lineWidth = 2;
 
-  // Граница поля
-  ctx.strokeRect(1, 1, FIELD_W - 2, FIELD_H - 2);
+  // Рамка поля
+  ctx.strokeRect(0, 0, FIELD_W, FIELD_H);
 
   // Центральная линия
-  ctx.beginPath(); ctx.moveTo(FIELD_W/2, 0); ctx.lineTo(FIELD_W/2, FIELD_H); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(FIELD_W/2, 0);
+  ctx.lineTo(FIELD_W/2, FIELD_H);
+  ctx.stroke();
 
   // Центральный круг
-  ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(FIELD_W/2, FIELD_H/2, 65, 0, Math.PI*2);
+  ctx.stroke();
+
   // Точка центра
   ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath();
+  ctx.arc(FIELD_W/2, FIELD_H/2, 3.5, 0, Math.PI*2);
+  ctx.fill();
 
-  // Ворота — белые прямоугольники, торчащие наружу за пределы поля
-  const GW = 12; // глубина ворот наружу
-  ctx.fillStyle = '#e8e8e8';
-  ctx.fillRect(-GW, GOAL_Y, GW, GOAL_H);
-  ctx.fillRect(FIELD_W, GOAL_Y, GW, GOAL_H);
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(-GW, GOAL_Y, GW, GOAL_H);
-  ctx.strokeRect(FIELD_W, GOAL_Y, GW, GOAL_H);
+  // Дуги штрафной зоны (полукруг в поле от ворот)
+  ctx.beginPath();
+  ctx.arc(0, FIELD_H/2, 90, -Math.PI/2.4, Math.PI/2.4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(FIELD_W, FIELD_H/2, 90, Math.PI - Math.PI/2.4, Math.PI + Math.PI/2.4);
+  ctx.stroke();
 
-  // Борта — чёрная рамка вокруг поля
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(1.5, 1.5, FIELD_W - 3, FIELD_H - 3);
+  // Точки пенальти
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(70, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(FIELD_W - 70, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
 
   // Чужие игроки
   for (const o of HB.othersRender){
-    hbDrawPlayer(ctx, o.x, o.y, o.team, false, o.name || '', o.kick_glow || 0);
+    hbDrawPlayer(ctx, o.x, o.y, o.team, (o.slot||0)+1, false, o.name || '', o.kick_glow || 0);
   }
 
   // Моя фигура
-  hbDrawPlayer(ctx, HB.me.x, HB.me.y, HB.myTeam, true, '', HB.me.kick_glow);
+  hbDrawPlayer(ctx, HB.me.x, HB.me.y, HB.myTeam, HB.mySlot + 1, true, '', HB.me.kick_glow);
 
-  // Мяч
+  // Мяч — жёлто-зелёный круг
   const bx = HB.ballRender.x, by = HB.ballRender.y;
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = '#e8e000';
   ctx.beginPath(); ctx.arc(bx, by, BALL_R, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Свечение при ударе (для моей)
-  if (HB.me.kick_glow > 0){
-    ctx.strokeStyle = `rgba(255,255,80,${HB.me.kick_glow * 3})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(HB.me.x, HB.me.y, PLAYER_R + 4, 0, Math.PI*2); ctx.stroke();
-  }
+  // Блик на мяче
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.beginPath(); ctx.arc(bx - BALL_R*0.3, by - BALL_R*0.3, BALL_R*0.3, 0, Math.PI*2); ctx.fill();
 }
 
-function hbDrawPlayer(ctx, x, y, team, isMe, name, glow){
-  // Цвет команды (в оригинале Haxball — красный и синий)
+function hbDrawPlayer(ctx, x, y, team, number, isMe, name, glow){
   let fill;
-  if (team === 'left') fill = '#4a6fdc'; // синий
-  else fill = '#d94545'; // красный
-  if (!team) fill = '#888';
+  if (team === 'left') fill = '#3a5fdc';
+  else if (team === 'right') fill = '#dc4040';
+  else fill = '#888';
 
-  // Свечение чужого при ударе
+  // Свечение при ударе
   if (glow > 0){
-    ctx.strokeStyle = `rgba(255,255,80,${glow * 3})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x, y, PLAYER_R + 4, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,80,${Math.min(0.9, glow * 3)})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, PLAYER_R + 5, 0, Math.PI*2); ctx.stroke();
   }
 
-  // Круг игрока — заливка + чёрная обводка
+  // Фигура — заливка + обводка
   ctx.fillStyle = fill;
   ctx.beginPath(); ctx.arc(x, y, PLAYER_R, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Маленькая белая точка в центре (для не-своих)
-  if (!isMe){
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
-  } else {
-    // У своей — маленькое белое кольцо или точка
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
-  }
+  // Номер внутри — белым
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(number), x, y + 1);
 
-  // Имя под фигурой — белое, жирное
+  // Имя под фигурой — белое с чёрной тенью
   if (name){
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px -apple-system, sans-serif';
     ctx.textBaseline = 'top';
-    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
     ctx.lineWidth = 3;
-    ctx.strokeText(name.slice(0, 10), x, y + PLAYER_R + 2);
-    ctx.fillText(name.slice(0, 10), x, y + PLAYER_R + 2);
+    ctx.strokeText(name.slice(0, 12), x, y + PLAYER_R + 3);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(name.slice(0, 12), x, y + PLAYER_R + 3);
   }
 }
 
