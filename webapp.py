@@ -475,6 +475,8 @@ async def durak_start(request):
 
 
 async def durak_restart(request):
+    """Novaya partiya. Vozvrashchaem vseh, kto ne surrender.
+    Te, kto otvalilsya po timeout ili vyshel po kartam - igrayut snova."""
     d = await request.json()
     code = str(d.get("code", "")).strip()
     uid = d.get("user_id")
@@ -484,9 +486,11 @@ async def durak_restart(request):
     if r["players"][0]["user_id"] != uid:
         return web.json_response({"ok": False, "error": "Tolko hozain"}, status=403)
 
-    active = [p for p in r["players"] if p.get("leave_reason") not in ("surrender", "timeout")]
+    # Ostavlyaem vseh, kto NE salsya sam (surrender).
+    # Timeout i out_of_cards - vremennye, ih vozvrashchaem.
+    active = [p for p in r["players"] if p.get("leave_reason") != "surrender"]
     if len(active) < 2:
-        return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka"}, status=400)
+        return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka (kto-to sdalsya" }, status=400)
 
     deck = make_deck(r["opts"].get("deck_size", 36))
     random.shuffle(deck)
