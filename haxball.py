@@ -476,6 +476,7 @@ async def haxball_watchdog():
     while True:
         now = time.monotonic()
         dead_codes = []
+        sends = []
         for code, room in list(ROOMS.items()):
             room.update(now)
             if now - room.last_broadcast >= BROADCAST_INTERVAL:
@@ -483,12 +484,17 @@ async def haxball_watchdog():
                 for p in list(room.players.values()):
                     ws = p.ws
                     if ws is not None and not ws.closed:
-                        try:
-                            await ws.send_json(room.snapshot(p.user_id))
-                        except Exception:
-                            pass
+                        sends.append((ws, room.snapshot(p.user_id)))
             if room.empty_since and now - room.empty_since > ROOM_TTL_EMPTY:
                 dead_codes.append(code)
         for code in dead_codes:
             ROOMS.pop(code, None)
+
+        # Параллельная рассылка — не блокирует тик физики
+        if sends:
+            await asyncio.gather(
+                *[ws.send_json(snap) for ws, snap in sends],
+                return_exceptions=True
+            )
+
         await asyncio.sleep(TICK_DT)
