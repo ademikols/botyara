@@ -8,35 +8,46 @@ from typing import Dict, Optional
 from aiohttp import web
 from datetime import datetime
 
+# ---------- ПОЛЕ ----------
 FIELD_WIDTH = 800
 FIELD_HEIGHT = 500
 FIELD_HALF_WIDTH = FIELD_WIDTH / 2
 FIELD_HALF_HEIGHT = FIELD_HEIGHT / 2
 
-PLAYER_RADIUS = 15
-BALL_RADIUS = 8
-GOAL_HEIGHT = 120
+# ---------- РАЗМЕРЫ ----------
+PLAYER_RADIUS = 20
+BALL_RADIUS = 10
+GOAL_HEIGHT = 140
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-MAX_SPEED = 300
-ACCELERATION = 800
-FRICTION = 0.92
-WALL_ELASTICITY = 0.9
-PLAYER_PLAYER_ELASTICITY = 0.8
-PLAYER_BALL_ELASTICITY = 0.95
-BALL_FRICTION = 0.985
-KICK_FORCE = 450
-KICK_COOLDOWN = 0.35
+# ---------- ФИЗИКА ----------
+MAX_SPEED = 320.0
+ACCELERATION = 950.0
+FRICTION = 0.90
+WALL_ELASTICITY = 0.85
+PLAYER_PLAYER_ELASTICITY = 0.55
+PLAYER_BALL_ELASTICITY = 0.92
+BALL_FRICTION = 0.988
+KICK_FORCE = 470.0
+KICK_COOLDOWN = 0.30
+KICK_BONUS_FROM_PLAYER_VEL = 1.15
 
-TICK_RATE = 30
-SNAPSHOT_RATE = 15
+TICK_RATE = 60
+SUBSTEPS = 3
 DT = 1.0 / TICK_RATE
-SNAPSHOT_EVERY = TICK_RATE // SNAPSHOT_RATE
+SUB_DT = DT / SUBSTEPS
 
-MAX_PLAYERS = 4
-MATCH_TIME = 120.0
+SNAPSHOT_RATE = 20
+SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
+
+MAX_PLAYERS = 6
+TEAM_CAP = 3
+MATCH_TIME = 180.0
 GOAL_PAUSE = 2.0
-WIN_SCORE = 3
+WIN_SCORE = 5
+
+LEFT_SPAWN = [(140.0, 120.0), (140.0, 250.0), (140.0, 380.0)]
+RIGHT_SPAWN = [(660.0, 120.0), (660.0, 250.0), (660.0, 380.0)]
 
 
 @dataclass
@@ -44,6 +55,7 @@ class Player:
     user_id: int
     name: str
     team: str
+    slot: int = 0
     x: float = 0.0
     y: float = 0.0
     vx: float = 0.0
@@ -54,12 +66,16 @@ class Player:
     right: bool = False
     kick: bool = False
     kick_cd: float = 0.0
+    kick_glow: float = 0.0
 
     def to_dict(self):
         return {
-            "user_id": self.user_id, "name": self.name,
-            "x": round(self.x, 2), "y": round(self.y, 2),
+            "user_id": self.user_id,
+            "name": self.name,
+            "x": round(self.x, 2),
+            "y": round(self.y, 2),
             "team": self.team,
+            "kick_glow": round(self.kick_glow, 2),
         }
 
 
@@ -115,7 +131,30 @@ def generate_code():
 
 
 def distance(x1, y1, x2, y2):
-    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    return math.hypot(x2 - x1, y2 - y1)
+
+
+def team_count(game: HaxballGame, team: str) -> int:
+    return sum(1 for p in game.players.values() if p.team == team)
+
+
+def pick_team(game: HaxballGame):
+    lc = team_count(game, "left")
+    rc = team_count(game, "right")
+    if lc < rc:
+        return "left"
+    if rc < lc:
+        return "right"
+    if lc < TEAM_CAP:
+        return "left"
+    if rc < TEAM_CAP:
+        return "right"
+    return None
+
+
+def spawn_for(team: str, slot: int):
+    arr = LEFT_SPAWN if team == "left" else RIGHT_SPAWN
+    return arr[min(slot, len(arr) - 1)]
 
 
 def reset_ball(game: HaxballGame):
@@ -130,9 +169,12 @@ def reset_positions(game: HaxballGame):
         p.vx = p.vy = 0.0
         p.up = p.down = p.left = p.right = p.kick = False
         p.kick_cd = 0.0
-        p.x = 150.0 if p.team == "left" else FIELD_WIDTH - 150.0
-        p.y = FIELD_HALF_HEIGHT + random.uniform(-60, 60)
+        x, y = spawn_for(p.team, p.slot)
+        p.x = x
+        p.y = y
 
+
+# ---------- ФИЗИКА ----------
 
 def update_player(player: Player, dt: float):
     ax = ay = 0.0
@@ -144,15 +186,16 @@ def update_player(player: Player, dt: float):
     player.vx += ax * dt
     player.vy += ay * dt
 
-    speed = math.sqrt(player.vx ** 2 + player.vy ** 2)
+    speed = math.hypot(player.vx, player.vy)
     if speed > MAX_SPEED:
         k = MAX_SPEED / speed
         player.vx *= k
         player.vy *= k
 
     if not (player.up or player.down or player.left or player.right):
-        player.vx *= FRICTION
-        player.vy *= FRICTION
+        k = FRICTION ** (dt * 60.0)
+        player.vx *= k
+        player.vy *= k
 
     player.x += player.vx * dt
     player.y += player.vy * dt
@@ -172,11 +215,14 @@ def update_player(player: Player, dt: float):
 
     if player.kick_cd > 0:
         player.kick_cd = max(0.0, player.kick_cd - dt)
+    if player.kick_glow > 0:
+        player.kick_glow = max(0.0, player.kick_glow - dt)
 
 
 def update_ball(ball: Ball, dt: float):
-    ball.vx *= BALL_FRICTION
-    ball.vy *= BALL_FRICTION
+    k = BALL_FRICTION ** (dt * 60.0)
+    ball.vx *= k
+    ball.vy *= k
     ball.x += ball.vx * dt
     ball.y += ball.vy * dt
 
@@ -207,77 +253,96 @@ def check_goal(ball: Ball) -> Optional[str]:
     return None
 
 
-def resolve_collision_circle(x1, y1, r1, vx1, vy1, m1,
-                             x2, y2, r2, vx2, vy2, m2, elasticity):
-    dx = x2 - x1
-    dy = y2 - y1
-    dist = math.sqrt(dx * dx + dy * dy)
-    if dist < 0.001 or dist > r1 + r2:
-        return vx1, vy1, vx2, vy2
-    nx, ny = dx / dist, dy / dist
-    dvx = vx2 - vx1
-    dvy = vy2 - vy1
-    dvn = dvx * nx + dvy * ny
-    if dvn >= 0:
-        return vx1, vy1, vx2, vy2
-    impulse = -(1 + elasticity) * dvn / (1 / m1 + 1 / m2)
-    vx1 -= impulse / m1 * nx
-    vy1 -= impulse / m1 * ny
-    vx2 += impulse / m2 * nx
-    vy2 += impulse / m2 * ny
-    return vx1, vy1, vx2, vy2
+def resolve_player_player(p1: Player, p2: Player):
+    dx = p2.x - p1.x
+    dy = p2.y - p1.y
+    dist = math.hypot(dx, dy)
+    min_dist = PLAYER_RADIUS * 2
+    if dist >= min_dist or dist < 0.0001:
+        return
+    nx = dx / dist
+    ny = dy / dist
+    overlap = min_dist - dist
+    # Развести по позиции
+    p1.x -= nx * overlap * 0.5
+    p1.y -= ny * overlap * 0.5
+    p2.x += nx * overlap * 0.5
+    p2.y += ny * overlap * 0.5
+    # Разрешить скорости по нормали
+    rvx = p2.vx - p1.vx
+    rvy = p2.vy - p1.vy
+    vel_n = rvx * nx + rvy * ny
+    if vel_n > 0:
+        return
+    e = PLAYER_PLAYER_ELASTICITY
+    j = -(1 + e) * vel_n / 2.0
+    p1.vx -= j * nx
+    p1.vy -= j * ny
+    p2.vx += j * nx
+    p2.vy += j * ny
+
+
+def resolve_player_ball(player: Player, ball: Ball):
+    dx = ball.x - player.x
+    dy = ball.y - player.y
+    dist = math.hypot(dx, dy)
+    min_dist = PLAYER_RADIUS + BALL_RADIUS
+    if dist >= min_dist or dist < 0.0001:
+        return False
+    nx = dx / dist
+    ny = dy / dist
+    overlap = min_dist - dist
+    # Мяч лёгкий, толкаем его сильнее
+    ball.x += nx * overlap * 0.9
+    ball.y += ny * overlap * 0.9
+    player.x -= nx * overlap * 0.1
+    player.y -= ny * overlap * 0.1
+    # Проверка удара
+    if player.kick and player.kick_cd <= 0:
+        # К удару добавляем скорость игрока
+        base_x = nx * KICK_FORCE + player.vx * KICK_BONUS_FROM_PLAYER_VEL
+        base_y = ny * KICK_FORCE + player.vy * KICK_BONUS_FROM_PLAYER_VEL
+        ball.vx = base_x
+        ball.vy = base_y
+        player.kick_cd = KICK_COOLDOWN
+        player.kick_glow = 0.25
+        return True
+    # Обычное упругое столкновение
+    rvx = ball.vx - player.vx
+    rvy = ball.vy - player.vy
+    vel_n = rvx * nx + rvy * ny
+    if vel_n < 0:
+        e = PLAYER_BALL_ELASTICITY
+        m_player = 3.0
+        m_ball = 1.0
+        j = -(1 + e) * vel_n / (1.0 / m_player + 1.0 / m_ball)
+        player.vx -= j / m_player * nx
+        player.vy -= j / m_player * ny
+        ball.vx += j / m_ball * nx
+        ball.vy += j / m_ball * ny
+    return False
+
+
+def step_physics(game: HaxballGame, dt: float):
+    for p in game.players.values():
+        update_player(p, dt)
+
+    players = list(game.players.values())
+    for i in range(len(players)):
+        for j in range(i + 1, len(players)):
+            resolve_player_player(players[i], players[j])
+
+    update_ball(game.ball, dt)
+
+    for p in players:
+        resolve_player_ball(p, game.ball)
 
 
 def update_game_physics(game: HaxballGame, dt: float):
     if game.phase != "battle":
         return
-
-    for player in game.players.values():
-        update_player(player, dt)
-
-    players_list = list(game.players.values())
-    for i in range(len(players_list)):
-        for j in range(i + 1, len(players_list)):
-            p1, p2 = players_list[i], players_list[j]
-            dist = distance(p1.x, p1.y, p2.x, p2.y)
-            if dist < PLAYER_RADIUS * 2 and dist > 0.001:
-                nx = (p2.x - p1.x) / dist
-                ny = (p2.y - p1.y) / dist
-                overlap = PLAYER_RADIUS * 2 - dist
-                p1.x -= nx * overlap / 2
-                p1.y -= ny * overlap / 2
-                p2.x += nx * overlap / 2
-                p2.y += ny * overlap / 2
-                p1.vx, p1.vy, p2.vx, p2.vy = resolve_collision_circle(
-                    p1.x, p1.y, PLAYER_RADIUS, p1.vx, p1.vy, 1,
-                    p2.x, p2.y, PLAYER_RADIUS, p2.vx, p2.vy, 1,
-                    PLAYER_PLAYER_ELASTICITY
-                )
-
-    update_ball(game.ball, dt)
-
-    for player in game.players.values():
-        dist = distance(player.x, player.y, game.ball.x, game.ball.y)
-        if dist < PLAYER_RADIUS + BALL_RADIUS and dist > 0.001:
-            dx = (game.ball.x - player.x) / dist
-            dy = (game.ball.y - player.y) / dist
-            overlap = PLAYER_RADIUS + BALL_RADIUS - dist
-            player.x -= dx * overlap / 2
-            player.y -= dy * overlap / 2
-            game.ball.x += dx * overlap / 2
-            game.ball.y += dy * overlap / 2
-
-            if player.kick and player.kick_cd <= 0:
-                angle = math.atan2(dy, dx)
-                game.ball.vx = math.cos(angle) * KICK_FORCE
-                game.ball.vy = math.sin(angle) * KICK_FORCE
-                player.kick_cd = KICK_COOLDOWN
-            else:
-                player.vx, player.vy, game.ball.vx, game.ball.vy = resolve_collision_circle(
-                    player.x, player.y, PLAYER_RADIUS, player.vx, player.vy, 1.0,
-                    game.ball.x, game.ball.y, BALL_RADIUS, game.ball.vx, game.ball.vy, 0.3,
-                    PLAYER_BALL_ELASTICITY
-                )
+    for _ in range(SUBSTEPS):
+        step_physics(game, dt / SUBSTEPS)
 
     goal = check_goal(game.ball)
     if goal:
@@ -285,7 +350,6 @@ def update_game_physics(game: HaxballGame, dt: float):
         game.last_goal_team = goal
         reset_ball(game)
         reset_positions(game)
-
         if game.score[goal] >= WIN_SCORE:
             game.phase = "over"
             game.winner = goal
@@ -311,6 +375,8 @@ async def _kick_from_old_game(user_id: int):
             pass
 
 
+# ---------- HTTP ----------
+
 async def handle_create(request: web.Request) -> web.Response:
     try:
         data = await request.json()
@@ -330,8 +396,9 @@ async def handle_create(request: web.Request) -> web.Response:
         code = generate_code()
 
     game = HaxballGame(code=code, name=game_name, host_id=user_id, host_name=user_name)
-    player = Player(user_id=user_id, name=user_name, team="left", x=150.0, y=FIELD_HALF_HEIGHT)
-    game.players[user_id] = player
+    p = Player(user_id=user_id, name=user_name, team="left", slot=0)
+    p.x, p.y = spawn_for("left", 0)
+    game.players[user_id] = p
     games[code] = game
     player_games[user_id] = code
     return web.json_response({"ok": True, "code": code})
@@ -362,15 +429,16 @@ async def handle_join(request: web.Request) -> web.Response:
     if len(game.players) >= MAX_PLAYERS:
         return web.json_response({"ok": False, "error": "Game is full"})
 
+    team = pick_team(game)
+    if team is None:
+        return web.json_response({"ok": False, "error": "Teams are full"})
+
     await _kick_from_old_game(user_id)
 
-    left_count = sum(1 for p in game.players.values() if p.team == "left")
-    right_count = sum(1 for p in game.players.values() if p.team == "right")
-    team = "right" if left_count > right_count else "left"
-    x = 150.0 if team == "left" else FIELD_WIDTH - 150.0
-    y = FIELD_HALF_HEIGHT + random.uniform(-60, 60)
-
-    game.players[user_id] = Player(user_id=user_id, name=user_name, team=team, x=x, y=y)
+    slot = team_count(game, team)
+    p = Player(user_id=user_id, name=user_name, team=team, slot=slot)
+    p.x, p.y = spawn_for(team, slot)
+    game.players[user_id] = p
     player_games[user_id] = code
 
     if game.phase == "waiting" and len(game.players) >= 2:
