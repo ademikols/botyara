@@ -417,11 +417,12 @@ class Room:
                     p2.x, p2.y = self.clamp_player_pos(p2.x, p2.y)
 
     def check_goal(self):
+        # Гол засчитывается, когда ЦЕНТР мяча пересёк линию ворот.
         b = self.ball
         scorer = None
-        if b["x"] + BALL_R < 0 and GOAL_TOP < b["y"] < GOAL_BOTTOM:
+        if b["x"] < 0 and GOAL_TOP < b["y"] < GOAL_BOTTOM:
             scorer = "right"
-        elif b["x"] - BALL_R > FIELD_W and GOAL_TOP < b["y"] < GOAL_BOTTOM:
+        elif b["x"] > FIELD_W and GOAL_TOP < b["y"] < GOAL_BOTTOM:
             scorer = "left"
         if scorer:
             self.score[scorer] += 1
