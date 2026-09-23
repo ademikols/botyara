@@ -19,7 +19,6 @@ BALL_RADIUS = 10
 GOAL_HEIGHT = 140
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-# Мгновенный разгон и быстрое торможение — как в оригинале Haxball
 MAX_SPEED = 360.0
 ACCELERATION = 3600.0
 FRICTION = 0.82
@@ -32,7 +31,6 @@ KICK_COOLDOWN = 0.28
 KICK_BONUS_FROM_PLAYER_VEL = 1.10
 
 TICK_RATE = 60
-SUBSTEPS = 3
 DT = 1.0 / TICK_RATE
 
 SNAPSHOT_RATE = 25
@@ -184,11 +182,10 @@ def update_player(player, dt):
         iy /= mag
 
     if mag > 0.05:
-        # Есть ввод — задаём скорость напрямую (мгновенный отклик)
+        # Мгновенная скорость
         player.vx = ix * MAX_SPEED * min(1.0, mag)
         player.vy = iy * MAX_SPEED * min(1.0, mag)
     else:
-        # Нет ввода — быстро тормозим
         k = FRICTION ** (dt * 60.0)
         player.vx *= k
         player.vy *= k
@@ -332,10 +329,18 @@ def step_physics(game, dt):
 def update_game_physics(game, dt):
     if game.phase != "battle":
         return
-    if dt > 0.1:
-        dt = 0.1
-    for _ in range(SUBSTEPS):
-        step_physics(game, dt / SUBSTEPS)
+    if dt > 1.0 / 15.0:
+        dt = 1.0 / 15.0
+
+    # Подшаги ≤ 5 мс — мяч не проскочит сквозь игрока
+    max_sub_dt = 0.005
+    n_sub = max(1, int(math.ceil(dt / max_sub_dt)))
+    if n_sub > 30:
+        n_sub = 30
+        dt = 30 * max_sub_dt
+    sub_dt = dt / n_sub
+    for _ in range(n_sub):
+        step_physics(game, sub_dt)
 
     goal = check_goal(game.ball)
     if goal:
@@ -526,8 +531,8 @@ async def haxball_watchdog():
             now_real = _time.monotonic()
             real_dt = now_real - last
             last = now_real
-            if real_dt > 0.1:
-                real_dt = 0.1
+            if real_dt > 1.0 / 15.0:
+                real_dt = 1.0 / 15.0
             if real_dt <= 0:
                 real_dt = DT
 
