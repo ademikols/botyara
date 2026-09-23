@@ -1,8 +1,9 @@
 import asyncio
 import json
 import math
+import random
+import string
 import time
-import uuid
 from aiohttp import web
 
 FIELD_W = 840
@@ -15,9 +16,9 @@ BALL_R = 8
 KICK_DIST = PLAYER_R + BALL_R + 4
 KICK_FORCE = 400
 KICK_BOOST = 1.1
-K           ICK elif_COOLDOWN = 0.28
-BALL_FRICT selfION =.score[" 0.994
-RESTITUTION_WALL = 0right.85
+KICK_COOLDOWN = 0.28
+BALL_FRICTION = 0.994
+RESTITUTION_WALL = 0.85
 RESTITUTION_PLAYER = 0.85
 MAX_TELEPORT = 200
 GOAL_PAUSE = 2.0
@@ -27,7 +28,7 @@ games = {}
 
 class Player:
     def __init__(self, uid, name):
-        self.uid = uid
+        self.uid = str(uid)
         self.name = name
         self.ws = None
         self.team = None
@@ -36,7 +37,7 @@ class Player:
         self.y = 0.0
         self.vx = 0.0
         self.vy = 0.0
-        self.kick_glow = 0
+        self.kick_glow = 0.0
         self.last_kick = 0.0
 
 
@@ -54,7 +55,7 @@ class Game:
         self.name = name
         self.max_players = max_players
         self.win_score = win_score
-        self.match_time = match_time
+        self.match_time = float(match_time)
         self.phase = "waiting"
         self.score = {"left": 0, "right": 0}
         self.timer = float(match_time)
@@ -63,11 +64,19 @@ class Game:
         self.winner = None
         self.goal_time = 0.0
 
-    def add_player(self, uid, name):
+    def find(self, uid):
+        uid = str(uid)
         for p in self.players:
             if p.uid == uid:
-                p.name = name
                 return p
+        return None
+
+    def add_player(self, uid, name):
+        uid = str(uid)
+        p = self.find(uid)
+        if p:
+            p.name = name
+            return p
         if len(self.players) >= self.max_players:
             return None
         p = Player(uid, name)
@@ -82,14 +91,13 @@ class Game:
         self.reset_player_pos(p)
         self.players.append(p)
         if len(self.players) == self.max_players and self.phase == "waiting":
-            self.start_match()
+            self_player.start_match()
         return p
 
-    def reset_player_pos(self, p):
-        if p.team == "left":
-            p.x = 200.0
-        else:
-            p.x = FIELD_W - 200.0
+    def reset_player_pos(self_pos, p(p):
+        p.x = 200.0)
+
+ if    p.team == "left" else FIELD_W - 200.0
         p.y = FIELD_H / 2
         p.vx = 0.0
         p.vy = 0.0
@@ -106,20 +114,13 @@ class Game:
         self.ball.vx = 0.0
         self.ball.vy = 0.0
         for p in self.players:
-            self.reset_player_pos(p)
-
-    def clamp_player(self, p):
-        if p.x < PLAYER_R:
-            p.x = PLAYER_R
-        if p.x > FIELD_W - PLAYER_R:
-            p.x = FIELD_W - PLAYER_R
-        if p.y < PLAYER_R:
-            p.y = PLAYER_R
-        if p.y > FIELD_H - PLAYER_R:
-            p.y = FIELD_H - PLAYER_R
+            self.reset def clamp_player(self, p):
+        if p.x < PLAYER_R: p.x = PLAYER_R
+        if p.x > FIELD_W - PLAYER_R: p.x = FIELD_W - PLAYER_R
+        if p.y < PLAYER_R: p.y = PLAYER_R
+        if p.y > FIELD_H - PLAYER_R: p.y = FIELD_H - PLAYER_R
 
     def update_physics(self, dt):
-        # Таймер идёт ВСЕГДА, когда матч активен или на паузе после гола
         if self.phase in ("battle", "goal_pause"):
             self.timer -= dt
             if self.timer <= 0:
@@ -130,13 +131,11 @@ class Game:
         if self.phase != "battle":
             return
 
-        # Движение мяча
         self.ball.x += self.ball.vx * dt
         self.ball.y += self.ball.vy * dt
         self.ball.vx *= BALL_FRICTION
         self.ball.vy *= BALL_FRICTION
 
-        # Стены Y
         if self.ball.y - BALL_R < 0:
             self.ball.y = BALL_R
             self.ball.vy = -self.ball.vy * RESTITUTION_WALL
@@ -144,37 +143,37 @@ class Game:
             self.ball.y = FIELD_H - BALL_R
             self.ball.vy = -self.ball.vy * RESTITUTION_WALL
 
-        # Стены X
-        is_in_goal_y = GOAL_TOP < self.ball.y < GOAL_BOTTOM
+        in_goal_y = GOAL_TOP < self.ball.y < GOAL_BOTTOM
+
         if self.ball.x - BALL_R < 0:
-            if is_in_goal_y:
+            if in_goal_y:
                 if self.ball.x + BALL_R < -GOAL_DEPTH:
                     self.ball.x = -GOAL_DEPTH + BALL_R
                     self.ball.vx = -self.ball.vx * RESTITUTION_WALL
                 if self.ball.x < 0:
                     self.handle_goal("right")
+                    return
             else:
                 self.ball.x = BALL_R
                 self.ball.vx = -self.ball.vx * RESTITUTION_WALL
 
         if self.ball.x + BALL_R > FIELD_W:
-            if is_in_goal_y:
+            if in_goal_y:
                 if self.ball.x - BALL_R > FIELD_W + GOAL_DEPTH:
                     self.ball.x = FIELD_W + GOAL_DEPTH - BALL_R
                     self.ball.vx = -self.ball.vx * RESTITUTION_WALL
                 if self.ball.x > FIELD_W:
                     self.handle_goal("left")
+                    return
             else:
                 self.ball.x = FIELD_W - BALL_R
                 self.ball.vx = -self.ball.vx * RESTITUTION_WALL
 
-        # Мяч - игроки
         for p in self.players:
             dx = self.ball.x - p.x
             dy = self.ball.y - p.y
             dist = math.hypot(dx, dy)
             if dist < 0.0001:
-                # Мяч в центре игрока — вытолкнуть
                 self.ball.y = p.y - (BALL_R + PLAYER_R)
                 continue
             if dist < BALL_R + PLAYER_R:
@@ -185,13 +184,12 @@ class Game:
                 self.ball.y += ny * overlap
                 rel_vx = self.ball.vx - p.vx
                 rel_vy = self.ball.vy - p.vy
-                vel_along_norm = rel_vx * nx + rel_vy * ny
-                if vel_along_norm < 0:
-                    j = -(1 + RESTITUTION_PLAYER) * vel_along_norm
+                vn = rel_vx * nx + rel_vy * ny
+                if vn < 0:
+                    j = -(1 + RESTITUTION_PLAYER) * vn
                     self.ball.vx += j * nx
                     self.ball.vy += j * ny
 
-        # Игрок - игрок
         for i in range(len(self.players)):
             for j in range(i + 1, len(self.players)):
                 p1 = self.players[i]
@@ -208,15 +206,10 @@ class Game:
                     p2.x += nx * overlap * 0.5
                     p2.y += ny * overlap * 0.5
 
-        # Клампим всех после столкновений
         for p in self.players:
             self.clamp_player(p)
-
-        # Клампим мяч по Y после столкновений
-        if self.ball.y < BALL_R:
-            self.ball.y = BALL_R
-        if self.ball.y > FIELD_H - BALL_R:
-            self.ball.y = FIELD_H - BALL_R
+        if self.ball.y < BALL_R: self.ball.y = BALL_R
+        if self.ball.y > FIELD_H - BALL_R: self.ball.y = FIELD_H - BALL_R
 
     def handle_goal(self, team):
         if self.phase != "battle":
@@ -232,48 +225,54 @@ class Game:
         self.phase = "over"
         if winner:
             self.winner = winner
+        elif self.score["left"] > self.score["right"]:
+            self.winner = "left"
+        elif self.score["right"] > self.score["left"]:
+            self.winner = "right"
         else:
-            if self.score["left"] > self.score["right"]:
-                self.winner = "left"
-"] > self.score["left"]:
-                self.winner = "right"
-            else:
-                self.winner = "draw"
+            self.winner = "draw"
 
     def get_state(self, viewer_uid):
+        viewer_uid = str(viewer_uid)
         my_side = None
         for p in self.players:
             if p.uid == viewer_uid:
                 my_side = p.team
                 break
-        # Всех игроков показываем, даже отключённых
-        players_out = [{
-            "user_id": p.uid,
-            "name": p.name,
-            "x": p.x,
-            "y": p.y,
-            "vx": p.vx,
-            "vy": p.vy,
-            "team": p.team,
-            "slot": p.slot,
-            "kick_glow": p.kick_glow,
-            "online": p.ws is not None,
-        } for p in self.players]
-
+        players_out = []
+        for p in self.players:
+            players_out.append({
+                "user_id": p.uid,
+                "name": p.name,
+                "x": round(p.x, 2),
+                "y": round(p.y, 2),
+                "vx": round(p.vx, 2),
+                "vy": round(p.vy, 2),
+                "team": p.team,
+                "slot": p.slot,
+                "kick_glow": round(p.kick_glow, 2),
+                "online": p.ws is not None,
+            })
         return {
             "phase": self.phase,
             "score": dict(self.score),
             "timer": max(0, int(self.timer)),
             "players": players_out,
             "ball": {
-                "x": self.ball.x, "y": self.ball.y,
-                "vx": self.ball.vx, "vy": self.ball.vy,
+                "x": round(self.ball.x, 2),
+                "y": round(self.ball.y, 2),
+                "vx": round(self.ball.vx, 2),
+                "vy": round(self.ball.vy, 2),
             },
             "my_side": my_side,
             "winner": self.winner,
             "win_score": self.win_score,
             "max_players": self.max_players,
         }
+
+
+def _gen_code():
+    return "".join(random.choices(string.digits, k=6))
 
 
 async def api_create(request):
@@ -283,7 +282,7 @@ async def api_create(request):
         data = {}
     uid = data.get("user_id")
     name = (data.get("user_name") or "Player")[:24]
-    if not uid:
+    if uid is None or uid == "":
         return web.json_response({"ok": False, "error": "No user_id"})
 
     try:
@@ -307,12 +306,11 @@ async def api_create(request):
     if match_time not in (60, 120, 180, 300):
         match_time = 180
 
-    code = uuid.uuid4().hex[:6].upper()
+    code = _gen_code()
     while code in games:
-        code = uuid.uuid4().hex[:6].upper()
+        code = _gen_code()
 
     g = Game(code, (data.get("game_name") or "Game")[:30], max_players, win_score, match_time)
-    # Хост сразу добавлен в игроки
     g.add_player(uid, name)
     games[code] = g
     return web.json_response({"ok": True, "code": code})
@@ -331,8 +329,7 @@ async def api_join(request):
         return web.json_response({"ok": False, "error": "Комната не найдена"})
     if g.phase == "over":
         return web.json_response({"ok": False, "error": "Игра уже закончилась"})
-    existing = next((x for x in g.players if x.uid == uid), None)
-    if existing:
+    if g.find(uid):
         return web.json_response({"ok": True, "code": code})
     p = g.add_player(uid, name)
     if not p:
@@ -357,15 +354,12 @@ async def api_list(request):
 
 async def ws_handler(request):
     code = request.match_info.get("code", "").upper()
-    try:
-        uid = int(request.query.get("uid", "0"))
-    except ValueError:
-        uid = 0
+    uid = str(request.query.get("uid", ""))
     g = games.get(code)
     if not g:
         return web.Response(status=404)
 
-    p = next((x for x in g.players if x.uid == uid), None)
+    p = g.find(uid)
     if not p:
         return web.Response(status=403)
 
@@ -424,9 +418,8 @@ def register_haxball_routes(app):
 
 
 async def haxball_watchdog():
-    fps = 60
-    tick_time = 1.0 / fps
-    broadcast_interval = 0.03
+    tick_time = 1.0 / 60.0
+    broadcast_interval = 0.033
     last_broadcast = time.time()
 
     while True:
@@ -437,29 +430,23 @@ async def haxball_watchdog():
                 g = games.get(code)
                 if not g:
                     continue
-
-                # Удаляем игру, если нет никого онлайн и матч не ждёт
                 if g.phase != "waiting" and not any(p.ws for p in g.players):
                     games.pop(code, None)
                     continue
 
-                # Подшаги физики
                 steps = max(1, int(math.ceil(tick_time / 0.005)))
                 step_dt = tick_time / steps
                 for _ in range(steps):
                     g.update_physics(step_dt)
 
-                # Пауза после гола
                 if g.phase == "goal_pause" and time.time() - g.goal_time > GOAL_PAUSE:
                     g.reset_positions()
                     g.phase = "battle"
 
-                # Угасание свечения
                 for p in g.players:
                     if p.kick_glow > 0:
                         p.kick_glow = max(0.0, p.kick_glow - tick_time * 5)
 
-            # Рассылка
             now = time.time()
             if now - last_broadcast >= broadcast_interval:
                 last_broadcast = now
@@ -467,8 +454,7 @@ async def haxball_watchdog():
                     for p in g.players:
                         if p.ws and not p.ws.closed:
                             try:
-                                state = g.get_state(p.uid)
-                                await p.ws.send_json({"type": "state", "state": state})
+                                await p.ws.send_json({"type": "state", "state": g.get_state(p.uid)})
                             except Exception:
                                 pass
 
