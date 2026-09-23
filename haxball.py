@@ -19,22 +19,23 @@ BALL_RADIUS = 10
 GOAL_HEIGHT = 140
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-MAX_SPEED = 320.0
-ACCELERATION = 1800.0
-FRICTION = 0.94
+# Мгновенный разгон и быстрое торможение — как в оригинале Haxball
+MAX_SPEED = 360.0
+ACCELERATION = 3600.0
+FRICTION = 0.82
 WALL_ELASTICITY = 0.85
 PLAYER_PLAYER_ELASTICITY = 0.55
 PLAYER_BALL_ELASTICITY = 0.85
-BALL_FRICTION = 0.995
-KICK_FORCE = 400.0
-KICK_COOLDOWN = 0.30
-KICK_BONUS_FROM_PLAYER_VEL = 1.15
+BALL_FRICTION = 0.994
+KICK_FORCE = 420.0
+KICK_COOLDOWN = 0.28
+KICK_BONUS_FROM_PLAYER_VEL = 1.10
 
 TICK_RATE = 60
 SUBSTEPS = 3
 DT = 1.0 / TICK_RATE
 
-SNAPSHOT_RATE = 20
+SNAPSHOT_RATE = 25
 SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
 
 MAX_PLAYERS = 6
@@ -182,19 +183,17 @@ def update_player(player, dt):
         ix /= mag
         iy /= mag
 
-    player.vx += ix * ACCELERATION * dt
-    player.vy += iy * ACCELERATION * dt
-
-    speed = math.hypot(player.vx, player.vy)
-    if speed > MAX_SPEED:
-        k = MAX_SPEED / speed
-        player.vx *= k
-        player.vy *= k
-
-    if abs(ix) < 0.05 and abs(iy) < 0.05:
+    if mag > 0.05:
+        # Есть ввод — задаём скорость напрямую (мгновенный отклик)
+        player.vx = ix * MAX_SPEED * min(1.0, mag)
+        player.vy = iy * MAX_SPEED * min(1.0, mag)
+    else:
+        # Нет ввода — быстро тормозим
         k = FRICTION ** (dt * 60.0)
         player.vx *= k
         player.vy *= k
+        if abs(player.vx) < 3.0: player.vx = 0.0
+        if abs(player.vy) < 3.0: player.vy = 0.0
 
     player.x += player.vx * dt
     player.y += player.vy * dt
@@ -333,7 +332,6 @@ def step_physics(game, dt):
 def update_game_physics(game, dt):
     if game.phase != "battle":
         return
-    # Защита от огромного dt при лагах — не более 100 мс симуляции за раз
     if dt > 0.1:
         dt = 0.1
     for _ in range(SUBSTEPS):
@@ -507,7 +505,7 @@ async def handle_websocket(request):
                     player.left = bool(data.get("left"))
                     player.right = bool(data.get("right"))
                     player.kick = bool(data.get("kick"))
-            elif msg.type == web.WebSocketType.ERROR if False else msg.type == web.WSMsgType.ERROR:
+            elif msg.type == web.WSMsgType.ERROR:
                 break
     finally:
         game.sockets.pop(user_id, None)
