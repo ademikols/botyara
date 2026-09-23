@@ -35,36 +35,42 @@
   .lobby-card .title{font-size:14px;font-weight:700;margin-bottom:4px}
   .lobby-card .meta{font-size:11px;color:#888}
 
-  /* ===== Игра ===== */
-  #s-game{padding:0;display:none;flex-direction:column;height:100vh;overflow:hidden;touch-action:none}
-  #s-game.active{display:flex}
-  .game-top{padding:4px 10px 0;flex-shrink:0;text-align:center}
-  .score-row{display:flex;align-items:center;justify-content:center;gap:14px;font-size:24px;font-weight:900;font-family:'SF Mono',monospace;padding:2px 0}
+  /* ===== Игра — поворот на 90° при портрете ===== */
+  #s-game{padding:0;display:none;position:fixed;top:0;left:0;background:#000;overflow:hidden;touch-action:none;transform-origin:center center}
+  #s-game.active{display:flex;flex-direction:column}
+
+  /* Внутренняя раскладка landscape-экрана */
+  .game-top{padding:6px 12px 2px;flex-shrink:0;text-align:center}
+  .score-row{display:flex;align-items:center;justify-content:center;gap:16px;font-size:26px;font-weight:900;font-family:'SF Mono',monospace;padding:0}
   .score-left{color:#4488ff}
   .score-right{color:#ff6b6b}
   .score-sep{color:#333}
-  .meta-row{font-size:10px;color:#888;letter-spacing:1px;padding-bottom:2px}
+  .meta-row{font-size:10px;color:#888;letter-spacing:1px;padding:2px 0}
   .meta-row b{color:#fff}
-  .phase-info{text-align:center;font-size:12px;color:#aaa;padding:2px 0 4px;min-height:16px;letter-spacing:1px}
+  .phase-info{text-align:center;font-size:12px;color:#aaa;padding:2px 0;min-height:14px;letter-spacing:1px}
   .phase-info.win{color:#44ff88;font-weight:700}
   .phase-info.lose{color:#ff4444;font-weight:700}
 
+  /* Поле занимает весь центр, контролы — внизу */
   .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:2px 8px}
-  #hb-canvas{width:100%;max-width:820px;max-height:100%;background:#0a1a0a;border:1px solid #1a1a1a;aspect-ratio:8/5;touch-action:none;border-radius:6px;display:block}
+  #hb-canvas{width:100%;height:100%;max-width:100%;max-height:100%;background:#0a1a0a;border:1px solid #1a1a1a;touch-action:none;border-radius:6px;display:block;object-fit:contain}
 
-  .controls{flex-shrink:0;padding:8px 14px 14px;display:flex;justify-content:space-between;align-items:center;gap:16px}
-  .joy{position:relative;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#1a1a1a,#0d0d0d);border:2px solid #262626;touch-action:none;flex-shrink:0;box-shadow:inset 0 0 20px rgba(255,255,255,.03)}
+  .controls{flex-shrink:0;padding:6px 20px 10px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+  .joy{position:relative;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#1a1a1a,#0d0d0d);border:2px solid #262626;touch-action:none;flex-shrink:0;box-shadow:inset 0 0 20px rgba(255,255,255,.03)}
   .joy::before,.joy::after{content:'';position:absolute;background:#1a1a1a}
   .joy::before{left:50%;top:12%;bottom:12%;width:1px;transform:translateX(-50%)}
   .joy::after{top:50%;left:12%;right:12%;height:1px;transform:translateY(-50%)}
-  .joy-stick{position:absolute;width:70px;height:70px;border-radius:50%;background:linear-gradient(180deg,#fff,#d5d5d5);border:2px solid #000;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.5)}
+  .joy-stick{position:absolute;width:56px;height:56px;border-radius:50%;background:linear-gradient(180deg,#fff,#d5d5d5);border:2px solid #000;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.5)}
   .joy-stick.active{background:linear-gradient(180deg,#fff,#b0b0b0);box-shadow:0 4px 20px rgba(255,255,255,.25)}
 
-  .kick{flex:1;max-width:240px;height:150px;border-radius:24px;background:linear-gradient(180deg,#ff8080,#ff5252);color:#000;border:none;font-family:inherit;font-weight:900;font-size:20px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;box-shadow:0 6px 0 #b83333;transition:transform .06s,box-shadow .06s}
+  .kick{flex:1;max-width:260px;height:110px;border-radius:24px;background:linear-gradient(180deg,#ff8080,#ff5252);color:#000;border:none;font-family:inherit;font-weight:900;font-size:20px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;box-shadow:0 6px 0 #b83333;transition:transform .06s,box-shadow .06s}
   .kick:active{transform:translateY(3px);box-shadow:0 3px 0 #b83333;background:linear-gradient(180deg,#ff6666,#ff3d3d)}
 
-  .game-bottom{padding:0 14px 12px;flex-shrink:0;display:flex;gap:8px}
-  .game-bottom .btn{margin:0;flex:1}
+  .game-bottom{padding:0 20px 8px;flex-shrink:0;display:flex;gap:8px;justify-content:center}
+  .game-bottom .btn{margin:0;padding:8px 20px;width:auto;min-width:120px;font-size:10px}
+
+  /* Подсказка "переверни телефон" — на случай, если юзер не понял */
+  .rotate-hint{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#666;letter-spacing:1px;text-transform:uppercase;pointer-events:none;z-index:9999}
 </style>
 </head>
 <body>
@@ -99,7 +105,7 @@
 <!-- ИГРА -->
 <div id="s-game">
   <div class="game-top">
-    <div class="status"><span class="dot" id="hbDot"></span><span id="hbStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+    <div class="status" style="padding:2px"><span class="dot" id="hbDot"></span><span id="hbStatus">ПОДКЛЮЧЕНИЕ...</span></div>
     <div class="score-row">
       <span class="score-left" id="hbScoreL">0</span>
       <span class="score-sep">:</span>
@@ -133,7 +139,7 @@ let USERNAME = tg?.initDataUnsafe?.user?.first_name || ('guest' + String(USER_ID
 document.getElementById('hbName').value = USERNAME;
 
 // ============================================================================
-// КОНСТАНТЫ (те же, что на сервере) — для предсказания
+// КОНСТАНТЫ
 // ============================================================================
 const FIELD_W = 800;
 const FIELD_H = 500;
@@ -146,9 +152,35 @@ const MAX_SPEED = 320.0;
 const ACCELERATION = 1800.0;
 const FRICTION = 0.94;
 const WALL_E = 0.85;
-const PLAYER_BALL_E = 0.85;
-const KICK_FORCE = 400.0;
-const KICK_BONUS = 1.15;
+const KICK_COOLDOWN = 0.30;
+
+// ============================================================================
+// ПОВОРОТ ИГРОВОГО ЭКРАНА
+// ============================================================================
+function hbApplyOrientation(){
+  const el = document.getElementById('s-game');
+  if (!el) return;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (vw < vh){
+    // Портрет → поворачиваем контейнер
+    el.style.width  = vh + 'px';
+    el.style.height = vw + 'px';
+    el.style.left   = '0px';
+    el.style.top    = '0px';
+    el.style.transform = `translate(${(vw - vh) / 2}px, ${(vh - vw) / 2}px) rotate(90deg)`;
+  } else {
+    // Уже landscape → не трогаем
+    el.style.width  = vw + 'px';
+    el.style.height = vh + 'px';
+    el.style.left   = '0px';
+    el.style.top    = '0px';
+    el.style.transform = 'none';
+  }
+}
+window.addEventListener('resize', hbApplyOrientation);
+window.addEventListener('orientationchange', () => setTimeout(hbApplyOrientation, 100));
+window.addEventListener('load', hbApplyOrientation);
 
 // ============================================================================
 // СОСТОЯНИЕ
@@ -156,20 +188,13 @@ const KICK_BONUS = 1.15;
 const HB = {
   code: null,
   ws: null,
-
-  // Что пришло с сервера (буфер интерполяции)
   prevState: null,
   nextState: null,
   prevTs: 0,
   nextTs: 0,
-
-  // Локальное предсказание моего игрока
-  myPos: {x: 0, y: 0, vx: 0, vy: 0, ix: 0, iy: 0, kick: false, kick_cd: 0, kick_glow: 0},
+  myPos: {x: 0, y: 0, vx: 0, vy: 0, kick_cd: 0, kick_glow: 0},
   predicted: false,
-
-  // Ввод (аналоговый)
   input: {ix: 0, iy: 0, kick: false},
-
   canvas: null,
   ctx: null,
   raf: null,
@@ -182,6 +207,7 @@ const HB = {
 function hbGo(id){
   document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
   document.getElementById('s-'+id).classList.add('active');
+  if (id === 'game') hbApplyOrientation();
 }
 
 function escapeHtml(s){
@@ -191,7 +217,6 @@ function escapeHtml(s){
 // ============================================================================
 // API
 // ============================================================================
-
 async function hbCreate(){
   const name = document.getElementById('hbName').value.trim() || USERNAME;
   const roomName = document.getElementById('hbRoomName').value.trim() || 'Haxball';
@@ -264,10 +289,10 @@ async function hbLoadLobbies(){
 // ============================================================================
 // ИГРА
 // ============================================================================
-
 function hbStartGame(){
   hbGo('game');
   document.getElementById('hbCodeTag').textContent = HB.code;
+  hbApplyOrientation();
   hbInitCanvas();
   hbConnect();
   if (!HB.raf) {
@@ -307,11 +332,8 @@ function hbLeave(){
   hbLoadLobbies();
 }
 
-// Пришёл серверный снапшот
 function hbOnServerState(s){
   const now = performance.now();
-
-  // Первый снапшот — сразу синхронизируем мою позицию
   if (!HB.nextState) {
     HB.prevState = s;
     HB.nextState = s;
@@ -323,12 +345,10 @@ function hbOnServerState(s){
     HB.prevTs = HB.nextTs;
     HB.nextState = s;
     HB.nextTs = now;
-    // Мягкая корректировка предсказанной позиции (reconciliation)
     hbSyncPrediction(s, false);
   }
 }
 
-// Синхронизация моего предсказания с сервером
 function hbSyncPrediction(s, hard){
   const me = (s.players || []).find(p => p.user_id === USER_ID);
   if (!me) { HB.predicted = false; return; }
@@ -341,13 +361,9 @@ function hbSyncPrediction(s, hard){
     HB.predicted = true;
     return;
   }
-
-  // Мягкая коррекция: если сервер сильно разошёлся, подтягиваем
   const dx = me.x - HB.myPos.x;
   const dy = me.y - HB.myPos.y;
   const err = Math.hypot(dx, dy);
-
-  // Маленькая ошибка (<15px) — сглаживаем медленно. Большая — телепортируем.
   if (err > 60) {
     HB.myPos.x = me.x;
     HB.myPos.y = me.y;
@@ -356,16 +372,12 @@ function hbSyncPrediction(s, hard){
   } else {
     HB.myPos.x += dx * 0.15;
     HB.myPos.y += dy * 0.15;
-    // Скорость тоже подтягиваем мягко
-    HB.myPos.vx += (me.vx !== undefined ? (me.vx - HB.myPos.vx) : 0) * 0.1;
-    HB.myPos.vy += (me.vy !== undefined ? (me.vy - HB.myPos.vy) : 0) * 0.1;
   }
 }
 
 // ============================================================================
 // УПРАВЛЕНИЕ
 // ============================================================================
-
 function hbInitCanvas(){
   HB.canvas = document.getElementById('hb-canvas');
   HB.ctx = HB.canvas.getContext('2d');
@@ -376,7 +388,6 @@ function hbInitCanvas(){
   const joy = document.getElementById('hbJoy');
   const stick = document.getElementById('hbJoyStick');
 
-  // Возвращает {x, y} нормированные -1..1
   function calcInput(t){
     const rect = joy.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
@@ -384,15 +395,14 @@ function hbInitCanvas(){
     let dx = t.clientX - cx;
     let dy = t.clientY - cy;
     const dist = Math.hypot(dx, dy);
-    const maxR = rect.width / 2 - 30;
+    const maxR = rect.width / 2 - 26;
     if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
-    return { x: dx / maxR, y: dy / maxR, dx, dy, maxR };
+    return { x: dx / maxR, y: dy / maxR, dx, dy };
   }
 
   function applyInput(inp){
     HB.input.ix = inp.x;
     HB.input.iy = inp.y;
-    // Мёртвая зона 6%
     if (Math.hypot(inp.x, inp.y) < 0.06) {
       HB.input.ix = 0;
       HB.input.iy = 0;
@@ -432,7 +442,6 @@ function hbInitCanvas(){
   joy.addEventListener('touchend', joyEnd, {passive:false});
   joy.addEventListener('touchcancel', joyEnd, {passive:false});
 
-  // Кнопка удара
   const kick = document.getElementById('hbKick');
   const kickOn = (e) => { e.preventDefault(); HB.input.kick = true; };
   const kickOff = (e) => { e.preventDefault(); HB.input.kick = false; };
@@ -447,10 +456,10 @@ function hbInitCanvas(){
 function hbKeyDown(e){
   if (e.repeat) return;
   const k = e.key;
-  if (k === 'ArrowUp'    || k === 'w' || k === 'W' || k === 'ц' || k === 'Ц') { HB.input.iy = -1; }
-  if (k === 'ArrowDown'  || k === 's' || k === 'S' || k === 'ы' || k === 'Ы') { HB.input.iy =  1; }
-  if (k === 'ArrowLeft'  || k === 'a' || k === 'A' || k === 'ф' || k === 'Ф') { HB.input.ix = -1; }
-  if (k === 'ArrowRight' || k === 'd' || k === 'D' || k === 'в' || k === 'В') { HB.input.ix =  1; }
+  if (k === 'ArrowUp'    || k === 'w' || k === 'W' || k === 'ц' || k === 'Ц') HB.input.iy = -1;
+  if (k === 'ArrowDown'  || k === 's' || k === 'S' || k === 'ы' || k === 'Ы') HB.input.iy =  1;
+  if (k === 'ArrowLeft'  || k === 'a' || k === 'A' || k === 'ф' || k === 'Ф') HB.input.ix = -1;
+  if (k === 'ArrowRight' || k === 'd' || k === 'D' || k === 'в' || k === 'В') HB.input.ix =  1;
   if (k === ' ') { HB.input.kick = true; e.preventDefault(); }
 }
 function hbKeyUp(e){
@@ -465,11 +474,9 @@ function hbKeyUp(e){
 // ============================================================================
 // ЦИКЛ
 // ============================================================================
-
 function hbLoop(){
   const now = performance.now();
 
-  // Отправка ввода на сервер 33 раза/сек
   if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 30) {
     HB.lastSendTs = now;
     HB.ws.send(JSON.stringify({
@@ -480,14 +487,12 @@ function hbLoop(){
     }));
   }
 
-  // Локальный тик физики — 60 Гц (для плавности предсказания)
   if (HB.predicted) {
     const dt = Math.min(0.05, (now - HB.lastTickTs) / 1000);
     HB.lastTickTs = now;
     hbLocalTick(dt);
   }
 
-  // Рендер
   if (HB.nextState) {
     hbRender();
     hbUpdateHUD();
@@ -496,11 +501,8 @@ function hbLoop(){
   HB.raf = requestAnimationFrame(hbLoop);
 }
 
-// Локальный тик моего игрока (та же физика, что на сервере)
 function hbLocalTick(dt){
   const p = HB.myPos;
-
-  // Интеграция
   const ix = HB.input.ix;
   const iy = HB.input.iy;
   const mag = Math.hypot(ix, iy);
@@ -525,17 +527,14 @@ function hbLocalTick(dt){
   p.x += p.vx * dt;
   p.y += p.vy * dt;
 
-  // Стены
   if (p.x - PLAYER_R < 0) { p.x = PLAYER_R; p.vx = Math.abs(p.vx) * WALL_E; }
   if (p.x + PLAYER_R > FIELD_W) { p.x = FIELD_W - PLAYER_R; p.vx = -Math.abs(p.vx) * WALL_E; }
   if (p.y - PLAYER_R < 0) { p.y = PLAYER_R; p.vy = Math.abs(p.vy) * WALL_E; }
   if (p.y + PLAYER_R > FIELD_H) { p.y = FIELD_H - PLAYER_R; p.vy = -Math.abs(p.vy) * WALL_E; }
 
-  // Кулдаун удара
   if (p.kick_cd > 0) p.kick_cd = Math.max(0, p.kick_cd - dt);
   if (p.kick_glow > 0) p.kick_glow = Math.max(0, p.kick_glow - dt);
 
-  // Визуальный отклик удара (локально, чтобы кнопка работала сразу)
   if (HB.input.kick && p.kick_cd <= 0) {
     const ball = HB.nextState?.ball;
     if (ball) {
@@ -543,7 +542,7 @@ function hbLocalTick(dt){
       const dy = ball.y - p.y;
       const dist = Math.hypot(dx, dy);
       if (dist < PLAYER_R + BALL_R + 4) {
-        p.kick_cd = 0.30;
+        p.kick_cd = KICK_COOLDOWN;
         p.kick_glow = 0.25;
       }
     }
@@ -553,18 +552,15 @@ function hbLocalTick(dt){
 // ============================================================================
 // РЕНДЕР
 // ============================================================================
-
 function hbRender(){
   const ctx = HB.ctx;
   const s = HB.nextState;
 
-  // Трава
   for (let i = 0; i < 10; i++){
     ctx.fillStyle = i % 2 === 0 ? '#0d240d' : '#0a1c0a';
     ctx.fillRect(i * (FIELD_W/10), 0, FIELD_W/10, FIELD_H);
   }
 
-  // Центральная линия
   ctx.strokeStyle = 'rgba(255,255,255,0.18)';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -572,7 +568,6 @@ function hbRender(){
   ctx.lineTo(FIELD_W/2, FIELD_H);
   ctx.stroke();
 
-  // Центральный круг
   ctx.beginPath();
   ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI*2);
   ctx.stroke();
@@ -582,12 +577,10 @@ function hbRender(){
   ctx.arc(FIELD_W/2, FIELD_H/2, 3, 0, Math.PI*2);
   ctx.fill();
 
-  // Штрафные
   ctx.strokeStyle = 'rgba(255,255,255,0.15)';
   ctx.strokeRect(0, GOAL_Y - 20, 60, GOAL_H + 40);
   ctx.strokeRect(FIELD_W - 60, GOAL_Y - 20, 60, GOAL_H + 40);
 
-  // Ворота
   ctx.strokeStyle = 'rgba(255,255,255,0.55)';
   ctx.lineWidth = 5;
   ctx.beginPath();
@@ -604,11 +597,9 @@ function hbRender(){
   ctx.fillStyle = 'rgba(255,107,107,0.18)';
   ctx.fillRect(FIELD_W-8, GOAL_Y, 8, GOAL_H);
 
-  // Интерполяция чужих игроков
   const interp = hbInterpolatePlayers();
   const interpBall = hbInterpolateBall();
 
-  // Игроки
   for (const p of interp){
     const isMe = p.user_id === USER_ID;
     const color = p.team === 'left' ? '#4488ff' : '#ff6b6b';
@@ -621,13 +612,11 @@ function hbRender(){
       glow = HB.myPos.kick_glow;
     }
 
-    // Тень
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
     ctx.ellipse(px, py + PLAYER_R + 3, PLAYER_R * 0.9, PLAYER_R * 0.3, 0, 0, Math.PI*2);
     ctx.fill();
 
-    // Свечение удара
     if (glow > 0){
       const g = ctx.createRadialGradient(px, py, PLAYER_R*0.6, px, py, PLAYER_R + 14);
       g.addColorStop(0, 'rgba(255,220,80,0.85)');
@@ -638,7 +627,6 @@ function hbRender(){
       ctx.fill();
     }
 
-    // Основной шар
     const grad = ctx.createRadialGradient(
       px - PLAYER_R*0.35, py - PLAYER_R*0.35, PLAYER_R*0.15,
       px, py, PLAYER_R
@@ -669,7 +657,6 @@ function hbRender(){
     }
   }
 
-  // Мяч
   if (interpBall){
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
@@ -693,7 +680,6 @@ function hbRender(){
   }
 }
 
-// Интерполяция чужих игроков (моя берётся из предсказания)
 function hbInterpolatePlayers(){
   const a = HB.prevState;
   const b = HB.nextState;
@@ -709,7 +695,7 @@ function hbInterpolatePlayers(){
   for (const p of (a.players || [])) aMap[p.user_id] = p;
 
   return (b.players || []).map(pb => {
-    if (pb.user_id === USER_ID) return pb; // своя фигура — из предсказания
+    if (pb.user_id === USER_ID) return pb;
     const pa = aMap[pb.user_id];
     if (!pa) return pb;
     return {
@@ -774,8 +760,8 @@ function hbUpdateHUD(){
 // ============================================================================
 // СТАРТ
 // ============================================================================
-
 hbLoadLobbies();
+hbApplyOrientation();
 </script>
 </body>
 </html>
