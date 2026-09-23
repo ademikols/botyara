@@ -36,8 +36,8 @@
   .cell.X{color:#5aa0e0}
   .cell.O{color:#e05a5a}
   .msg{text-align:center;padding:14px;font-size:13px;letter-spacing:1px;color:#888;line-height:1.5}
-  .big{text-align:center;padding:10px;font-size:16px;font-weight:700;letter-spacing:2px}
-  .player-row{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border:1px solid #1a1a1a;margin-bottom:4px;font-size:12px;background:#0d0d0d;border-radius:6px}
+  .big{text-align:center;padding:8px;font-size:15px;font-weight:700;letter-spacing:2px}
+  .player-row{display:flex;justify-content:space-between;align-items:center;padding:5px 9px;border:1px solid #1a1a1a;margin-bottom:3px;font-size:12px;background:#0d0d0d;border-radius:6px}
   .player-row.me{border-color:#3d6fa5}
   .player-row.attacker{border-left:3px solid #ff8c00}
   .player-row.defender{border-left:3px solid #dc3d3d}
@@ -45,30 +45,42 @@
   .badge{font-size:8px;letter-spacing:1px;padding:1px 5px;border-radius:3px;background:#222;margin-left:4px}
   .badge.a{background:#ff8c00;color:#000}
   .badge.d{background:#dc3d3d;color:#fff}
-  .timer-bar{height:5px;background:#1a1a1a;border-radius:3px;overflow:hidden;margin:0 auto 10px;max-width:300px}
+  .timer-bar{height:4px;background:#1a1a1a;border-radius:3px;overflow:hidden;margin:0 auto 8px;max-width:300px}
   .timer-fill{height:100%;background:#44ff88;transition:width 0.2s linear,background 0.3s}
   .timer-fill.warn{background:#ffaa00}
   .timer-fill.danger{background:#ff4444}
-  .chat{height:120px;overflow-y:auto;border:1px solid #1a1a1a;padding:8px;margin-bottom:6px;font-size:12px;background:#0d0d0d;border-radius:6px}
+  .chat{overflow-y:auto;border:1px solid #1a1a1a;padding:8px;margin-bottom:6px;font-size:12px;background:#0d0d0d;border-radius:6px}
   .chat .m{margin-bottom:6px;line-height:1.35}
   .chat .m .u{color:#777;font-size:10px;font-family:'SF Mono',monospace}
   .chat .m .x{color:#fff}
-  .chat-input{display:flex;gap:6px;margin-bottom:12px}
+  .chat-input{display:flex;gap:6px}
   .chat-input input{flex:1;background:#0d0d0d;border:1px solid #222;color:#fff;padding:10px 11px;font-size:13px;font-family:inherit;outline:none;border-radius:6px}
   .chat-input button{background:#fff;color:#000;border:none;padding:0 14px;font-weight:700;cursor:pointer;font-family:inherit;border-radius:6px}
-  .sect{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#666;margin-bottom:5px;margin-top:8px}
-  .info-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;padding:6px 10px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:6px}
+  .sect{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#666;margin-bottom:5px;margin-top:6px}
+  .info-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0;padding:5px 9px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:6px}
   .info-row .trump-label{font-size:9px;letter-spacing:2px;color:#ffd23d;font-weight:700}
-  .info-row .trump-card{font-size:20px;font-weight:900;font-family:'SF Mono',monospace;line-height:1;padding:2px 10px;border-radius:6px;background:#000;border:2px solid #ffd23d}
+  .info-row .trump-card{font-size:19px;font-weight:900;font-family:'SF Mono',monospace;line-height:1;padding:2px 9px;border-radius:6px;background:#000;border:2px solid #ffd23d}
   .info-row .trump-card.red{color:#e05a5a}
   .info-row .trump-card.black{color:#fff}
   .info-row .counts{font-size:11px;color:#888}
   .info-row .counts b{color:#fff;font-weight:700}
-  .lastlog{font-size:11px;color:#666;text-align:center;padding:2px 0 8px;min-height:14px}
+  .lastlog{font-size:11px;color:#888;text-align:center;padding:3px 0 6px;min-height:14px;font-style:italic}
   .divider{height:1px;background:#1a1a1a;margin:16px 0}
   .back-btn{background:transparent;border:none;color:#666;font-size:12px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:8px}
   .back-btn:active{color:#fff}
   .hidden{display:none!important}
+
+  #s-durakGame{padding:0;display:none;flex-direction:column;height:100vh;background:#000}
+  #s-durakGame.active{display:flex}
+  .durak-top{padding:6px 10px 0;flex-shrink:0}
+  .durak-mid{flex:1;overflow-y:auto;padding:0 10px;min-height:0}
+  .durak-bottom{flex-shrink:0;padding:6px 10px 10px;background:#000;border-top:1px solid #1a1a1a}
+
+  #s-spyGame{padding:0;display:none;flex-direction:column;height:100vh;background:#000}
+  #s-spyGame.active{display:flex}
+  .spy-top{padding:6px 10px 0;flex-shrink:0}
+  .spy-mid{flex:1;overflow-y:auto;padding:0 10px;min-height:0}
+  .spy-bottom{flex-shrink:0;padding:6px 10px 10px;background:#000;border-top:1px solid #1a1a1a}
 </style>
 </head>
 <body>
@@ -126,12 +138,23 @@
         <option value="2">2 игрока (1 на 1)</option>
         <option value="3">3 игрока</option>
         <option value="4">4 игрока</option>
+        <option value="5">5 игроков</option>
+        <option value="6">6 игроков</option>
       </select>
     </div>
     <div class="field"><label>Колода</label>
       <select id="durakDeck">
         <option value="36">36 карт (6–Туз)</option>
         <option value="52">52 карты (2–Туз)</option>
+      </select>
+    </div>
+    <div class="field"><label>Время на ход</label>
+      <select id="durakTurnLimit">
+        <option value="15">15 секунд</option>
+        <option value="30" selected>30 секунд</option>
+        <option value="45">45 секунд</option>
+        <option value="60">60 секунд</option>
+        <option value="90">90 секунд</option>
       </select>
     </div>
     <div class="field">
@@ -159,46 +182,51 @@
   <div class="field"><label>Код комнаты</label><input id="durakJoinCode" type="tel" inputmode="numeric" maxlength="6" class="code" placeholder="000000"></div>
   <button class="btn" onclick="durakJoin()">ВОЙТИ</button>
 </div>
-<div id="s-durakGame" class="screen">
-  <div class="status"><span class="dot" id="durakDot"></span><span id="durakStatus">ПОДКЛЮЧЕНИЕ...</span></div>
-  <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="durakCodeTag">------</span></div>
-  <div class="big" id="durakInfo">—</div>
-  <div class="timer-bar" id="durakTimerBar" style="display:none"><div class="timer-fill" id="durakTimerFill" style="width:100%"></div></div>
 
-  <div class="info-row">
-    <div style="display:flex;align-items:center;gap:8px">
-      <span class="trump-label">КОЗЫРЬ</span>
-      <span class="trump-card" id="durakTrumpCard">—</span>
+<div id="s-durakGame">
+  <div class="durak-top">
+    <div class="status"><span class="dot" id="durakDot"></span><span id="durakStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+    <div class="code-tag" style="padding-bottom:4px">КОД КОМНАТЫ: <span class="code-num" id="durakCodeTag">------</span></div>
+    <div class="big" id="durakInfo">—</div>
+    <div class="timer-bar" id="durakTimerBar" style="display:none"><div class="timer-fill" id="durakTimerFill" style="width:100%"></div></div>
+    <div class="info-row">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="trump-label">КОЗЫРЬ</span>
+        <span class="trump-card" id="durakTrumpCard">—</span>
+      </div>
+      <div class="counts">Колода: <b id="durakDeckCount">0</b> · В игре: <b id="durakPlayersCount">0</b></div>
     </div>
-    <div class="counts">Колода: <b id="durakDeckCount">0</b> · В игре: <b id="durakPlayersCount">0</b></div>
   </div>
 
-  <div class="sect">ИГРОКИ</div>
-  <div id="durakPlayers" style="margin-bottom:8px"></div>
+  <div class="durak-mid">
+ style    <div class="sect">ИГРОКИ</div>
+    <div id="durakPlayers" style="margin-bottom:6px"></div>
 
-  <div class="sect">СТОЛ</div>
-  <div id="durakTable" style="min-height:90px;display:flex;flex-wrap:wrap;gap:8px;padding:8px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:6px;margin-bottom:8px"></div>
+    <div class="sect">СТОЛ</div>
+    <div id="durakTable" style="min-height:80px;display:flex;flex-wrap:wrap;gap:8px;padding:8px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:6px;margin-bottom:6px"></div>
 
-  <div class="sect">ВАША РУКА</div>
-  <div id="durakHand" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
+    <div class="lastlog" id="durakLastLog"></div>
 
-  <div class="lastlog" id="durakLastLog"></div>
-
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-    <button class="btn sm" id="durakStartBtn" style="flex:1;display:none" onclick="durakStartGame()">НАЧАТЬ ИГРУ</button>
-    <button class="btn sm" id="durakPassBtn" style="flex:1;display:none" onclick="durakAction('pass')">БИТО</button>
-    <button class="btn sm" id="durakTakeBtn" style="flex:1;display:none" onclick="durakAction('take')">ВЗЯТЬ</button>
+    <div class="sect">ВАША РУКА</div>
+    <div id="durakHand" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px"></div>
   </div>
 
-  <div class="sect">ЧАТ</div>
-  <div class="chat" id="durakChatBox"></div>
-  <div class="chat-input">
-    <input id="durakChatInput" type="text" placeholder="Написать..." maxlength="300">
-    <button onclick="durakChat()">→</button>
+  <div class="durak-bottom">
+    <div="display:flex;gap:6px;margin-bottom:6px">
+      <button class="btn sm" id="durakStartBtn" style="flex:1;display:none;margin:0" onclick="durakStartGame()">НАЧАТЬ ИГРУ</button>
+      <button class="btn sm" id="durakPassBtn" style="flex:1;display:none;margin:0" onclick="durakAction('pass')">БИТО</button>
+      <button class="btn sm" id="durakTakeBtn" style="flex:1;display:none;margin:0" onclick="durakAction('take')">ВЗЯТЬ</button>
+    </div>
+    <div class="chat" id="durakChatBox" style="height:70px"></div>
+    <div class="chat-input">
+      <input id="durakChatInput" type="text" placeholder="Написать..." maxlength="300">
+      <button onclick="durakChat()">→</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn sm danger" id="durakSurrenderBtn" style="flex:1;margin:0" onclick="durakSurrender()">СДАТЬСЯ</button>
+      <button class="btn sm ghost" style="flex:1;margin:0" onclick="location.reload()">ВЫЙТИ</button>
+    </div>
   </div>
-
-  <button class="btn danger" id="durakSurrenderBtn" onclick="durakSurrender()">СДАТЬСЯ</button>
-  <button class="btn ghost" onclick="location.reload()">ВЫЙТИ</button>
 </div>
 
 <!-- ШПИОН -->
@@ -226,31 +254,39 @@
   <div class="field"><label>Код комнаты</label><input id="spyJoinCode" type="tel" inputmode="numeric" maxlength="6" class="code" placeholder="000000"></div>
   <button class="btn" onclick="spyJoin()">ВОЙТИ</button>
 </div>
-<div id="s-spyGame" class="screen">
-  <div class="status"><span class="dot" id="spyDot"></span><span id="spyStatus">ПОДКЛЮЧЕНИЕ...</span></div>
-  <div class="code-tag">КОД КОМНАТЫ: <span class="code-num" id="spyCodeTag">------</span></div>
-  <div class="big" id="spyPhase">—</div>
-  <div class="timer-bar" id="spyTimerBar" style="display:none"><div class="timer-fill" id="spyTimerFill" style="width:100%"></div></div>
-  <div style="border:1px solid #fff;padding:12px;text-align:center;margin:10px 0;background:#0d0d0d;border-radius:8px">
-    <div style="font-size:10px;letter-spacing:2px;color:#888;text-transform:uppercase;margin-bottom:5px">ВАШЕ СЛОВО</div>
-    <div id="spyMyWord" style="font-size:22px;font-weight:700">—</div>
+
+<div id="s-spyGame">
+  <div class="spy-top">
+    <div class="status"><span class="dot" id="spyDot"></span><span id="spyStatus">ПОДКЛЮЧЕНИЕ...</span></div>
+    <div class="code-tag" style="padding-bottom:4px">КОД КОМНАТЫ: <span class="code-num" id="spyCodeTag">------</span></div>
+    <div class="big" id="spyPhase">—</div>
+    <div class="timer-bar" id="spyTimerBar" style="display:none"><div class="timer-fill" id="spyTimerFill" style="width:100%"></div></div>
   </div>
-  <div id="spyResultBox" style="display:none;border:1px solid #444;padding:12px;margin:10px 0;background:#0d0d0d;border-radius:8px"></div>
-  <div class="sect">ИГРОКИ</div>
-  <div id="spyPlayers" style="margin-bottom:8px"></div>
-  <div class="sect">ЧАТ</div>
-  <div class="chat" id="spyChatBox"></div>
-  <div class="chat-input">
-    <input id="spyChatInput" type="text" placeholder="Написать..." maxlength="300">
-    <button onclick="spyChat()">→</button>
+
+  <div class="spy-mid">
+    <div style="border:1px solid #fff;padding:10px;text-align:center;margin:6px 0;background:#0d0d0d;border-radius:8px">
+      <div style="font-size:9px;letter-spacing:2px;color:#888;text-transform:uppercase;margin-bottom:4px">ВАШЕ СЛОВО</div>
+      <div id="spyMyWord" style="font-size:20px;font-weight:700">—</div>
+    </div>
+    <div id="spyResultBox" style="display:none;border:1px solid #444;padding:10px;margin:6px 0;background:#0d0d0d;border-radius:8px;font-size:13px"></div>
+    <div class="sect">ИГРОКИ</div>
+    <div id="spyPlayers" style="margin-bottom:6px"></div>
   </div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-    <button class="btn sm" id="spyStartBtn" style="flex:1;display:none" onclick="spyStartGame()">НАЧАТЬ</button>
-    <button class="btn sm" id="spyVoteBtn" style="flex:1;display:none" onclick="spyToVote()">К ГОЛОСОВАНИЮ</button>
-    <button class="btn sm" id="spyFinishBtn" style="flex:1;display:none" onclick="spyFinishVote()">ЗАВЕРШИТЬ</button>
-    <button class="btn sm" id="spyResetBtn" style="flex:1;display:none" onclick="spyReset()">НОВАЯ ИГРА</button>
+
+  <div class="spy-bottom">
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <button class="btn sm" id="spyStartBtn" style="flex:1;display:none;margin:0" onclick="spyStartGame()">НАЧАТЬ</button>
+      <button class="btn sm" id="spyVoteBtn" style="flex:1;display:none;margin:0" onclick="spyToVote()">К ГОЛОСОВАНИЮ</button>
+      <button class="btn sm" id="spyFinishBtn" style="flex:1;display:none;margin:0" onclick="spyFinishVote()">ЗАВЕРШИТЬ</button>
+      <button class="btn sm" id="spyResetBtn" style="flex:1;display:none;margin:0" onclick="spyReset()">НОВАЯ ИГРА</button>
+    </div>
+    <div class="chat" id="spyChatBox" style="height:70px"></div>
+    <div class="chat-input">
+      <input id="spyChatInput" type="text" placeholder="Написать..." maxlength="300">
+      <button onclick="spyChat()">→</button>
+    </div>
+    <button class="btn sm ghost" style="margin-top:6px" onclick="location.reload()">ВЫЙТИ</button>
   </div>
-  <button class="btn ghost" style="margin-top:8px" onclick="location.reload()">ВЫЙТИ</button>
 </div>
 
 <script>
@@ -262,7 +298,7 @@ let USERNAME = 'guest' + String(USER_ID).slice(-4);
 function go(s) {
   document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
   document.getElementById('s-' + s).classList.add('active');
-  window.scrollTo(0, 0);
+  if (s !== 'durakGame' && s !== 'spyGame') window.scrollTo(0, 0);
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -296,33 +332,16 @@ function renderBoard(){const b=document.getElementById('board');b.innerHTML='';f
 function clickCell(i){if(!myTurn||winner||board[i]||!ws||ws.readyState!==1)return;ws.send(JSON.stringify({type:'move',index:i}));}
 function connectWS(){const proto=location.protocol==='https:'?'wss':'ws';ws=new WebSocket(`${proto}://${location.host}/ws/game/${code}?uid=${USER_ID}`);ws.onopen=()=>setDot(true);ws.onclose=()=>setDot(false);ws.onerror=()=>setDot(false);ws.onmessage=e=>handleWS(JSON.parse(e.data));}
 function setDot(on){document.getElementById('wsDot').classList.toggle('on',on);document.getElementById('wsStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
-
 function handleWS(msg){
-  if(msg.type==='init'){
-    mySymbol=msg.symbol;board=msg.state.board;turn=msg.state.turn;winner=msg.state.winner;
-    tttApplyDeadline(msg.turn_remaining);
-    updateUI();renderBoard();
-  } else if(msg.type==='state'){
-    board=msg.board;turn=msg.turn;winner=msg.winner;
-    if(msg.turn_remaining!==undefined) tttApplyDeadline(msg.turn_remaining);
-    if(msg.winner) tttDeadline=null;
-    updateUI();renderBoard();
-  } else if(msg.type==='error'){
-    document.getElementById('turnInfo').textContent=msg.error;
-  }
+  if(msg.type==='init'){mySymbol=msg.symbol;board=msg.state.board;turn=msg.state.turn;winner=msg.state.winner;tttApplyDeadline(msg.turn_remaining);updateUI();renderBoard();}
+  else if(msg.type==='state'){board=msg.board;turn=msg.turn;winner=msg.winner;if(msg.turn_remaining!==undefined)tttApplyDeadline(msg.turn_remaining);if(msg.winner)tttDeadline=null;updateUI();renderBoard();}
+  else if(msg.type==='error'){document.getElementById('turnInfo').textContent=msg.error;}
 }
-
-function tttApplyDeadline(rem){
-  tttTimeoutSent=false;
-  if(rem===undefined||rem===null||rem===0||winner){tttDeadline=null;return;}
-  tttDeadline=Date.now()+rem*1000;
-}
-
+function tttApplyDeadline(rem){tttTimeoutSent=false;if(rem===undefined||rem===null||rem===0||winner){tttDeadline=null;return;}tttDeadline=Date.now()+rem*1000;}
 function startTttTick(){
   if(tttTick) clearInterval(tttTick);
   tttTick=setInterval(()=>{
-    const bar=document.getElementById('tttTimerBar');
-    const fill=document.getElementById('tttTimerFill');
+    const bar=document.getElementById('tttTimerBar');const fill=document.getElementById('tttTimerFill');
     if(!bar||!fill) return;
     if(winner||!tttDeadline){bar.style.display='none';return;}
     bar.style.display='block';
@@ -331,13 +350,9 @@ function startTttTick(){
     fill.style.width=pct+'%';
     fill.classList.toggle('warn',pct<60&&pct>=30);
     fill.classList.toggle('danger',pct<30);
-    if(rem<=0 && !tttTimeoutSent && myTurn){
-      tttTimeoutSent=true;
-      ws?.send?.(JSON.stringify({type:'timeout'}));
-    }
+    if(rem<=0 && !tttTimeoutSent && myTurn){tttTimeoutSent=true;ws?.send?.(JSON.stringify({type:'timeout'}));}
   },200);
 }
-
 function updateUI(){
   myTurn=(turn===mySymbol)&&!winner;
   const el=document.getElementById('turnInfo');const res=document.getElementById('result');
@@ -359,11 +374,12 @@ async function durakCreate(){
   const name=document.getElementById('durakName').value.trim()||USERNAME;
   const deckSize=parseInt(document.getElementById('durakDeck').value,10);
   const maxPlayers=parseInt(document.getElementById('durakMaxPlayers').value,10);
+  const turnLimit=parseInt(document.getElementById('durakTurnLimit').value,10);
   const translate=document.getElementById('durakTranslate').checked;
-  const r=await fetch('/api/durak/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:name,deck_size:deckSize,max_players:maxPlayers,translate})});
+  const r=await fetch('/api/durak/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:USER_ID,username:name,deck_size:deckSize,max_players:maxPlayers,turn_limit:turnLimit,translate})});
   const d=await r.json();if(!d.ok){tg?.showAlert?.(d.error);return;}
   durakRoom=d.code;document.getElementById('durakCode').textContent=d.code;
-  document.getElementById('durakWaitingMsg').textContent=`Ждём игроков... нужно ${maxPlayers}`;
+  document.getElementById('durakWaitingMsg').textContent=`Ждём игроков... нужно ${maxPlayers} · ход ${turnLimit} сек`;
   document.getElementById('durakCreateForm').style.display='none';document.getElementById('durakCreateResult').style.display='block';
 }
 function durakCopy(){const c=document.getElementById('durakCode').textContent;navigator.clipboard.writeText(c).then(()=>{const b=document.getElementById('durakCopyBtn');b.textContent='СКОПИРОВАНО ✓';setTimeout(()=>b.textContent='СКОПИРОВАТЬ',1500)});}
@@ -379,7 +395,7 @@ async function durakJoin(){
 function durakStart(){go('durakGame');document.getElementById('durakCodeTag').textContent=durakRoom||'------';const proto=location.protocol==='https:'?'wss':'ws';durakWs=new WebSocket(`${proto}://${location.host}/ws/durak/${durakRoom}?uid=${USER_ID}`);durakWs.onopen=()=>durakDot(true);durakWs.onclose=()=>durakDot(false);durakWs.onmessage=e=>durakHandle(JSON.parse(e.data));}
 function durakDot(on){document.getElementById('durakDot').classList.toggle('on',on);document.getElementById('durakStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
 function durakHandle(msg){if(msg.type==='state'){durakState=msg.state;durakRender();}else if(msg.type==='error'){tg?.showAlert?.(msg.error);}}
-function durakCardEl(c,clickable){const red=c.s==='h'||c.s==='d';const color=red?'#e05a5a':'#fff';return `<div data-r="${c.r}" data-s="${c.s}" style="width:56px;height:80px;border:2px solid #222;border-radius:8px;background:#1a1a2e;color:${color};display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:18px;line-height:1.1;cursor:${clickable?'pointer':'default'};user-select:none;flex-shrink:0;gap:2px"><div>${RANK_NAMES[c.r]}</div><div style="font-size:20px">${SUIT_NAMES[c.s]}</div></div>`;}
+function durakCardEl(c,clickable){const red=c.s==='h'||c.s==='d';const color=red?'#e05a5a':'#fff';return `<div data-r="${c.r}" data-s="${c.s}" style="width:52px;height:74px;border:2px solid #222;border-radius:8px;background:#1a1a2e;color:${color};display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:17px;line-height:1.1;cursor:${clickable?'pointer':'default'};user-select:none;flex-shrink:0;gap:1px"><div>${RANK_NAMES[c.r]}</div><div style="font-size:19px">${SUIT_NAMES[c.s]}</div></div>`;}
 function durakRender(){
   const s=durakState;if(!s)return;
   const myIdx=s.your_idx;const isMyAttack=myIdx===s.attacker_idx;const isMyDefense=myIdx===s.defender_idx&&s.phase==='defend';const iAmOut=s.your_left;
@@ -414,7 +430,7 @@ function durakRender(){
 
   const table=document.getElementById('durakTable');
   if(s.table.length===0)table.innerHTML='<div style="color:#555;font-size:11px;padding:10px">Пусто</div>';
-  else table.innerHTML=s.table.map(pair=>`<div style="display:flex">${durakCardEl(pair.attack,false)}${pair.defend?`<div style="margin-left:-22px;transform:rotate(15deg)">${durakCardEl(pair.defend,false)}</div>`:''}</div>`).join('');
+  else table.innerHTML=s.table.map(pair=>`<div style="display:flex">${durakCardEl(pair.attack,false)}${pair.defend?`<div style="margin-left:-20px;transform:rotate(15deg)">${durakCardEl(pair.defend,false)}</div>`:''}</div>`).join('');
 
   const hand=document.getElementById('durakHand');
   const canPlay=!iAmOut&&s.phase!=='over'&&s.phase!=='waiting';
@@ -517,7 +533,7 @@ function spyRender(){
       votesText+=`<div style="font-size:12px;color:#aaa">${escapeHtml(targetName)}: ${names.length} гол. — ${names.map(n=>escapeHtml(n)).join(', ')}</div>`;
     }
     rbox.style.display='block';
-    rbox.innerHTML=`${winnerText}<div style="margin-top:10px;font-size:14px">Шпион: <b>${escapeHtml(r.spy_name)}</b></div><div style="font-size:13px;color:#aaa;margin-bottom:8px">Общее слово: <b>${escapeHtml(r.common_word)}</b> · Слово шпиона: <b>${escapeHtml(r.spy_word)}</b></div><div style="font-size:11px;letter-spacing:1px;color:#777;margin-bottom:4px">ГОЛОСА:</div>${votesText}`;
+    rbox.innerHTML=`${winnerText}<div style="margin-top:8px;font-size:14px">Шпион: <b>${escapeHtml(r.spy_name)}</b></div><div style="font-size:12px;color:#aaa;margin-bottom:6px">Общее слово: <b>${escapeHtml(r.common_word)}</b> · Слово шпиона: <b>${escapeHtml(r.spy_word)}</b></div><div style="font-size:11px;letter-spacing:1px;color:#777;margin-bottom:4px">ГОЛОСА:</div>${votesText}`;
   }else rbox.style.display='none';
   const isHost=s.host_id===USER_ID;
   document.getElementById('spyStartBtn').style.display=(s.phase==='waiting'&&isHost&&s.players.length>=3)?'block':'none';
