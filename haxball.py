@@ -31,7 +31,6 @@ KICK_BONUS_FROM_PLAYER_VEL = 1.10
 
 TICK_RATE = 60
 DT = 1.0 / TICK_RATE
-
 SNAPSHOT_RATE = 30
 SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
 
@@ -174,17 +173,11 @@ def reset_positions(game):
         p.y = y
 
 
-# ---------- ФИЗИКА ----------
-
-def clamp_player(player):
-    if player.x < PLAYER_RADIUS:
-        player.x = PLAYER_RADIUS
-    if player.x > FIELD_WIDTH - PLAYER_RADIUS:
-        player.x = FIELD_WIDTH - PLAYER_RADIUS
-    if player.y < PLAYER_RADIUS:
-        player.y = PLAYER_RADIUS
-    if player.y > FIELD_HEIGHT - PLAYER_RADIUS:
-        player.y = FIELD_HEIGHT - PLAYER_RADIUS
+def clamp_player(p):
+    if p.x < PLAYER_RADIUS: p.x = PLAYER_RADIUS
+    if p.x > FIELD_WIDTH - PLAYER_RADIUS: p.x = FIELD_WIDTH - PLAYER_RADIUS
+    if p.y < PLAYER_RADIUS: p.y = PLAYER_RADIUS
+    if p.y > FIELD_HEIGHT - PLAYER_RADIUS: p.y = FIELD_HEIGHT - PLAYER_RADIUS
 
 
 def update_ball(ball, dt):
@@ -196,12 +189,18 @@ def update_ball(ball, dt):
 
     in_goal_y = GOAL_OFFSET_Y < ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
 
-    if ball.x - BALL_RADIUS < 0 and not in_goal_y:
-        ball.x = BALL_RADIUS
-        ball.vx = abs(ball.vx) * WALL_ELASTICITY
-    if ball.x + BALL_RADIUS > FIELD_WIDTH and not in_goal_y:
-        ball.x = FIELD_WIDTH - BALL_RADIUS
-        ball.vx = -abs(ball.vx) * WALL_ELASTICITY
+    if ball.x - BALL_RADIUS < 0:
+        if in_goal_y:
+            pass
+        else:
+            ball.x = BALL_RADIUS
+            ball.vx = abs(ball.vx) * WALL_ELASTICITY
+    if ball.x + BALL_RADIUS > FIELD_WIDTH:
+        if in_goal_y:
+            pass
+        else:
+            ball.x = FIELD_WIDTH - BALL_RADIUS
+            ball.vx = -abs(ball.vx) * WALL_ELASTICITY
     if ball.y - BALL_RADIUS < 0:
         ball.y = BALL_RADIUS
         ball.vy = abs(ball.vy) * WALL_ELASTICITY
@@ -242,7 +241,12 @@ def resolve_player_ball(player, ball):
     dy = ball.y - player.y
     dist = math.hypot(dx, dy)
     min_dist = PLAYER_RADIUS + BALL_RADIUS
-    if dist >= min_dist or dist < 0.0001:
+    if dist >= min_dist:
+        return False
+    if dist < 0.0001:
+        # Мяч точно в центре игрока — вытолкнуть вверх
+        ball.y = player.y - min_dist
+        ball.x = player.x
         return False
     nx = dx / dist
     ny = dy / dist
@@ -251,10 +255,8 @@ def resolve_player_ball(player, ball):
     ball.y += ny * overlap * 1.0
 
     if player.kick and player.kick_cd <= 0:
-        base_x = nx * KICK_FORCE + player.vx * KICK_BONUS_FROM_PLAYER_VEL
-        base_y = ny * KICK_FORCE + player.vy * KICK_BONUS_FROM_PLAYER_VEL
-        ball.vx = base_x
-        ball.vy = base_y
+        ball.vx = nx * KICK_FORCE + player.vx * KICK_BONUS_FROM_PLAYER_VEL
+        ball.vy = ny * KICK_FORCE + player.vy * KICK_BONUS_FROM_PLAYER_VEL
         player.kick_cd = KICK_COOLDOWN
         player.kick_glow = 0.25
         return True
@@ -273,7 +275,6 @@ def resolve_player_ball(player, ball):
 
 
 def step_physics(game, dt):
-    # Позиции игроков — авторитет клиента, только клампим и расталкиваем
     for p in game.players.values():
         clamp_player(p)
         if p.kick_cd > 0:
@@ -286,10 +287,25 @@ def step_physics(game, dt):
         for j in range(i + 1, len(players)):
             resolve_player_player(players[i], players[j])
 
+    # Клампим после расталкивания
+    for p in players:
+        clamp_player(p)
+
     update_ball(game.ball, dt)
 
     for p in players:
         resolve_player_ball(p, game.ball)
+
+    # Клампим мяч после столкновений
+    in_goal_y = GOAL_OFFSET_Y < game.ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
+    if game.ball.x < BALL_RADIUS and not in_goal_y:
+        game.ball.x = BALL_RADIUS
+    if game.ball.x > FIELD_WIDTH - BALL_RADIUS and not in_goal_y:
+        game.ball.x = FIELD_WIDTH - BALL_RADIUS
+    if game.ball.y < BALL_RADIUS:
+        game.ball.y = BALL_RADIUS
+    if game.ball.y > FIELD_HEIGHT - BALL_RADIUS:
+        game.ball.y = FIELD_HEIGHT - BALL_RADIUS
 
 
 def update_game_physics(game, dt):
@@ -337,8 +353,6 @@ async def _kick_from_old_game(user_id):
         except Exception:
             pass
 
-
-# ---------- HTTP ----------
 
 async def handle_create(request):
     try:
@@ -481,7 +495,7 @@ async def handle_websocket(request):
 
     try:
         async for msg in ws:
-            if msg.type == web.WebSocketType.TEXT if False else msg.type == web.WSMsgType.TEXT:
+            if msg.type == web.WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
                 except Exception:
@@ -496,10 +510,9 @@ async def handle_websocket(request):
                         nvx = float(data.get("vx", 0.0))
                         nvy = float(data.get("vy", 0.0))
                     except (TypeError, ValueError):
-                        nx, ny = player.x, player.y
-                        nvx, nvy = 0.0, 0.0
+                        continue
                     # Защита от телепорта
-                    if math.hypot(nx - player.x, ny - player.y) < 500:
+                    if math.hypot(nx - player.x, ny - player.y) < 200:
                         player.x = nx
                         player.y = ny
                     player.vx = nvx
