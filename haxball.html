@@ -27,50 +27,68 @@
   .divider{height:1px;background:#1a1a1a;margin:16px 0}
   .back-btn{background:transparent;border:none;color:#666;font-size:12px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:8px}
   .back-btn:active{color:#fff}
-  .status{text-align:center;font-size:12px;color:#888;padding:6px;letter-spacing:1px}
-  .status .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4444;margin-right:6px}
-  .status .dot.on{background:#44ff88}
   .lobby-card{border:1px solid #222;background:#0d0d0d;padding:12px;margin-bottom:8px;border-radius:8px;cursor:pointer}
   .lobby-card:active{border-color:#fff}
   .lobby-card .title{font-size:14px;font-weight:700;margin-bottom:4px}
   .lobby-card .meta{font-size:11px;color:#888}
 
-  /* ===== Игра — поворот на 90° при портрете ===== */
-  #s-game{padding:0;display:none;position:fixed;top:0;left:0;background:#000;overflow:hidden;touch-action:none;transform-origin:center center}
-  #s-game.active{display:flex;flex-direction:column}
+  /* ===== ИГРА ===== */
+  #s-game{position:fixed;top:0;left:0;background:#000;overflow:hidden;touch-action:none;display:none;transform-origin:center center}
+  #s-game.active{display:block}
 
-  /* Внутренняя раскладка landscape-экрана */
-  .game-top{padding:6px 12px 2px;flex-shrink:0;text-align:center}
-  .score-row{display:flex;align-items:center;justify-content:center;gap:16px;font-size:26px;font-weight:900;font-family:'SF Mono',monospace;padding:0}
+  /* Canvas на весь экран */
+  .canvas-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0}
+  #hb-canvas{width:100%;height:100%;display:block;touch-action:none;object-fit:contain}
+
+  /* HUD сверху — компактный, поверх поля */
+  .game-top{position:absolute;top:0;left:0;right:0;z-index:10;padding:6px 14px 20px;
+    background:linear-gradient(to bottom,rgba(0,0,0,0.85),rgba(0,0,0,0.4) 60%,transparent);
+    pointer-events:none;text-align:center}
+  .score-row{display:flex;align-items:center;justify-content:center;gap:14px;font-size:22px;font-weight:900;font-family:'SF Mono',monospace;line-height:1.1}
   .score-left{color:#4488ff}
   .score-right{color:#ff6b6b}
-  .score-sep{color:#333}
-  .meta-row{font-size:10px;color:#888;letter-spacing:1px;padding:2px 0}
+  .score-sep{color:#555}
+  .meta-row{font-size:10px;color:#aaa;letter-spacing:1px;padding-top:1px}
   .meta-row b{color:#fff}
-  .phase-info{text-align:center;font-size:12px;color:#aaa;padding:2px 0;min-height:14px;letter-spacing:1px}
+  .phase-info{font-size:11px;color:#ccc;letter-spacing:1px;padding-top:1px;min-height:14px}
   .phase-info.win{color:#44ff88;font-weight:700}
   .phase-info.lose{color:#ff4444;font-weight:700}
 
-  /* Поле занимает весь центр, контролы — внизу */
-  .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:2px 8px}
-  #hb-canvas{width:100%;height:100%;max-width:100%;max-height:100%;background:#0a1a0a;border:1px solid #1a1a1a;touch-action:none;border-radius:6px;display:block;object-fit:contain}
+  /* Контролы внизу — поверх поля */
+  .controls{position:absolute;left:0;right:0;bottom:0;z-index:10;
+    padding:20px 20px 20px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;
+    background:linear-gradient(to top,rgba(0,0,0,0.7),transparent);pointer-events:none}
+  .joy{position:relative;width:120px;height:120px;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%,rgba(40,40,40,0.7),rgba(10,10,10,0.85));
+    border:2px solid rgba(255,255,255,0.18);touch-action:none;flex-shrink:0;
+    box-shadow:0 4px 20px rgba(0,0,0,0.6),inset 0 0 24px rgba(255,255,255,0.04);pointer-events:auto}
+  .joy::before,.joy::after{content:'';position:absolute;background:rgba(255,255,255,0.08);pointer-events:none}
+  .joy::before{left:50%;top:14%;bottom:14%;width:1px;transform:translateX(-50%)}
+  .joy::after{top:50%;left:14%;right:14%;height:1px;transform:translateY(-50%)}
+  .joy-stick{position:absolute;width:56px;height:56px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#fff,#c8c8c8);
+    border:2px solid rgba(0,0,0,0.8);top:50%;left:50%;transform:translate(-50%,-50%);
+    pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.6)}
+  .joy-stick.active{background:radial-gradient(circle at 35% 30%,#fff,#a5a5a5);
+    box-shadow:0 4px 20px rgba(255,255,255,0.3),0 0 0 3px rgba(255,255,255,0.15)}
 
-  .controls{flex-shrink:0;padding:6px 20px 10px;display:flex;justify-content:space-between;align-items:center;gap:20px}
-  .joy{position:relative;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#1a1a1a,#0d0d0d);border:2px solid #262626;touch-action:none;flex-shrink:0;box-shadow:inset 0 0 20px rgba(255,255,255,.03)}
-  .joy::before,.joy::after{content:'';position:absolute;background:#1a1a1a}
-  .joy::before{left:50%;top:12%;bottom:12%;width:1px;transform:translateX(-50%)}
-  .joy::after{top:50%;left:12%;right:12%;height:1px;transform:translateY(-50%)}
-  .joy-stick{position:absolute;width:56px;height:56px;border-radius:50%;background:linear-gradient(180deg,#fff,#d5d5d5);border:2px solid #000;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.5)}
-  .joy-stick.active{background:linear-gradient(180deg,#fff,#b0b0b0);box-shadow:0 4px 20px rgba(255,255,255,.25)}
+  .kick{width:120px;height:120px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ff8888,#ff4040);
+    color:#fff;border:2px solid rgba(255,255,255,0.25);font-family:inherit;font-weight:900;font-size:14px;
+    letter-spacing:2px;text-transform:uppercase;cursor:pointer;flex-shrink:0;
+    box-shadow:0 6px 20px rgba(255,64,64,0.5),inset 0 -4px 10px rgba(0,0,0,0.3);
+    pointer-events:auto;transition:transform .06s,box-shadow .06s;text-shadow:0 1px 2px rgba(0,0,0,0.5)}
+  .kick:active{transform:scale(0.94);box-shadow:0 3px 10px rgba(255,64,64,0.7)}
 
-  .kick{flex:1;max-width:260px;height:110px;border-radius:24px;background:linear-gradient(180deg,#ff8080,#ff5252);color:#000;border:none;font-family:inherit;font-weight:900;font-size:20px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;box-shadow:0 6px 0 #b83333;transition:transform .06s,box-shadow .06s}
-  .kick:active{transform:translateY(3px);box-shadow:0 3px 0 #b83333;background:linear-gradient(180deg,#ff6666,#ff3d3d)}
+  /* Выйти — сверху-справа, мелко */
+  .game-bottom{position:absolute;top:8px;right:10px;z-index:11;pointer-events:auto}
+  .game-bottom .btn{padding:6px 12px;font-size:10px;width:auto;margin:0;letter-spacing:1px;border-radius:6px;background:rgba(0,0,0,0.5);border-color:rgba(255,255,255,0.25)}
 
-  .game-bottom{padding:0 20px 8px;flex-shrink:0;display:flex;gap:8px;justify-content:center}
-  .game-bottom .btn{margin:0;padding:8px 20px;width:auto;min-width:120px;font-size:10px}
-
-  /* Подсказка "переверни телефон" — на случай, если юзер не понял */
-  .rotate-hint{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#666;letter-spacing:1px;text-transform:uppercase;pointer-events:none;z-index:9999}
+  /* Точка "в сети" — сверху-слева */
+  .net-status{position:absolute;top:8px;left:10px;z-index:11;font-size:9px;color:#888;letter-spacing:1px;
+    display:flex;align-items:center;gap:5px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,0.5)}
+  .net-status .dot{width:6px;height:6px;border-radius:50%;background:#ff4444}
+  .net-status .dot.on{background:#44ff88}
 </style>
 </head>
 <body>
@@ -104,28 +122,26 @@
 
 <!-- ИГРА -->
 <div id="s-game">
-  <div class="game-top">
-    <div class="status" style="padding:2px"><span class="dot" id="hbDot"></span><span id="hbStatus">ПОДКЛЮЧЕНИЕ...</span></div>
-    <div class="score-row">
-      <span class="score-left" id="hbScoreL">0</span>
-      <span class="score-sep">:</span>
-      <span class="score-right" id="hbScoreR">0</span>
-    </div>
-    <div class="meta-row">ТАЙМЕР <b id="hbTimer">180</b> · КОД <b id="hbCodeTag">------</b> · ВЫ — <b id="hbMyTeam">—</b></div>
-    <div class="phase-info" id="hbPhase">Ожидание...</div>
-  </div>
+  <div class="net-status"><span class="dot" id="hbDot"></span><span id="hbStatus">...</span></div>
+  <div class="game-bottom"><button class="btn sm ghost" onclick="hbLeave()">ВЫЙТИ</button></div>
 
   <div class="canvas-wrap">
     <canvas id="hb-canvas" width="800" height="500"></canvas>
   </div>
 
+  <div class="game-top">
+    <div class="score-row">
+      <span class="score-left" id="hbScoreL">0</span>
+      <span class="score-sep">:</span>
+      <span class="score-right" id="hbScoreR">0</span>
+    </div>
+    <div class="meta-row">⏱ <b id="hbTimer">180</b> · КОД <b id="hbCodeTag">------</b> · <b id="hbMyTeam">—</b></div>
+    <div class="phase-info" id="hbPhase">Ожидание...</div>
+  </div>
+
   <div class="controls">
     <div class="joy" id="hbJoy"><div class="joy-stick" id="hbJoyStick"></div></div>
     <button class="kick" id="hbKick">УДАР</button>
-  </div>
-
-  <div class="game-bottom">
-    <button class="btn sm ghost" onclick="hbLeave()">ВЫЙТИ</button>
   </div>
 </div>
 
@@ -141,67 +157,43 @@ document.getElementById('hbName').value = USERNAME;
 // ============================================================================
 // КОНСТАНТЫ
 // ============================================================================
-const FIELD_W = 800;
-const FIELD_H = 500;
-const PLAYER_R = 20;
-const BALL_R = 10;
-const GOAL_H = 140;
-const GOAL_Y = (FIELD_H - GOAL_H) / 2;
-
-const MAX_SPEED = 320.0;
-const ACCELERATION = 1800.0;
-const FRICTION = 0.94;
-const WALL_E = 0.85;
-const KICK_COOLDOWN = 0.30;
+const FIELD_W = 800, FIELD_H = 500, PLAYER_R = 20, BALL_R = 10;
+const GOAL_H = 140, GOAL_Y = (FIELD_H - GOAL_H) / 2;
+const MAX_SPEED = 320.0, ACCELERATION = 1800.0, FRICTION = 0.94;
+const WALL_E = 0.85, KICK_COOLDOWN = 0.30;
 
 // ============================================================================
-// ПОВОРОТ ИГРОВОГО ЭКРАНА
+// ПОВОРОТ
 // ============================================================================
 function hbApplyOrientation(){
   const el = document.getElementById('s-game');
   if (!el) return;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const vw = window.innerWidth, vh = window.innerHeight;
   if (vw < vh){
-    // Портрет → поворачиваем контейнер
     el.style.width  = vh + 'px';
     el.style.height = vw + 'px';
-    el.style.left   = '0px';
-    el.style.top    = '0px';
     el.style.transform = `translate(${(vw - vh) / 2}px, ${(vh - vw) / 2}px) rotate(90deg)`;
   } else {
-    // Уже landscape → не трогаем
     el.style.width  = vw + 'px';
     el.style.height = vh + 'px';
-    el.style.left   = '0px';
-    el.style.top    = '0px';
     el.style.transform = 'none';
   }
 }
 window.addEventListener('resize', hbApplyOrientation);
-window.addEventListener('orientationchange', () => setTimeout(hbApplyOrientation, 100));
-window.addEventListener('load', hbApplyOrientation);
+window.addEventListener('orientationchange', () => setTimeout(hbApplyOrientation, 150));
 
 // ============================================================================
 // СОСТОЯНИЕ
 // ============================================================================
 const HB = {
-  code: null,
-  ws: null,
-  prevState: null,
-  nextState: null,
-  prevTs: 0,
-  nextTs: 0,
-  myPos: {x: 0, y: 0, vx: 0, vy: 0, kick_cd: 0, kick_glow: 0},
+  code: null, ws: null,
+  prevState: null, nextState: null, prevTs: 0, nextTs: 0,
+  myPos: {x:0,y:0,vx:0,vy:0,kick_cd:0,kick_glow:0},
   predicted: false,
-  input: {ix: 0, iy: 0, kick: false},
-  canvas: null,
-  ctx: null,
-  raf: null,
-  lastSendTs: 0,
-  lastTickTs: 0,
-  joyActive: false,
-  joyTouchId: null
+  input: {ix:0, iy:0, kick:false},
+  canvas: null, ctx: null, raf: null,
+  lastSendTs: 0, lastTickTs: 0,
+  joyPointerId: null
 };
 
 function hbGo(id){
@@ -209,7 +201,6 @@ function hbGo(id){
   document.getElementById('s-'+id).classList.add('active');
   if (id === 'game') hbApplyOrientation();
 }
-
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -222,49 +213,37 @@ async function hbCreate(){
   const roomName = document.getElementById('hbRoomName').value.trim() || 'Haxball';
   USERNAME = name;
   try {
-    const r = await fetch('/api/haxball/create', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({user_id: USER_ID, user_name: name, game_name: roomName})
-    });
+    const r = await fetch('/api/haxball/create', {method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user_id: USER_ID, user_name: name, game_name: roomName})});
     const d = await r.json();
     if (!d.ok) { tg?.showAlert?.(d.error || 'Ошибка'); return; }
-    HB.code = d.code;
-    hbStartGame();
+    HB.code = d.code; hbStartGame();
   } catch(e) { tg?.showAlert?.(e.message); }
 }
-
 async function hbJoinByCode(){
   const name = document.getElementById('hbName').value.trim() || USERNAME;
   const code = document.getElementById('hbJoinCode').value.trim();
   if (code.length !== 6) { tg?.showAlert?.('Код из 6 цифр'); return; }
   USERNAME = name;
   try {
-    const r = await fetch('/api/haxball/join', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({code: code, user_id: USER_ID, user_name: name})
-    });
+    const r = await fetch('/api/haxball/join', {method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, user_id: USER_ID, user_name: name})});
     const d = await r.json();
     if (!d.ok) { tg?.showAlert?.(d.error || 'Ошибка'); return; }
-    HB.code = d.code || code;
-    hbStartGame();
+    HB.code = d.code || code; hbStartGame();
   } catch(e) { tg?.showAlert?.(e.message); }
 }
-
 async function hbJoinLobby(code){
   const name = document.getElementById('hbName').value.trim() || USERNAME;
   USERNAME = name;
   try {
-    const r = await fetch('/api/haxball/join', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({code: code, user_id: USER_ID, user_name: name})
-    });
+    const r = await fetch('/api/haxball/join', {method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, user_id: USER_ID, user_name: name})});
     const d = await r.json();
     if (!d.ok) { tg?.showAlert?.(d.error || 'Ошибка'); return; }
-    HB.code = d.code || code;
-    hbStartGame();
+    HB.code = d.code || code; hbStartGame();
   } catch(e) { tg?.showAlert?.(e.message); }
 }
-
 async function hbLoadLobbies(){
   const box = document.getElementById('hbLobbyList');
   box.innerHTML = '<div class="msg">Загрузка...</div>';
@@ -272,18 +251,14 @@ async function hbLoadLobbies(){
     const r = await fetch('/api/haxball/list');
     const d = await r.json();
     if (!d.ok || !d.items || !d.items.length) {
-      box.innerHTML = '<div class="msg">Открытых игр пока нет<br>Создай свою или войди по коду</div>';
-      return;
+      box.innerHTML = '<div class="msg">Открытых игр пока нет<br>Создай свою или войди по коду</div>'; return;
     }
     box.innerHTML = d.items.map(it => `
       <div class="lobby-card" onclick="hbJoinLobby('${it.code}')">
         <div class="title">${escapeHtml(it.name)}</div>
         <div class="meta">${it.players}/${it.max} · хост: ${escapeHtml(it.host)}</div>
-      </div>
-    `).join('');
-  } catch(e) {
-    box.innerHTML = '<div class="msg">Ошибка: ' + escapeHtml(e.message) + '</div>';
-  }
+      </div>`).join('');
+  } catch(e) { box.innerHTML = '<div class="msg">Ошибка: ' + escapeHtml(e.message) + '</div>'; }
 }
 
 // ============================================================================
@@ -295,17 +270,12 @@ function hbStartGame(){
   hbApplyOrientation();
   hbInitCanvas();
   hbConnect();
-  if (!HB.raf) {
-    HB.lastTickTs = performance.now();
-    hbLoop();
-  }
+  if (!HB.raf) { HB.lastTickTs = performance.now(); hbLoop(); }
 }
-
 function hbConnect(){
   if (HB.ws) { try { HB.ws.close(); } catch(e){} }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${proto}://${location.host}/ws/haxball/${HB.code}?uid=${USER_ID}`;
-  HB.ws = new WebSocket(url);
+  HB.ws = new WebSocket(`${proto}://${location.host}/ws/haxball/${HB.code}?uid=${USER_ID}`);
   HB.ws.onopen = () => hbDot(true);
   HB.ws.onclose = () => hbDot(false);
   HB.ws.onerror = () => hbDot(false);
@@ -313,70 +283,64 @@ function hbConnect(){
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === 'state') hbOnServerState(msg.state);
-      else if (msg.type === 'error') console.warn('[hb]', msg.error);
     } catch(err) {}
   };
 }
-
 function hbDot(on){
   document.getElementById('hbDot').classList.toggle('on', on);
-  document.getElementById('hbStatus').textContent = on ? 'В СЕТИ' : 'НЕТ СВЯЗИ';
+  document.getElementById('hbStatus').textContent = on ? 'В СЕТИ' : 'ОФФЛАЙН';
 }
-
 function hbLeave(){
   if (HB.ws) { try { HB.ws.close(); } catch(e){} }
   if (HB.raf) { cancelAnimationFrame(HB.raf); HB.raf = null; }
   HB.code = null; HB.prevState = null; HB.nextState = null; HB.ws = null;
   HB.predicted = false;
-  hbGo('menu');
-  hbLoadLobbies();
+  hbGo('menu'); hbLoadLobbies();
 }
 
 function hbOnServerState(s){
   const now = performance.now();
   if (!HB.nextState) {
-    HB.prevState = s;
-    HB.nextState = s;
-    HB.prevTs = now;
-    HB.nextTs = now + 50;
+    HB.prevState = s; HB.nextState = s;
+    HB.prevTs = now; HB.nextTs = now + 50;
     hbSyncPrediction(s, true);
   } else {
-    HB.prevState = HB.nextState;
-    HB.prevTs = HB.nextTs;
-    HB.nextState = s;
-    HB.nextTs = now;
+    HB.prevState = HB.nextState; HB.prevTs = HB.nextTs;
+    HB.nextState = s; HB.nextTs = now;
     hbSyncPrediction(s, false);
   }
 }
 
+// Мягкий reconciliation — не даём фигуре «откатываться»
 function hbSyncPrediction(s, hard){
   const me = (s.players || []).find(p => p.user_id === USER_ID);
   if (!me) { HB.predicted = false; return; }
 
-  if (!HB.predicted || hard) {
-    HB.myPos.x = me.x;
-    HB.myPos.y = me.y;
-    HB.myPos.vx = 0;
-    HB.myPos.vy = 0;
+  if (!HB.predicted || hard){
+    HB.myPos.x = me.x; HB.myPos.y = me.y;
+    HB.myPos.vx = 0; HB.myPos.vy = 0;
     HB.predicted = true;
     return;
   }
+
   const dx = me.x - HB.myPos.x;
   const dy = me.y - HB.myPos.y;
   const err = Math.hypot(dx, dy);
-  if (err > 60) {
-    HB.myPos.x = me.x;
-    HB.myPos.y = me.y;
-    HB.myPos.vx = 0;
-    HB.myPos.vy = 0;
-  } else {
-    HB.myPos.x += dx * 0.15;
-    HB.myPos.y += dy * 0.15;
+
+  // Огромное расхождение (>200px) — жёсткий синк
+  if (err > 200){
+    HB.myPos.x = me.x; HB.myPos.y = me.y;
+    HB.myPos.vx = 0; HB.myPos.vy = 0;
+    return;
   }
+
+  // Очень мягкий подтягивающий сдвиг — незаметно глазу
+  HB.myPos.x += dx * 0.05;
+  HB.myPos.y += dy * 0.05;
 }
 
 // ============================================================================
-// УПРАВЛЕНИЕ
+// ВВОД — слушаем на WINDOW, чтобы не терять события при уходе пальца
 // ============================================================================
 function hbInitCanvas(){
   HB.canvas = document.getElementById('hb-canvas');
@@ -388,87 +352,95 @@ function hbInitCanvas(){
   const joy = document.getElementById('hbJoy');
   const stick = document.getElementById('hbJoyStick');
 
-  function calcInput(t){
+  function calcInput(cx, cy){
     const rect = joy.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    let dx = t.clientX - cx;
-    let dy = t.clientY - cy;
+    const jx = rect.left + rect.width / 2;
+    const jy = rect.top + rect.height / 2;
+    let dx = cx - jx;
+    let dy = cy - jy;
     const dist = Math.hypot(dx, dy);
     const maxR = rect.width / 2 - 26;
     if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
     return { x: dx / maxR, y: dy / maxR, dx, dy };
   }
 
-  function applyInput(inp){
+  function applyInput(cx, cy){
+    const inp = calcInput(cx, cy);
     HB.input.ix = inp.x;
     HB.input.iy = inp.y;
-    if (Math.hypot(inp.x, inp.y) < 0.06) {
-      HB.input.ix = 0;
-      HB.input.iy = 0;
+    if (Math.hypot(inp.x, inp.y) < 0.06){
+      HB.input.ix = 0; HB.input.iy = 0;
     }
     stick.style.transform = `translate(calc(-50% + ${inp.dx}px), calc(-50% + ${inp.dy}px))`;
+    stick.classList.add('active');
+  }
+
+  function resetInput(){
+    HB.joyPointerId = null;
+    stick.classList.remove('active');
+    HB.input.ix = 0; HB.input.iy = 0;
+    stick.style.transform = 'translate(-50%, -50%)';
   }
 
   joy.addEventListener('touchstart', (e) => {
     e.preventDefault();
     const t = e.changedTouches[0];
-    HB.joyActive = true;
-    HB.joyTouchId = t.identifier;
-    stick.classList.add('active');
-    applyInput(calcInput(t));
+    HB.joyPointerId = t.identifier;
+    applyInput(t.clientX, t.clientY);
   }, {passive:false});
 
-  joy.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    if (!HB.joyActive) return;
+  // Слушаем на window — палец может уйти далеко от джойстика
+  window.addEventListener('touchmove', (e) => {
+    if (HB.joyPointerId === null) return;
     for (const t of e.changedTouches){
-      if (t.identifier === HB.joyTouchId){
-        applyInput(calcInput(t));
+      if (t.identifier === HB.joyPointerId){
+        e.preventDefault();
+        applyInput(t.clientX, t.clientY);
         break;
       }
     }
   }, {passive:false});
 
-  function joyEnd(e){
-    e.preventDefault();
-    HB.joyActive = false;
-    HB.joyTouchId = null;
-    stick.classList.remove('active');
-    HB.input.ix = 0;
-    HB.input.iy = 0;
-    stick.style.transform = 'translate(-50%, -50%)';
-  }
-  joy.addEventListener('touchend', joyEnd, {passive:false});
-  joy.addEventListener('touchcancel', joyEnd, {passive:false});
+  window.addEventListener('touchend', (e) => {
+    if (HB.joyPointerId === null) return;
+    for (const t of e.changedTouches){
+      if (t.identifier === HB.joyPointerId){ resetInput(); break; }
+    }
+  }, {passive:false});
 
+  window.addEventListener('touchcancel', (e) => {
+    if (HB.joyPointerId === null) return;
+    for (const t of e.changedTouches){
+      if (t.identifier === HB.joyPointerId){ resetInput(); break; }
+    }
+  }, {passive:false});
+
+  // Кнопка удара
   const kick = document.getElementById('hbKick');
-  const kickOn = (e) => { e.preventDefault(); HB.input.kick = true; };
-  const kickOff = (e) => { e.preventDefault(); HB.input.kick = false; };
-  kick.addEventListener('touchstart', kickOn, {passive:false});
-  kick.addEventListener('touchend', kickOff, {passive:false});
-  kick.addEventListener('touchcancel', kickOff, {passive:false});
-  kick.addEventListener('mousedown', kickOn);
-  kick.addEventListener('mouseup', kickOff);
-  kick.addEventListener('mouseleave', kickOff);
+  kick.addEventListener('touchstart', (e) => { e.preventDefault(); HB.input.kick = true; }, {passive:false});
+  kick.addEventListener('touchend',   (e) => { e.preventDefault(); HB.input.kick = false; }, {passive:false});
+  kick.addEventListener('touchcancel',(e) => { HB.input.kick = false; });
+  kick.addEventListener('mousedown',  () => { HB.input.kick = true; });
+  kick.addEventListener('mouseup',    () => { HB.input.kick = false; });
+  kick.addEventListener('mouseleave', () => { HB.input.kick = false; });
 }
 
 function hbKeyDown(e){
   if (e.repeat) return;
   const k = e.key;
-  if (k === 'ArrowUp'    || k === 'w' || k === 'W' || k === 'ц' || k === 'Ц') HB.input.iy = -1;
-  if (k === 'ArrowDown'  || k === 's' || k === 'S' || k === 'ы' || k === 'Ы') HB.input.iy =  1;
-  if (k === 'ArrowLeft'  || k === 'a' || k === 'A' || k === 'ф' || k === 'Ф') HB.input.ix = -1;
-  if (k === 'ArrowRight' || k === 'd' || k === 'D' || k === 'в' || k === 'В') HB.input.ix =  1;
-  if (k === ' ') { HB.input.kick = true; e.preventDefault(); }
+  if (k==='ArrowUp'||k==='w'||k==='W'||k==='ц'||k==='Ц') HB.input.iy = -1;
+  if (k==='ArrowDown'||k==='s'||k==='S'||k==='ы'||k==='Ы') HB.input.iy = 1;
+  if (k==='ArrowLeft'||k==='a'||k==='A'||k==='ф'||k==='Ф') HB.input.ix = -1;
+  if (k==='ArrowRight'||k==='d'||k==='D'||k==='в'||k==='В') HB.input.ix = 1;
+  if (k===' ') { HB.input.kick = true; e.preventDefault(); }
 }
 function hbKeyUp(e){
   const k = e.key;
-  if (k === 'ArrowUp'    || k === 'w' || k === 'W' || k === 'ц' || k === 'Ц') HB.input.iy = 0;
-  if (k === 'ArrowDown'  || k === 's' || k === 'S' || k === 'ы' || k === 'Ы') HB.input.iy = 0;
-  if (k === 'ArrowLeft'  || k === 'a' || k === 'A' || k === 'ф' || k === 'Ф') HB.input.ix = 0;
-  if (k === 'ArrowRight' || k === 'd' || k === 'D' || k === 'в' || k === 'В') HB.input.ix = 0;
-  if (k === ' ') HB.input.kick = false;
+  if (k==='ArrowUp'||k==='w'||k==='W'||k==='ц'||k==='Ц') HB.input.iy = 0;
+  if (k==='ArrowDown'||k==='s'||k==='S'||k==='ы'||k==='Ы') HB.input.iy = 0;
+  if (k==='ArrowLeft'||k==='a'||k==='A'||k==='ф'||k==='Ф') HB.input.ix = 0;
+  if (k==='ArrowRight'||k==='d'||k==='D'||k==='в'||k==='В') HB.input.ix = 0;
+  if (k===' ') HB.input.kick = false;
 }
 
 // ============================================================================
@@ -477,73 +449,60 @@ function hbKeyUp(e){
 function hbLoop(){
   const now = performance.now();
 
-  if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 30) {
+  if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 30){
     HB.lastSendTs = now;
     HB.ws.send(JSON.stringify({
-      action: 'move',
-      ix: HB.input.ix,
-      iy: HB.input.iy,
-      kick: HB.input.kick
+      action:'move', ix: HB.input.ix, iy: HB.input.iy, kick: HB.input.kick
     }));
   }
 
-  if (HB.predicted) {
+  if (HB.predicted){
     const dt = Math.min(0.05, (now - HB.lastTickTs) / 1000);
     HB.lastTickTs = now;
     hbLocalTick(dt);
   }
 
-  if (HB.nextState) {
-    hbRender();
-    hbUpdateHUD();
-  }
-
+  if (HB.nextState){ hbRender(); hbUpdateHUD(); }
   HB.raf = requestAnimationFrame(hbLoop);
 }
 
 function hbLocalTick(dt){
   const p = HB.myPos;
-  const ix = HB.input.ix;
-  const iy = HB.input.iy;
+  const ix = HB.input.ix, iy = HB.input.iy;
   const mag = Math.hypot(ix, iy);
   let nx = ix, ny = iy;
-  if (mag > 1) { nx = ix / mag; ny = iy / mag; }
+  if (mag > 1) { nx = ix/mag; ny = iy/mag; }
 
   p.vx += nx * ACCELERATION * dt;
   p.vy += ny * ACCELERATION * dt;
 
   const speed = Math.hypot(p.vx, p.vy);
-  if (speed > MAX_SPEED) {
-    p.vx = p.vx / speed * MAX_SPEED;
-    p.vy = p.vy / speed * MAX_SPEED;
+  if (speed > MAX_SPEED){
+    p.vx = p.vx/speed * MAX_SPEED;
+    p.vy = p.vy/speed * MAX_SPEED;
   }
-
-  if (Math.hypot(nx, ny) < 0.05) {
+  if (Math.hypot(nx, ny) < 0.05){
     const k = Math.pow(FRICTION, dt * 60);
-    p.vx *= k;
-    p.vy *= k;
+    p.vx *= k; p.vy *= k;
   }
 
   p.x += p.vx * dt;
   p.y += p.vy * dt;
 
-  if (p.x - PLAYER_R < 0) { p.x = PLAYER_R; p.vx = Math.abs(p.vx) * WALL_E; }
-  if (p.x + PLAYER_R > FIELD_W) { p.x = FIELD_W - PLAYER_R; p.vx = -Math.abs(p.vx) * WALL_E; }
-  if (p.y - PLAYER_R < 0) { p.y = PLAYER_R; p.vy = Math.abs(p.vy) * WALL_E; }
-  if (p.y + PLAYER_R > FIELD_H) { p.y = FIELD_H - PLAYER_R; p.vy = -Math.abs(p.vy) * WALL_E; }
+  if (p.x - PLAYER_R < 0){ p.x = PLAYER_R; p.vx = Math.abs(p.vx) * WALL_E; }
+  if (p.x + PLAYER_R > FIELD_W){ p.x = FIELD_W - PLAYER_R; p.vx = -Math.abs(p.vx) * WALL_E; }
+  if (p.y - PLAYER_R < 0){ p.y = PLAYER_R; p.vy = Math.abs(p.vy) * WALL_E; }
+  if (p.y + PLAYER_R > FIELD_H){ p.y = FIELD_H - PLAYER_R; p.vy = -Math.abs(p.vy) * WALL_E; }
 
   if (p.kick_cd > 0) p.kick_cd = Math.max(0, p.kick_cd - dt);
   if (p.kick_glow > 0) p.kick_glow = Math.max(0, p.kick_glow - dt);
 
-  if (HB.input.kick && p.kick_cd <= 0) {
+  if (HB.input.kick && p.kick_cd <= 0){
     const ball = HB.nextState?.ball;
-    if (ball) {
-      const dx = ball.x - p.x;
-      const dy = ball.y - p.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < PLAYER_R + BALL_R + 4) {
-        p.kick_cd = KICK_COOLDOWN;
-        p.kick_glow = 0.25;
+    if (ball){
+      const dx = ball.x - p.x, dy = ball.y - p.y;
+      if (Math.hypot(dx, dy) < PLAYER_R + BALL_R + 4){
+        p.kick_cd = KICK_COOLDOWN; p.kick_glow = 0.25;
       }
     }
   }
@@ -554,6 +513,7 @@ function hbLocalTick(dt){
 // ============================================================================
 function hbRender(){
   const ctx = HB.ctx;
+  const cw = HB.canvas.width, ch = HB.canvas.height;
   const s = HB.nextState;
 
   for (let i = 0; i < 10; i++){
@@ -563,163 +523,109 @@ function hbRender(){
 
   ctx.strokeStyle = 'rgba(255,255,255,0.18)';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(FIELD_W/2, 0);
-  ctx.lineTo(FIELD_W/2, FIELD_H);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI*2);
-  ctx.stroke();
-
+  ctx.beginPath(); ctx.moveTo(FIELD_W/2, 0); ctx.lineTo(FIELD_W/2, FIELD_H); ctx.stroke();
+  ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI*2); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.beginPath();
-  ctx.arc(FIELD_W/2, FIELD_H/2, 3, 0, Math.PI*2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
 
   ctx.strokeStyle = 'rgba(255,255,255,0.15)';
   ctx.strokeRect(0, GOAL_Y - 20, 60, GOAL_H + 40);
   ctx.strokeRect(FIELD_W - 60, GOAL_Y - 20, 60, GOAL_H + 40);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(2, GOAL_Y);
-  ctx.lineTo(2, GOAL_Y + GOAL_H);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(FIELD_W-2, GOAL_Y);
-  ctx.lineTo(FIELD_W-2, GOAL_Y + GOAL_H);
-  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(2, GOAL_Y); ctx.lineTo(2, GOAL_Y + GOAL_H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(FIELD_W-2, GOAL_Y); ctx.lineTo(FIELD_W-2, GOAL_Y + GOAL_H); ctx.stroke();
 
-  ctx.fillStyle = 'rgba(68,136,255,0.18)';
-  ctx.fillRect(0, GOAL_Y, 8, GOAL_H);
-  ctx.fillStyle = 'rgba(255,107,107,0.18)';
-  ctx.fillRect(FIELD_W-8, GOAL_Y, 8, GOAL_H);
+  ctx.fillStyle = 'rgba(68,136,255,0.18)'; ctx.fillRect(0, GOAL_Y, 8, GOAL_H);
+  ctx.fillStyle = 'rgba(255,107,107,0.18)'; ctx.fillRect(FIELD_W-8, GOAL_Y, 8, GOAL_H);
 
   const interp = hbInterpolatePlayers();
-  const interpBall = hbInterpolateBall();
+  const ball = hbInterpolateBall();
 
   for (const p of interp){
     const isMe = p.user_id === USER_ID;
     const color = p.team === 'left' ? '#4488ff' : '#ff6b6b';
-    const darkColor = p.team === 'left' ? '#2a5ba8' : '#b84242';
+    const dark = p.team === 'left' ? '#2a5ba8' : '#b84242';
 
     let px = p.x, py = p.y, glow = p.kick_glow || 0;
-    if (isMe && HB.predicted) {
-      px = HB.myPos.x;
-      py = HB.myPos.y;
-      glow = HB.myPos.kick_glow;
-    }
+    if (isMe && HB.predicted){ px = HB.myPos.x; py = HB.myPos.y; glow = HB.myPos.kick_glow; }
 
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.ellipse(px, py + PLAYER_R + 3, PLAYER_R * 0.9, PLAYER_R * 0.3, 0, 0, Math.PI*2);
+    ctx.ellipse(px, py + PLAYER_R + 3, PLAYER_R*0.9, PLAYER_R*0.3, 0, 0, Math.PI*2);
     ctx.fill();
 
     if (glow > 0){
-      const g = ctx.createRadialGradient(px, py, PLAYER_R*0.6, px, py, PLAYER_R + 14);
-      g.addColorStop(0, 'rgba(255,220,80,0.85)');
-      g.addColorStop(1, 'rgba(255,220,80,0)');
+      const g = ctx.createRadialGradient(px,py,PLAYER_R*0.6,px,py,PLAYER_R+14);
+      g.addColorStop(0,'rgba(255,220,80,0.85)');
+      g.addColorStop(1,'rgba(255,220,80,0)');
       ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(px, py, PLAYER_R + 14, 0, Math.PI*2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(px,py,PLAYER_R+14,0,Math.PI*2); ctx.fill();
     }
 
-    const grad = ctx.createRadialGradient(
-      px - PLAYER_R*0.35, py - PLAYER_R*0.35, PLAYER_R*0.15,
-      px, py, PLAYER_R
-    );
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.15, color);
-    grad.addColorStop(1, darkColor);
+    const grad = ctx.createRadialGradient(px-PLAYER_R*0.35, py-PLAYER_R*0.35, PLAYER_R*0.15, px, py, PLAYER_R);
+    grad.addColorStop(0,'#fff');
+    grad.addColorStop(0.15,color);
+    grad.addColorStop(1,dark);
     ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(px, py, PLAYER_R, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(px,py,PLAYER_R,0,Math.PI*2); ctx.fill();
 
     ctx.strokeStyle = isMe ? '#fff' : 'rgba(0,0,0,0.6)';
-    ctx.lineWidth = isMe ? 3 : 2;
-    ctx.stroke();
+    ctx.lineWidth = isMe ? 3 : 2; ctx.stroke();
 
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 12px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(isMe ? 'Я' : (p.name || '').slice(0, 2).toUpperCase(), px, py);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isMe ? 'Я' : (p.name||'').slice(0,2).toUpperCase(), px, py);
 
     if (!isMe){
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
       ctx.font = '11px -apple-system, sans-serif';
       ctx.textBaseline = 'top';
-      ctx.fillText((p.name || '').slice(0, 10), px, py + PLAYER_R + 2);
+      ctx.fillText((p.name||'').slice(0,10), px, py + PLAYER_R + 2);
     }
   }
 
-  if (interpBall){
+  if (ball){
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
-    ctx.ellipse(interpBall.x, interpBall.y + BALL_R + 2, BALL_R, BALL_R * 0.3, 0, 0, Math.PI*2);
+    ctx.ellipse(ball.x, ball.y + BALL_R + 2, BALL_R, BALL_R*0.3, 0, 0, Math.PI*2);
     ctx.fill();
 
-    const bg = ctx.createRadialGradient(
-      interpBall.x - BALL_R*0.4, interpBall.y - BALL_R*0.4, BALL_R*0.15,
-      interpBall.x, interpBall.y, BALL_R
-    );
-    bg.addColorStop(0, '#fffbe0');
-    bg.addColorStop(0.4, '#ffe066');
-    bg.addColorStop(1, '#c9a800');
+    const bg = ctx.createRadialGradient(ball.x-BALL_R*0.4, ball.y-BALL_R*0.4, BALL_R*0.15, ball.x, ball.y, BALL_R);
+    bg.addColorStop(0,'#fffbe0'); bg.addColorStop(0.4,'#ffe066'); bg.addColorStop(1,'#c9a800');
     ctx.fillStyle = bg;
-    ctx.beginPath();
-    ctx.arc(interpBall.x, interpBall.y, BALL_R, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
   }
 }
 
 function hbInterpolatePlayers(){
-  const a = HB.prevState;
-  const b = HB.nextState;
-  if (!a || !b) return (b?.players) || [];
-
+  const a = HB.prevState, b = HB.nextState;
+  if (!a || !b) return b?.players || [];
   const now = performance.now();
   const span = HB.nextTs - HB.prevTs;
   let t = span > 0 ? (now - HB.nextTs) / span : 0;
   t = Math.max(0, Math.min(1.15, t + 0.15));
-  const lerp = (x, y) => x + (y - x) * t;
-
+  const lerp = (x,y) => x + (y-x)*t;
   const aMap = {};
-  for (const p of (a.players || [])) aMap[p.user_id] = p;
-
-  return (b.players || []).map(pb => {
+  for (const p of (a.players||[])) aMap[p.user_id] = p;
+  return (b.players||[]).map(pb => {
     if (pb.user_id === USER_ID) return pb;
     const pa = aMap[pb.user_id];
     if (!pa) return pb;
-    return {
-      ...pb,
-      x: lerp(pa.x, pb.x),
-      y: lerp(pa.y, pb.y),
-    };
+    return { ...pb, x: lerp(pa.x, pb.x), y: lerp(pa.y, pb.y) };
   });
 }
 
 function hbInterpolateBall(){
-  const a = HB.prevState;
-  const b = HB.nextState;
+  const a = HB.prevState, b = HB.nextState;
   if (!a || !b || !a.ball || !b.ball) return b?.ball || a?.ball;
-
   const now = performance.now();
   const span = HB.nextTs - HB.prevTs;
   let t = span > 0 ? (now - HB.nextTs) / span : 0;
   t = Math.max(0, Math.min(1.15, t + 0.15));
-
-  return {
-    x: a.ball.x + (b.ball.x - a.ball.x) * t,
-    y: a.ball.y + (b.ball.y - a.ball.y) * t,
-  };
+  return { x: a.ball.x + (b.ball.x - a.ball.x)*t, y: a.ball.y + (b.ball.y - a.ball.y)*t };
 }
 
 function hbUpdateHUD(){
@@ -733,28 +639,17 @@ function hbUpdateHUD(){
   document.getElementById('hbMyTeam').textContent = teamName;
 
   const phase = document.getElementById('hbPhase');
-  phase.classList.remove('win', 'lose');
+  phase.classList.remove('win','lose');
+  const l = (s.players||[]).filter(p=>p.team==='left').length;
+  const r = (s.players||[]).filter(p=>p.team==='right').length;
 
-  const l = (s.players || []).filter(p => p.team === 'left').length;
-  const r = (s.players || []).filter(p => p.team === 'right').length;
-
-  if (s.phase === 'waiting'){
-    phase.textContent = `ЖДЁМ ИГРОКОВ (${l} : ${r})`;
-  } else if (s.phase === 'goal_pause'){
-    phase.textContent = '⚽ ГОЛ!';
-  } else if (s.phase === 'over'){
-    if (s.winner === 'draw'){
-      phase.textContent = '🤝 НИЧЬЯ';
-    } else if (s.winner === s.my_side){
-      phase.textContent = '🏆 ПОБЕДА';
-      phase.classList.add('win');
-    } else {
-      phase.textContent = '💀 ПОРАЖЕНИЕ';
-      phase.classList.add('lose');
-    }
-  } else {
-    phase.textContent = `${l} : ${r} · идёт матч`;
-  }
+  if (s.phase === 'waiting') phase.textContent = `ЖДЁМ (${l} : ${r})`;
+  else if (s.phase === 'goal_pause') phase.textContent = '⚽ ГОЛ!';
+  else if (s.phase === 'over'){
+    if (s.winner === 'draw') phase.textContent = '🤝 НИЧЬЯ';
+    else if (s.winner === s.my_side){ phase.textContent = '🏆 ПОБЕДА'; phase.classList.add('win'); }
+    else { phase.textContent = '💀 ПОРАЖЕНИЕ'; phase.classList.add('lose'); }
+  } else phase.textContent = `${l} : ${r}`;
 }
 
 // ============================================================================
