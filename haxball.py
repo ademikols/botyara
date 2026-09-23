@@ -8,34 +8,31 @@ from typing import Dict, Optional
 from aiohttp import web
 from datetime import datetime
 
-# ---------- ПОЛЕ ----------
 FIELD_WIDTH = 800
 FIELD_HEIGHT = 500
 FIELD_HALF_WIDTH = FIELD_WIDTH / 2
 FIELD_HALF_HEIGHT = FIELD_HEIGHT / 2
 
-# ---------- РАЗМЕРЫ ----------
 PLAYER_RADIUS = 20
 BALL_RADIUS = 10
 GOAL_HEIGHT = 140
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-# ---------- ФИЗИКА ----------
+# Более отзывчивая физика
 MAX_SPEED = 320.0
-ACCELERATION = 950.0
-FRICTION = 0.90
+ACCELERATION = 1800.0
+FRICTION = 0.94
 WALL_ELASTICITY = 0.85
 PLAYER_PLAYER_ELASTICITY = 0.55
-PLAYER_BALL_ELASTICITY = 0.92
-BALL_FRICTION = 0.988
-KICK_FORCE = 470.0
+PLAYER_BALL_ELASTICITY = 0.85
+BALL_FRICTION = 0.995
+KICK_FORCE = 400.0
 KICK_COOLDOWN = 0.30
 KICK_BONUS_FROM_PLAYER_VEL = 1.15
 
 TICK_RATE = 60
 SUBSTEPS = 3
 DT = 1.0 / TICK_RATE
-SUB_DT = DT / SUBSTEPS
 
 SNAPSHOT_RATE = 20
 SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
@@ -60,6 +57,8 @@ class Player:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
+    ix: float = 0.0
+    iy: float = 0.0
     up: bool = False
     down: bool = False
     left: bool = False
@@ -130,44 +129,37 @@ def generate_code():
     return "".join(random.choices(string.digits, k=6))
 
 
-def distance(x1, y1, x2, y2):
-    return math.hypot(x2 - x1, y2 - y1)
-
-
-def team_count(game: HaxballGame, team: str) -> int:
+def team_count(game, team):
     return sum(1 for p in game.players.values() if p.team == team)
 
 
-def pick_team(game: HaxballGame):
+def pick_team(game):
     lc = team_count(game, "left")
     rc = team_count(game, "right")
-    if lc < rc:
-        return "left"
-    if rc < lc:
-        return "right"
-    if lc < TEAM_CAP:
-        return "left"
-    if rc < TEAM_CAP:
-        return "right"
+    if lc < rc: return "left"
+    if rc < lc: return "right"
+    if lc < TEAM_CAP: return "left"
+    if rc < TEAM_CAP: return "right"
     return None
 
 
-def spawn_for(team: str, slot: int):
+def spawn_for(team, slot):
     arr = LEFT_SPAWN if team == "left" else RIGHT_SPAWN
     return arr[min(slot, len(arr) - 1)]
 
 
-def reset_ball(game: HaxballGame):
+def reset_ball(game):
     game.ball.x = FIELD_HALF_WIDTH
     game.ball.y = FIELD_HALF_HEIGHT
     game.ball.vx = 0.0
     game.ball.vy = 0.0
 
 
-def reset_positions(game: HaxballGame):
+def reset_positions(game):
     for p in game.players.values():
         p.vx = p.vy = 0.0
         p.up = p.down = p.left = p.right = p.kick = False
+        p.ix = p.iy = 0.0
         p.kick_cd = 0.0
         x, y = spawn_for(p.team, p.slot)
         p.x = x
@@ -176,15 +168,22 @@ def reset_positions(game: HaxballGame):
 
 # ---------- ФИЗИКА ----------
 
-def update_player(player: Player, dt: float):
-    ax = ay = 0.0
-    if player.up:    ay -= ACCELERATION
-    if player.down:  ay += ACCELERATION
-    if player.left:  ax -= ACCELERATION
-    if player.right: ax += ACCELERATION
+def update_player(player, dt):
+    ix = player.ix
+    iy = player.iy
+    if ix == 0.0 and iy == 0.0:
+        if player.up: iy -= 1.0
+        if player.down: iy += 1.0
+        if player.left: ix -= 1.0
+        if player.right: ix += 1.0
 
-    player.vx += ax * dt
-    player.vy += ay * dt
+    mag = math.hypot(ix, iy)
+    if mag > 1.0:
+        ix /= mag
+        iy /= mag
+
+    player.vx += ix * ACCELERATION * dt
+    player.vy += iy * ACCELERATION * dt
 
     speed = math.hypot(player.vx, player.vy)
     if speed > MAX_SPEED:
@@ -192,7 +191,7 @@ def update_player(player: Player, dt: float):
         player.vx *= k
         player.vy *= k
 
-    if not (player.up or player.down or player.left or player.right):
+    if abs(ix) < 0.05 and abs(iy) < 0.05:
         k = FRICTION ** (dt * 60.0)
         player.vx *= k
         player.vy *= k
@@ -219,7 +218,7 @@ def update_player(player: Player, dt: float):
         player.kick_glow = max(0.0, player.kick_glow - dt)
 
 
-def update_ball(ball: Ball, dt: float):
+def update_ball(ball, dt):
     k = BALL_FRICTION ** (dt * 60.0)
     ball.vx *= k
     ball.vy *= k
@@ -242,7 +241,7 @@ def update_ball(ball: Ball, dt: float):
         ball.vy = -abs(ball.vy) * WALL_ELASTICITY
 
 
-def check_goal(ball: Ball) -> Optional[str]:
+def check_goal(ball):
     in_goal_y = GOAL_OFFSET_Y < ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
     if not in_goal_y:
         return None
@@ -253,7 +252,7 @@ def check_goal(ball: Ball) -> Optional[str]:
     return None
 
 
-def resolve_player_player(p1: Player, p2: Player):
+def resolve_player_player(p1, p2):
     dx = p2.x - p1.x
     dy = p2.y - p1.y
     dist = math.hypot(dx, dy)
@@ -263,12 +262,10 @@ def resolve_player_player(p1: Player, p2: Player):
     nx = dx / dist
     ny = dy / dist
     overlap = min_dist - dist
-    # Развести по позиции
     p1.x -= nx * overlap * 0.5
     p1.y -= ny * overlap * 0.5
     p2.x += nx * overlap * 0.5
     p2.y += ny * overlap * 0.5
-    # Разрешить скорости по нормали
     rvx = p2.vx - p1.vx
     rvy = p2.vy - p1.vy
     vel_n = rvx * nx + rvy * ny
@@ -282,7 +279,7 @@ def resolve_player_player(p1: Player, p2: Player):
     p2.vy += j * ny
 
 
-def resolve_player_ball(player: Player, ball: Ball):
+def resolve_player_ball(player, ball):
     dx = ball.x - player.x
     dy = ball.y - player.y
     dist = math.hypot(dx, dy)
@@ -292,14 +289,12 @@ def resolve_player_ball(player: Player, ball: Ball):
     nx = dx / dist
     ny = dy / dist
     overlap = min_dist - dist
-    # Мяч лёгкий, толкаем его сильнее
     ball.x += nx * overlap * 0.9
     ball.y += ny * overlap * 0.9
     player.x -= nx * overlap * 0.1
     player.y -= ny * overlap * 0.1
-    # Проверка удара
+
     if player.kick and player.kick_cd <= 0:
-        # К удару добавляем скорость игрока
         base_x = nx * KICK_FORCE + player.vx * KICK_BONUS_FROM_PLAYER_VEL
         base_y = ny * KICK_FORCE + player.vy * KICK_BONUS_FROM_PLAYER_VEL
         ball.vx = base_x
@@ -307,7 +302,7 @@ def resolve_player_ball(player: Player, ball: Ball):
         player.kick_cd = KICK_COOLDOWN
         player.kick_glow = 0.25
         return True
-    # Обычное упругое столкновение
+
     rvx = ball.vx - player.vx
     rvy = ball.vy - player.vy
     vel_n = rvx * nx + rvy * ny
@@ -323,22 +318,19 @@ def resolve_player_ball(player: Player, ball: Ball):
     return False
 
 
-def step_physics(game: HaxballGame, dt: float):
+def step_physics(game, dt):
     for p in game.players.values():
         update_player(p, dt)
-
     players = list(game.players.values())
     for i in range(len(players)):
         for j in range(i + 1, len(players)):
             resolve_player_player(players[i], players[j])
-
     update_ball(game.ball, dt)
-
     for p in players:
         resolve_player_ball(p, game.ball)
 
 
-def update_game_physics(game: HaxballGame, dt: float):
+def update_game_physics(game, dt):
     if game.phase != "battle":
         return
     for _ in range(SUBSTEPS):
@@ -358,7 +350,7 @@ def update_game_physics(game: HaxballGame, dt: float):
             game.pause_until = asyncio.get_event_loop().time() + GOAL_PAUSE
 
 
-async def _kick_from_old_game(user_id: int):
+async def _kick_from_old_game(user_id):
     old_code = player_games.get(user_id)
     if not old_code:
         return
@@ -377,7 +369,7 @@ async def _kick_from_old_game(user_id: int):
 
 # ---------- HTTP ----------
 
-async def handle_create(request: web.Request) -> web.Response:
+async def handle_create(request):
     try:
         data = await request.json()
     except Exception:
@@ -404,7 +396,7 @@ async def handle_create(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "code": code})
 
 
-async def handle_join(request: web.Request) -> web.Response:
+async def handle_join(request):
     try:
         data = await request.json()
     except Exception:
@@ -451,7 +443,7 @@ async def handle_join(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "code": code})
 
 
-async def handle_list(request: web.Request) -> web.Response:
+async def handle_list(request):
     items = []
     for code, game in games.items():
         if game.phase == "over":
@@ -465,7 +457,7 @@ async def handle_list(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "items": items})
 
 
-async def handle_websocket(request: web.Request) -> web.WebSocketResponse:
+async def handle_websocket(request):
     code = request.match_info.get("code")
     try:
         user_id = int(request.query.get("uid", "0"))
@@ -502,6 +494,11 @@ async def handle_websocket(request: web.Request) -> web.WebSocketResponse:
                 if not player:
                     continue
                 if data.get("action") == "move":
+                    try:
+                        player.ix = float(data.get("ix", 0.0))
+                        player.iy = float(data.get("iy", 0.0))
+                    except (TypeError, ValueError):
+                        player.ix = player.iy = 0.0
                     player.up = bool(data.get("up"))
                     player.down = bool(data.get("down"))
                     player.left = bool(data.get("left"))
@@ -566,7 +563,7 @@ async def haxball_watchdog():
             await asyncio.sleep(0.1)
 
 
-def register_haxball_routes(app: web.Application):
+def register_haxball_routes(app):
     app.router.add_post("/api/haxball/create", handle_create)
     app.router.add_post("/api/haxball/join", handle_join)
     app.router.add_get("/api/haxball/list", handle_list)
