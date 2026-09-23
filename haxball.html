@@ -53,6 +53,9 @@
   #kick-btn { position: absolute; width: 110px; height: 110px; right: 18px; bottom: 18px; border-radius: 50%; background: #dc4040; opacity: 0.55; z-index: 6; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 16px; letter-spacing: 1px; border: 3px solid rgba(255,255,255,0.4); }
   #kick-btn.active { opacity: 0.9; }
   #exit-btn { position: absolute; top: 8px; right: 8px; padding: 6px 12px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 8px; font-size: 12px; z-index: 7; }
+
+  .act-btn { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 14px 34px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.5); background: #2fa84f; color: #fff; font-size: 18px; font-weight: bold; letter-spacing: 1px; z-index: 8; display: none; }
+  #rematch-btn { background: #3a5fdc; }
 </style>
 </head>
 <body>
@@ -86,6 +89,25 @@
       <button data-v="180" class="active">3 мин</button>
       <button data-v="300">5 мин</button>
     </div>
+    <div class="row" style="margin-top:8px;"><label>Цвет поля</label></div>
+    <div class="seg" id="seg-color">
+      <button data-v="gray" class="active">Серый</button>
+      <button data-v="green">Зелёный</button>
+      <button data-v="blue">Синий</button>
+      <button data-v="dark">Тёмный</button>
+    </div>
+    <div class="row" style="margin-top:8px;"><label>Скорость игроков</label></div>
+    <div class="seg" id="seg-speed">
+      <button data-v="80">80%</button>
+      <button data-v="100" class="active">100%</button>
+      <button data-v="120">120%</button>
+    </div>
+    <div class="row" style="margin-top:8px;"><label>Отскок мяча</label></div>
+    <div class="seg" id="seg-bounce">
+      <button data-v="low">Низкий</button>
+      <button data-v="normal" class="active">Нормальный</button>
+      <button data-v="high">Высокий</button>
+    </div>
     <button class="big-btn btn-green" id="btn-create">СОЗДАТЬ ИГРУ</button>
   </div>
   <div class="box">
@@ -108,6 +130,8 @@
   <div id="joy-stick"></div>
   <div id="kick-btn">УДАР</div>
   <div id="exit-btn">ВЫЙТИ</div>
+  <div id="start-btn" class="act-btn">НАЧАТЬ</div>
+  <div id="rematch-btn" class="act-btn">РЕВАНШ</div>
 </div>
 
 <div id="toast"></div>
@@ -118,6 +142,7 @@
 
 var FIELD_W = 840, FIELD_H = 400;
 var GOAL_TOP = 150, GOAL_BOTTOM = 250, GOAL_DEPTH = 18;
+var CORNER_R = 40;
 var PLAYER_R = 15, BALL_R = 8;
 
 var PLAYER_SPEED = 220.0;
@@ -135,6 +160,15 @@ var RENDER_DELAY_MS = 100;      // можно 90-120
 var BUFFER_KEEP_MS = 500;       // снапшоты старше этого удаляются
 var SNAP_DIST_PLAYER = 150;     // если игрок "прыгнул" дальше — не интерполируем (телепорт после гола)
 var SNAP_DIST_BALL = 200;       // то же для мяча
+
+var GO_SHOW_MS = 900;
+
+var FIELD_COLORS = {
+  gray: "#5a5a5a",
+  green: "#36793b",
+  blue: "#2c5b8f",
+  dark: "#1f2226"
+};
 
 function genUid() {
   var s = "";
@@ -170,6 +204,8 @@ var inName = document.getElementById("in-name");
 var inGameName = document.getElementById("in-gamename");
 var inCode = document.getElementById("in-code");
 var listItemsEl = document.getElementById("list-items");
+var startBtn = document.getElementById("start-btn");
+var rematchBtn = document.getElementById("rematch-btn");
 
 inName.value = MY_NAME;
 inName.addEventListener("input", function () {
@@ -178,21 +214,26 @@ inName.addEventListener("input", function () {
 });
 
 var cfgMaxPlayers = 4, cfgWinScore = 5, cfgMatchTime = 180;
+var cfgFieldColor = "gray", cfgSpeed = 100, cfgBounce = "normal";
 
-function setupSeg(id, onPick) {
+function setupSeg(id, onPick, asString) {
   var el = document.getElementById(id);
   var btns = el.querySelectorAll("button");
   for (var i = 0; i < btns.length; i++) {
     btns[i].addEventListener("click", function (ev) {
       for (var j = 0; j < btns.length; j++) btns[j].classList.remove("active");
       ev.target.classList.add("active");
-      onPick(parseInt(ev.target.getAttribute("data-v"), 10));
+      var raw = ev.target.getAttribute("data-v");
+      onPick(asString ? raw : parseInt(raw, 10));
     });
   }
 }
 setupSeg("seg-players", function (v) { cfgMaxPlayers = v; });
 setupSeg("seg-score", function (v) { cfgWinScore = v; });
 setupSeg("seg-time", function (v) { cfgMatchTime = v; });
+setupSeg("seg-color", function (v) { cfgFieldColor = v; }, true);
+setupSeg("seg-speed", function (v) { cfgSpeed = v; });
+setupSeg("seg-bounce", function (v) { cfgBounce = v; }, true);
 
 function postJson(url, body) {
   return fetch(url, {
@@ -206,7 +247,8 @@ document.getElementById("btn-create").addEventListener("click", function () {
   var gname = inGameName.value.trim() || (MY_NAME + " игра");
   postJson("/api/haxball/create", {
     user_id: MY_UID, user_name: MY_NAME, game_name: gname,
-    max_players: cfgMaxPlayers, win_score: cfgWinScore, match_time: cfgMatchTime
+    max_players: cfgMaxPlayers, win_score: cfgWinScore, match_time: cfgMatchTime,
+    field_color: cfgFieldColor, player_speed: cfgSpeed, ball_bounce: cfgBounce
   }).then(function (res) {
     if (res.ok) enterGame(res.code);
     else showToast("Не удалось создать игру");
@@ -283,6 +325,11 @@ var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2 };
 // Буфер снапшотов: [{ t, players, ball }, ...]
 var snapshotBuffer = [];
 
+// Обратный отсчёт: локальное сглаживание между снапшотами
+var cdBase = 0, cdBaseT = 0;
+var prevPhase = null;
+var goUntil = 0;
+
 var joyActive = false;
 var joyDX = 0, joyDY = 0;
 var kickPressed = false;
@@ -295,6 +342,22 @@ function clampPlayerPos(x, y) {
   var inMouth = y >= (GOAL_TOP + 2) && y <= (GOAL_BOTTOM - 2);
   if (inMouth) x = clamp(x, -GOAL_DEPTH + 2, FIELD_W + GOAL_DEPTH - 2);
   else x = clamp(x, PLAYER_R, FIELD_W - PLAYER_R);
+
+  // скруглённые углы поля
+  var cx = null, cy = null;
+  if (x < CORNER_R) cx = CORNER_R;
+  else if (x > FIELD_W - CORNER_R) cx = FIELD_W - CORNER_R;
+  if (y < CORNER_R) cy = CORNER_R;
+  else if (y > FIELD_H - CORNER_R) cy = FIELD_H - CORNER_R;
+  if (cx !== null && cy !== null) {
+    var dx = x - cx, dy = y - cy;
+    var d = Math.hypot(dx, dy);
+    var lim = CORNER_R - PLAYER_R;
+    if (d > lim && d > 0) {
+      x = cx + dx / d * lim;
+      y = cy + dy / d * lim;
+    }
+  }
   return [x, y];
 }
 
@@ -302,6 +365,10 @@ function enterGame(code) {
   roomCode = code;
   snapshotBuffer = [];
   remoteRender = {};
+  prevPhase = null;
+  goUntil = 0;
+  cdBase = 0;
+  hideActionButtons();
   elMenu.style.display = "none";
   elGame.style.display = "block";
   resizeGame();
@@ -316,6 +383,9 @@ function leaveGame(silent) {
   serverState = null;
   remoteRender = {};
   snapshotBuffer = [];
+  prevPhase = null;
+  goUntil = 0;
+  hideActionButtons();
   elGame.style.display = "none";
   elMenu.style.display = "block";
   refreshList();
@@ -330,6 +400,42 @@ function pushSnapshot(state) {
   }
 }
 
+function hideActionButtons() {
+  startBtn.style.display = "none";
+  rematchBtn.style.display = "none";
+}
+
+function updateButtons(st) {
+  var isHost = !!st && st.host_id === MY_UID;
+  var canStart = isHost && st.phase === "waiting" && st.players.length >= 2;
+  var canRematch = isHost && st.phase === "over";
+  startBtn.style.display = canStart ? "block" : "none";
+  rematchBtn.style.display = canRematch ? "block" : "none";
+}
+
+startBtn.addEventListener("click", function () {
+  if (!roomCode) return;
+  postJson("/api/haxball/start", { code: roomCode, user_id: MY_UID })
+    .then(function (res) {
+      if (res.ok) return;
+      var msg = "Не удалось начать";
+      if (res.error === "not_enough_players") msg = "Нужно минимум 2 игрока";
+      else if (res.error === "not_host") msg = "Начать может только хост";
+      showToast(msg);
+    }).catch(function () { showToast("Ошибка сети"); });
+});
+
+rematchBtn.addEventListener("click", function () {
+  if (!roomCode) return;
+  postJson("/api/haxball/restart", { code: roomCode, user_id: MY_UID })
+    .then(function (res) {
+      if (res.ok) return;
+      var msg = "Не удалось запустить реванш";
+      if (res.error === "not_host") msg = "Реванш запускает только хост";
+      showToast(msg);
+    }).catch(function () { showToast("Ошибка сети"); });
+});
+
 function connectWs(code) {
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
   var url = proto + "//" + location.host + "/ws/haxball/" + code + "?uid=" + encodeURIComponent(MY_UID);
@@ -340,9 +446,19 @@ function connectWs(code) {
     var data;
     try { data = JSON.parse(ev.data); } catch (e) { return; }
     if (data.type === "state") {
-      serverState = data.state;
+      var st = data.state;
+      if (st.phase === "countdown") {
+        cdBase = st.countdown_left || 0;
+        cdBaseT = performance.now();
+      }
+      if (prevPhase === "countdown" && st.phase === "battle") {
+        goUntil = performance.now() + GO_SHOW_MS;
+      }
+      prevPhase = st.phase;
+      serverState = st;
       syncSelfFromServer();
-      pushSnapshot(data.state);
+      pushSnapshot(st);
+      updateButtons(st);
     } else if (data.type === "error") {
       showToast("Комната недоступна");
       leaveGame(true);
@@ -508,8 +624,9 @@ window.addEventListener("touchcancel", kickEndHandler, { passive: false });
 
 function stepLocalSelf(dt) {
   if (!serverState || serverState.phase !== "battle") return;
-  var desiredVx = joyDX * PLAYER_SPEED;
-  var desiredVy = joyDY * PLAYER_SPEED;
+  var speedK = (serverState.player_speed || 100) / 100;
+  var desiredVx = joyDX * PLAYER_SPEED * speedK;
+  var desiredVy = joyDY * PLAYER_SPEED * speedK;
   var accel = 1 - Math.exp(-PLAYER_ACCEL * dt);
   localSelf.vx += (desiredVx - localSelf.vx) * accel;
   localSelf.vy += (desiredVy - localSelf.vy) * accel;
@@ -657,15 +774,38 @@ function fieldToScreen(cw, ch) {
   return { scale: scale, offX: offX, offY: offY };
 }
 
-function drawField(cw, ch) {
+// Путь прямоугольника со скруглёнными углами (через arc, без ctx.roundRect)
+function roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+  ctx.lineTo(x + r, y + h);
+  ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+  ctx.lineTo(x, y + r);
+  ctx.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+  ctx.closePath();
+}
+
+function drawField(cw, ch, state) {
   var m = fieldToScreen(cw, ch);
   var s = m.scale, ox = m.offX, oy = m.offY;
+
+  var colorKey = state && state.field_color ? state.field_color : "gray";
+  var baseColor = FIELD_COLORS[colorKey] || FIELD_COLORS.gray;
 
   ctx.fillStyle = "#111";
   ctx.fillRect(0, 0, cw, ch);
 
-  ctx.fillStyle = "#5a5a5a";
-  ctx.fillRect(ox, oy, FIELD_W * s, FIELD_H * s);
+  // поле со скруглёнными углами; всё содержимое обрезается по этому контуру
+  roundRectPath(ox, oy, FIELD_W * s, FIELD_H * s, CORNER_R * s);
+  ctx.fillStyle = baseColor;
+  ctx.fill();
+
+  ctx.save();
+  ctx.clip();
 
   ctx.fillStyle = "rgba(0,0,0,0.06)";
   var sections = 8;
@@ -675,7 +815,6 @@ function drawField(cw, ch) {
 
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
-  ctx.strokeRect(ox, oy, FIELD_W * s, FIELD_H * s);
 
   ctx.beginPath();
   ctx.moveTo(ox + FIELD_W * s / 2, oy);
@@ -699,6 +838,14 @@ function drawField(cw, ch) {
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(ox + 770 * s, oy + FIELD_H * s / 2, 90 * s, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // контур поля со скруглёнными углами
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  roundRectPath(ox, oy, FIELD_W * s, FIELD_H * s, CORNER_R * s);
   ctx.stroke();
 
   ctx.fillStyle = "#333333";
@@ -773,7 +920,10 @@ function fmtTime(t) {
 }
 
 function phaseLabel(state) {
-  if (state.phase === "waiting") return "ЖДЁМ ИГРОКОВ";
+  if (state.phase === "waiting") {
+    if (state.players.length < 2) return "ЖДЁМ ИГРОКОВ";
+    return state.host_id === MY_UID ? "НАЖМИТЕ НАЧАТЬ" : "ЖДЁМ НАЧАЛА";
+  }
   if (state.phase === "goal_pause") return "ГОЛ!";
   if (state.phase === "over") {
     if (state.winner === "draw") return "НИЧЬЯ";
@@ -811,11 +961,57 @@ function drawHud(cw, ch, state) {
   }
 }
 
+// Крупный обратный отсчёт 5..1 и надпись GO! по центру поля
+function drawCountdown(cw, ch, m, state) {
+  var now = performance.now();
+  var cx = cw / 2;
+  var cy = m.offY + FIELD_H * m.scale / 2;
+  var base = Math.min(cw, ch);
+
+  if (state.phase === "countdown") {
+    var left = cdBase - (now - cdBaseT) / 1000;
+    if (left < 0) left = 0;
+    var digit = Math.ceil(left);
+    if (digit < 1) digit = 1;
+    if (digit > 5) digit = 5;
+    var frac = digit - left;
+    if (frac < 0) frac = 0;
+    if (frac > 1) frac = 1;
+    var size = base * 0.42 * (1.1 - 0.25 * frac);
+
+    ctx.save();
+    ctx.globalAlpha = 1 - 0.6 * frac;
+    ctx.font = "bold " + Math.round(size) + "px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.7)";
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = "#e8e000";
+    ctx.fillText(String(digit), cx, cy);
+    ctx.restore();
+    return;
+  }
+
+  if (now < goUntil) {
+    var k = (goUntil - now) / GO_SHOW_MS;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, k * 1.5);
+    ctx.font = "bold " + Math.round(base * 0.3) + "px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.7)";
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = "#2fe06a";
+    ctx.fillText("GO!", cx, cy);
+    ctx.restore();
+  }
+}
+
 function render() {
   var cw = isRotated ? vh : vw;
   var ch = isRotated ? vw : vh;
 
-  drawField(cw, ch);
+  drawField(cw, ch, serverState);
   var m = fieldToScreen(cw, ch);
 
   if (serverState) {
@@ -830,6 +1026,7 @@ function render() {
     if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow);
     drawBall(m, ballRender.x, ballRender.y);
     drawHud(cw, ch, serverState);
+    drawCountdown(cw, ch, m, serverState);
   } else {
     ctx.fillStyle = "#fff";
     ctx.font = "16px sans-serif";
