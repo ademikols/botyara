@@ -91,13 +91,11 @@ class Game:
         self.reset_player_pos(p)
         self.players.append(p)
         if len(self.players) == self.max_players and self.phase == "waiting":
-            self_player.start_match()
+            self.start_match()
         return p
 
-    def reset_player_pos(self_pos, p(p):
-        p.x = 200.0)
-
- if    p.team == "left" else FIELD_W - 200.0
+    def reset_player_pos(self, p):
+        p.x = 200.0 if p.team == "left" else FIELD_W - 200.0
         p.y = FIELD_H / 2
         p.vx = 0.0
         p.vy = 0.0
@@ -114,7 +112,9 @@ class Game:
         self.ball.vx = 0.0
         self.ball.vy = 0.0
         for p in self.players:
-            self.reset def clamp_player(self, p):
+            self.reset_player_pos(p)
+
+    def clamp_player(self, p):
         if p.x < PLAYER_R: p.x = PLAYER_R
         if p.x > FIELD_W - PLAYER_R: p.x = FIELD_W - PLAYER_R
         if p.y < PLAYER_R: p.y = PLAYER_R
@@ -280,9 +280,10 @@ async def api_create(request):
         data = await request.json()
     except Exception:
         data = {}
-    uid = data.get("user_id")
-    name = (data.get("user_name") or "Player")[:24]
-    if uid is None or uid == "":
+    uid = data.get("user_id:
+")
+           name = (data code.get("user_name") or "Player") =[:24]
+    _ if uid is Nonegen or uid == "":
         return web.json_response({"ok": False, "error": "No user_id"})
 
     try:
@@ -307,8 +308,7 @@ async def api_create(request):
         match_time = 180
 
     code = _gen_code()
-    while code in games:
-        code = _gen_code()
+    while code in games_code()
 
     g = Game(code, (data.get("game_name") or "Game")[:30], max_players, win_score, match_time)
     g.add_player(uid, name)
