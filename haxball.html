@@ -1,759 +1,457 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Haxball</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
-  html,body{height:100%;overflow:hidden;overscroll-behavior:none}
-  body{background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif}
-  .top{padding:14px 16px;border-bottom:1px solid #1a1a1a;text-align:center}
-  .top h1{font-size:13px;letter-spacing:4px;font-weight:700;text-transform:uppercase}
-  .screen{display:none;padding:20px;overflow-y:auto;height:calc(100vh - 46px)}
-  .screen.active{display:block}
-  .btn{width:100%;padding:16px;background:#fff;color:#000;border:1px solid #fff;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;margin-bottom:10px;border-radius:8px}
-  .btn:active{transform:scale(.98)}
-  .btn.ghost{background:transparent;color:#fff}
-  .btn.sm{padding:11px;font-size:11px;letter-spacing:1px}
-  .field{margin-bottom:14px}
-  .field label{display:block;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#777;margin-bottom:7px}
-  .field input,.field select{width:100%;padding:15px;background:#0d0d0d;border:1px solid #222;color:#fff;font-family:inherit;font-size:15px;outline:none;border-radius:6px}
-  .field input:focus,.field select:focus{border-color:#fff}
-  .field input.code{font-family:'SF Mono',monospace;font-size:26px;text-align:center;letter-spacing:8px;font-weight:700;padding-left:26px}
-  .msg{text-align:center;padding:14px;font-size:13px;letter-spacing:1px;color:#888;line-height:1.5}
-  .big{text-align:center;padding:8px;font-size:15px;font-weight:700;letter-spacing:2px}
-  .divider{height:1px;background:#1a1a1a;margin:16px 0}
-  .back-btn{background:transparent;border:none;color:#666;font-size:12px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:8px}
-  .back-btn:active{color:#fff}
-  .lobby-card{border:1px solid #222;background:#0d0d0d;padding:12px;margin-bottom:8px;border-radius:8px;cursor:pointer}
-  .lobby-card:active{border-color:#fff}
-  .lobby-card .title{font-size:14px;font-weight:700;margin-bottom:4px}
-  .lobby-card .meta{font-size:11px;color:#888}
-  .row2{display:flex;gap:10px}
-  .row2 > *{flex:1}
-
-  #s-game{position:fixed;top:0;left:0;background:#000;overflow:hidden;touch-action:none;display:none;transform-origin:center center}
-  #s-game.active{display:block}
-  .canvas-wrap{position:absolute;inset:0}
-  #hb-canvas{width:100%;height:100%;display:block;touch-action:none}
-
-  .game-top{position:absolute;top:0;left:0;right:0;z-index:10;padding:4px 14px 14px;
-    background:linear-gradient(to bottom,rgba(0,0,0,0.7),rgba(0,0,0,0.2) 60%,transparent);
-    pointer-events:none;text-align:center}
-  .score-row{display:flex;align-items:center;justify-content:center;gap:14px;font-size:22px;font-weight:900;font-family:'SF Mono',monospace;line-height:1.1}
-  .score-left{color:#4a8cff}
-  .score-right{color:#ff5555}
-  .score-sep{color:#555}
-  .meta-row{font-size:10px;color:#ccc;letter-spacing:1px;padding-top:1px}
-  .meta-row b{color:#fff}
-  .phase-info{font-size:11px;color:#ddd;letter-spacing:1px;padding-top:1px;min-height:14px}
-  .phase-info.win{color:#44ff88;font-weight:700}
-  .phase-info.lose{color:#ff4444;font-weight:700}
-
-  #joy{position:absolute;width:130px;height:130px;border-radius:50%;
-    background:radial-gradient(circle at 50% 40%,rgba(50,50,50,0.5),rgba(10,10,10,0.7));
-    border:2px solid rgba(255,255,255,0.18);
-    pointer-events:none;z-index:20;display:none;
-    transform:translate(-50%,-50%)}
-  #joy.on{display:block}
-  #joyStick{position:absolute;width:60px;height:60px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#fff,#c8c8c8);
-    border:2px solid rgba(0,0,0,0.8);top:50%;left:50%;transform:translate(-50%,-50%);
-    pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.6)}
-
-  #joyZone{position:absolute;left:0;top:0;bottom:0;width:50%;z-index:15;touch-action:none}
-
-  #hbKick{position:absolute;right:24px;bottom:24px;z-index:20;
-    width:110px;height:110px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#ff8888,#ff4040);
-    color:#fff;border:2px solid rgba(255,255,255,0.3);font-family:inherit;font-weight:900;font-size:13px;
-    letter-spacing:2px;text-transform:uppercase;cursor:pointer;touch-action:none;
-    box-shadow:0 6px 20px rgba(255,64,64,0.35);
-    text-shadow:0 1px 2px rgba(0,0,0,0.5);
-    opacity:0.55;
-    transition:transform .06s,opacity .08s}
-  #hbKick:active{transform:scale(0.94);opacity:0.9}
-
-  .game-bottom{position:absolute;top:8px;right:10px;z-index:11}
-  .game-bottom .btn{padding:6px 12px;font-size:10px;width:auto;margin:0;letter-spacing:1px;border-radius:6px;background:rgba(0,0,0,0.5);border-color:rgba(255,255,255,0.25)}
-
-  .net-status{position:absolute;top:8px;left:10px;z-index:11;font-size:9px;color:#888;letter-spacing:1px;
-    display:flex;align-items:center;gap:5px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,0.5)}
-  .net-status .dot{width:6px;height:6px;border-radius:50%;background:#ff4444}
-  .net-status .dot.on{background:#44ff88}
-</style>
-</head>
-<body>
-
-<div class="top"><h1>⚽ HAXBALL</h1></div>
-
-<div id="s-menu" class="screen active">
-  <button class="back-btn" onclick="location.href='/app.html'">← К ИГРАМ</button>
-  <div class="field"><label>Ваше имя</label><input id="hbName" type="text" placeholder="Игрок" maxlength="20"></div>
-  <div class="divider"></div>
-  <div class="big" style="margin-bottom:10px">СОЗДАТЬ ИГРУ</div>
-  <div class="field"><label>Название комнаты</label><input id="hbRoomName" type="text" placeholder="Комната" maxlength="30"></div>
-  <div class="row2">
-    <div class="field">
-      <label>Игроков</label>
-      <select id="hbMaxPlayers">
-        <option value="2">1 на 1</option>
-        <option value="4">2 на 2</option>
-        <option value="6" selected>3 на 3</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Голов до</label>
-      <select id="hbWinScore">
-        <option value="3">3</option>
-        <option value="5" selected>5</option>
-        <option value="7">7</option>
-        <option value="10">10</option>
-      </select>
-    </div>
-  </div>
-  <div class="field">
-    <label>Время матча</label>
-    <select id="hbMatchTime">
-      <option value="60">1 мин</option>
-      <option value="120">2 мин</option>
-      <option value="180" selected>3 мин</option>
-      <option value="300">5 мин</option>
-    </select>
-  </div>
-  <button class="btn" onclick="hbCreate()">СОЗДАТЬ</button>
-  <div class="divider"></div>
-  <div class="big" style="margin-bottom:10px">ВОЙТИ ПО КОДУ</div>
-  <div class="field"><label>Код комнаты</label><input id="hbJoinCode" type="tel" inputmode="numeric" maxlength="6" class="code" placeholder="000000"></div>
-  <button class="btn ghost" onclick="hbJoinByCode()">ВОЙТИ</button>
-  <div class="divider"></div>
-  <div class="big" style="margin-bottom:10px">ОТКРЫТЫЕ ИГРЫ</div>
-  <div id="hbLobbyList"><div class="msg">Загрузка...</div></div>
-  <button class="btn ghost" onclick="hbLoadLobbies()">🔄 ОБНОВИТЬ</button>
-</div>
-
-<div id="s-game">
-  <div class="net-status"><span class="dot" id="hbDot"></span><span id="hbStatus">...</span></div>
-  <div class="game-bottom"><button class="btn sm ghost" onclick="hbLeave()">ВЫЙТИ</button></div>
-
-  <div class="canvas-wrap"><canvas id="hb-canvas" width="840" height="400"></canvas></div>
-
-  <div id="joyZone"></div>
-  <div id="joy"><div id="joyStick"></div></div>
-  <button id="hbKick">УДАР</button>
-
-  <div class="game-top">
-    <div class="score-row">
-      <span class="score-left" id="hbScoreL">0</span>
-      <span class="score-sep">:</span>
-      <span class="score-right" id="hbScoreR">0</span>
-    </div>
-    <div class="meta-row">⏱ <b id="hbTimer">180</b> · КОД <b id="hbCodeTag">------</b> · <b id="hbMyTeam">—</b></div>
-    <div class="phase-info" id="hbPhase">Ожидание...</div>
-  </div>
-</div>
-
-<script>
-const tg = window.Telegram?.WebApp;
-tg?.ready(); tg?.expand();
-if (tg?.disableVerticalSwipes) tg.disableVerticalSwipes();
-
-const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
-let USERNAME = tg?.initDataUnsafe?.user?.first_name || ('guest' + String(USER_ID).slice(-4));
-document.getElementById('hbName').value = USERNAME;
-
-const FIELD_W = 840, FIELD_H = 400;
-const PLAYER_R = 15, BALL_R = 8;
-const GOAL_H = 100, GOAL_Y = (FIELD_H - GOAL_H) / 2;
-const MAX_SPEED = 260.0;
-const FRICTION = 0.82;
-const WALL_E = 0.85;
-const KICK_COOLDOWN = 0.28;
-const TICK_DT = 1.0 / 60.0;
-
-function hbApplyOrientation(){
-  const el = document.getElementById('s-game');
-  if (!el) return;
-  const vw = window.innerWidth, vh = window.innerHeight;
-  if (vw < vh){
-    el.style.width  = vh + 'px';
-    el.style.height = vw + 'px';
-    el.style.transform = `translate(${(vw - vh) / 2}px, ${(vh - vw) / 2}px) rotate(90deg)`;
-  } else {
-    el.style.width  = vw + 'px';
-    el.style.height = vh + 'px';
-    el.style.transform = 'none';
-  }
-}
-window.addEventListener('resize', hbApplyOrientation);
-window.addEventListener('orientationchange', () => setTimeout(hbApplyOrientation, 150));
-
-const HB = {
-  code: null, ws: null,
-  prevState: null, nextState: null,
-  prevTs: 0, nextTs: 0,
-  me: {x: 0, y: 0, vx: 0, vy: 0, kick_cd: 0, kick_glow: 0},
-  myTeam: null, mySlot: 0,
-  ballRender: {x: FIELD_W/2, y: FIELD_H/2},
-  othersRender: [],
-  predInit: false,
-  input: {ix: 0, iy: 0, kick: false},
-  canvas: null, ctx: null, raf: null,
-  lastSendTs: 0,
-  tickAcc: 0,
-  lastLoopTs: 0,
-  joyId: null, joyCx: 0, joyCy: 0
-};
-
-function hbGo(id){
-  document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
-  document.getElementById('s-'+id).classList.add('active');
-  if (id === 'game') hbApplyOrientation();
-}
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-async function hbCreate(){
-  const name = document.getElementById('hbName').value.trim() || USERNAME;
-  const roomName = document.getElementById('hbRoomName').value.trim() || 'Haxball';
-  const max_players = parseInt(document.getElementById('hbMaxPlayers').value, 10);
-  const win_score = parseInt(document.getElementById('hbWinScore').value, 10);
-  const match_time = parseInt(document.getElementById('hbMatchTime').value, 10);
-  USERNAME = name;
-  try {
-    const r = await fetch('/api/haxball/create', {method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({user_id: USER_ID, user_name: name, game_name: roomName, max_players, win_score, match_time})});
-    const d = await r.json();
-    if (!d.ok) { tg?.showAlert?.(d.error || 'Ошибка'); return; }
-    HB.code = d.code; hbStartGame();
-  } catch(e) { tg?.showAlert?.(e.message); }
-}
-async function hbJoinByCode(){
-  const name = document.getElementById('hbName').value.trim() || USERNAME;
-  const code = document.getElementById('hbJoinCode').value.trim();
-  if (code.length !== 6) { tg?.showAlert?.('Код из 6 цифр'); return; }
-  USERNAME = name;
-  try {
-    const r = await fetch('/api/haxball/join', {method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({code, user_id: USER_ID, user_name: name})});
-    const d = await r.json();
-    if (!d.ok) { tg?.showAlert?.(d.error || 'Ошибка'); return; }
-    HB.code = d.code || code; hbStartGame();
-  } catch(e) { tg?.showAlert?.(e.message); }
-}
-async function hbJoinLobby(code){
-  const name = document.getElementById('hbName').value.trim() || USERNAME;
-  USERNAME = name;
-  try {
-    const r = await fetch('/api/haxball/join', {method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({code, user_id: USER_ID, user_name: name})});
-    const d = await r.json();
-    if (!d.ok) { tg?.showAlert?.(d.error || 'Ошибка'); return; }
-    HB.code = d.code || code; hbStartGame();
-  } catch(e) { tg?.showAlert?.(e.message); }
-}
-async function hbLoadLobbies(){
-  const box = document.getElementById('hbLobbyList');
-  box.innerHTML = '<div class="msg">Загрузка...</div>';
-  try {
-    const r = await fetch('/api/haxball/list');
-    const d = await r.json();
-    if (!d.ok || !d.items || !d.items.length) {
-      box.innerHTML = '<div class="msg">Открытых игр пока нет<br>Создай свою или войди по коду</div>'; return;
-    }
-    box.innerHTML = d.items.map(it => `
-      <div class="lobby-card" onclick="hbJoinLobby('${it.code}')">
-        <div class="title">${escapeHtml(it.name)}</div>
-        <div class="meta">${it.players}/${it.max} · хост: ${escapeHtml(it.host)}</div>
-      </div>`).join('');
-  } catch(e) { box.innerHTML = '<div class="msg">Ошибка: ' + escapeHtml(e.message) + '</div>'; }
-}
-
-function hbStartGame(){
-  hbGo('game');
-  document.getElementById('hbCodeTag').textContent = HB.code;
-  hbApplyOrientation();
-  hbInitInput();
-  hbConnect();
-
-  HB.predInit = false;
-  HB.tickAcc = 0;
-  HB.lastLoopTs = performance.now();
-  if (!HB.raf) HB.raf = requestAnimationFrame(hbLoop);
-}
-function hbConnect(){
-  if (HB.ws) { try { HB.ws.close(); } catch(e){} }
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  HB.ws = new WebSocket(`${proto}://${location.host}/ws/haxball/${HB.code}?uid=${USER_ID}`);
-  HB.ws.onopen = () => hbDot(true);
-  HB.ws.onclose = () => hbDot(false);
-  HB.ws.onerror = () => hbDot(false);
-  HB.ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'state') hbOnServerState(msg.state);
-    } catch(err) {}
-  };
-}
-function hbDot(on){
-  document.getElementById('hbDot').classList.toggle('on', on);
-  document.getElementById('hbStatus').textContent = on ? 'В СЕТИ' : 'ОФФЛАЙН';
-}
-function hbLeave(){
-  if (HB.ws) { try { HB.ws.close(); } catch(e){} }
-  if (HB.raf) { cancelAnimationFrame(HB.raf); HB.raf = null; }
-  HB.code = null; HB.prevState = null; HB.nextState = null; HB.ws = null;
-  HB.predInit = false;
-  hbGo('menu'); hbLoadLobbies();
-}
-
-function hbOnServerState(s){
-  const now = performance.now();
-  if (!HB.nextState){
-    HB.prevState = s; HB.nextState = s;
-    HB.prevTs = now; HB.nextTs = now + 33;
-  } else {
-    HB.prevState = HB.nextState; HB.prevTs = HB.nextTs;
-    HB.nextState = s; HB.nextTs = now;
-  }
-
-  const sMe = (s.players || []).find(p => p.user_id === USER_ID);
-  if (sMe) { HB.mySlot = sMe.slot || 0; }
-
-  if (!HB.predInit){
-    if (sMe){ HB.me.x = sMe.x; HB.me.y = sMe.y; HB.me.vx = 0; HB.me.vy = 0; }
-    HB.ballRender.x = s.ball.x;
-    HB.ballRender.y = s.ball.y;
-    HB.predInit = true;
-  } else if (sMe) {
-    const mdx = sMe.x - HB.me.x;
-    const mdy = sMe.y - HB.me.y;
-    const mErr = Math.hypot(mdx, mdy);
-    if (mErr > 100){
-      HB.me.x = sMe.x; HB.me.y = sMe.y;
-      HB.me.vx = sMe.vx || 0; HB.me.vy = sMe.vy || 0;
-    } else if (mErr > 3){
-      HB.me.x += mdx * 0.05;
-      HB.me.y += mdy * 0.05;
-    }
-  }
-  HB.myTeam = s.my_side;
-}
-
-function hbInitInput(){
-  HB.canvas = document.getElementById('hb-canvas');
-  HB.ctx = HB.canvas.getContext('2d');
-
-  document.addEventListener('keydown', hbKeyDown);
-  document.addEventListener('keyup', hbKeyUp);
-
-  const zone = document.getElementById('joyZone');
-  const joy = document.getElementById('joy');
-  const stick = document.getElementById('joyStick');
-
-  function toLocal(clientX, clientY){
-    const el = document.getElementById('s-game');
-    const rect = el.getBoundingClientRect();
-    const isRot = el.style.transform && el.style.transform.includes('rotate');
-    if (isRot) return { x: clientY - rect.top, y: rect.right - clientX };
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  }
-
-  function startJoy(cx, cy){
-    HB.joyCx = cx; HB.joyCy = cy;
-    joy.style.left = cx + 'px';
-    joy.style.top  = cy + 'px';
-    joy.classList.add('on');
-    stick.style.transform = 'translate(-50%,-50%)';
-  }
-
-  function applyJoy(clientX, clientY){
-    const p = toLocal(clientX, clientY);
-    let dx = p.x - HB.joyCx;
-    let dy = p.y - HB.joyCy;
-    const dist = Math.hypot(dx, dy);
-    const maxR = 65;
-    if (dist > maxR){ dx = dx / dist * maxR; dy = dy / dist * maxR; }
-    stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-
-    const speedR = 45;
-    let nx = dx / speedR, ny = dy / speedR;
-    const mag = Math.hypot(nx, ny);
-    if (mag > 1){ nx /= mag; ny /= mag; }
-    if (Math.hypot(nx, ny) < 0.08){
-      HB.input.ix = 0; HB.input.iy = 0;
-    } else {
-      HB.input.ix = nx; HB.input.iy = ny;
-    }
-  }
-
-  function endJoy(){
-    HB.joyId = null;
-    joy.classList.remove('on');
-    HB.input.ix = 0; HB.input.iy = 0;
-    stick.style.transform = 'translate(-50%,-50%)';
-  }
-
-  zone.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    const t = e.changedTouches[0];
-    HB.joyId = t.identifier;
-    const p = toLocal(t.clientX, t.clientY);
-    startJoy(p.x, p.y);
-    applyJoy(t.clientX, t.clientY);
-  }, {passive:false});
-
-  window.addEventListener('touchmove', (e) => {
-    if (HB.joyId === null) return;
-    for (const t of e.changedTouches){
-      if (t.identifier === HB.joyId){
-        e.preventDefault();
-        applyJoy(t.clientX, t.clientY);
-        break;
-      }
-    }
-  }, {passive:false});
-
-  window.addEventListener('touchend', (e) => {
-    if (HB.joyId === null) return;
-    for (const t of e.changedTouches){
-      if (t.identifier === HB.joyId){ endJoy(); break; }
-    }
-  }, {passive:false});
-
-  window.addEventListener('touchcancel', (e) => {
-    if (HB.joyId === null) return;
-    for (const t of e.changedTouches){
-      if (t.identifier === HB.joyId){ endJoy(); break; }
-    }
-  }, {passive:false});
-
-  const kick = document.getElementById('hbKick');
-  kick.addEventListener('touchstart', (e) => { e.preventDefault(); HB.input.kick = true; }, {passive:false});
-  kick.addEventListener('touchend',   (e) => { e.preventDefault(); HB.input.kick = false; }, {passive:false});
-  kick.addEventListener('touchcancel',() => { HB.input.kick = false; });
-  kick.addEventListener('mousedown',  () => { HB.input.kick = true; });
-  kick.addEventListener('mouseup',    () => { HB.input.kick = false; });
-  kick.addEventListener('mouseleave', () => { HB.input.kick = false; });
-}
-
-function hbKeyDown(e){
-  if (e.repeat) return;
-  const k = e.key;
-  if (k==='ArrowUp'||k==='w'||k==='W'||k==='ц'||k==='Ц') HB.input.iy = -1;
-  if (k==='ArrowDown'||k==='s'||k==='S'||k==='ы'||k==='Ы') HB.input.iy = 1;
-  if (k==='ArrowLeft'||k==='a'||k==='A'||k==='ф'||k==='Ф') HB.input.ix = -1;
-  if (k==='ArrowRight'||k==='d'||k==='D'||k==='в'||k==='В') HB.input.ix = 1;
-  if (k===' ') { HB.input.kick = true; e.preventDefault(); }
-}
-function hbKeyUp(e){
-  const k = e.key;
-  if (k==='ArrowUp'||k==='w'||k==='W'||k==='ц'||k==='Ц') HB.input.iy = 0;
-  if (k==='ArrowDown'||k==='s'||k==='S'||k==='ы'||k==='Ы') HB.input.iy = 0;
-  if (k==='ArrowLeft'||k==='a'||k==='A'||k==='ф'||k==='Ф') HB.input.ix = 0;
-  if (k==='ArrowRight'||k==='d'||k==='D'||k==='в'||k==='В') HB.input.ix = 0;
-  if (k===' ') HB.input.kick = false;
-}
-
-function hbLoop(){
-  const now = performance.now();
-  let elapsed = (now - HB.lastLoopTs) / 1000;
-  HB.lastLoopTs = now;
-  if (elapsed > 0.1) elapsed = 0.1;
-
-  if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 40){
-    HB.lastSendTs = now;
-    HB.ws.send(JSON.stringify({
-      action:'move',
-      x: HB.me.x, y: HB.me.y,
-      vx: HB.me.vx, vy: HB.me.vy,
-      kick: HB.input.kick
-    }));
-  }
-
-  HB.tickAcc += elapsed;
-  let guard = 0;
-  while (HB.tickAcc >= TICK_DT && guard < 6){
-    hbLocalTick(TICK_DT);
-    HB.tickAcc -= TICK_DT;
-    guard++;
-  }
-  if (guard >= 6) HB.tickAcc = 0;
-
-  hbUpdateInterp(now);
-
-  if (HB.predInit){
-    hbRender();
-    hbUpdateHUD();
-  }
-  HB.raf = requestAnimationFrame(hbLoop);
-}
-
-function hbUpdateInterp(now){
-  const a = HB.prevState, b = HB.nextState;
-  if (!b){
-    HB.othersRender = [];
-    return;
-  }
-
-  const span = HB.nextTs - HB.prevTs;
-  let t = span > 0 ? (now - HB.nextTs) / span : 0;
-  t = Math.max(0, Math.min(1.1, t + 0.12));
-
-  const aMap = {};
-  if (a && a.players) for (const p of a.players) aMap[p.user_id] = p;
-  const out = [];
-  for (const pb of (b.players || [])){
-    if (pb.user_id === USER_ID) continue;
-    const pa = aMap[pb.user_id];
-    if (!pa){
-      out.push({ ...pb });
-    } else {
-      out.push({
-        user_id: pb.user_id,
-        name: pb.name,
-        team: pb.team,
-        slot: pb.slot || 0,
-        x: pa.x + (pb.x - pa.x) * t,
-        y: pa.y + (pb.y - pa.y) * t,
-        kick_glow: pb.kick_glow || 0,
-      });
-    }
-  }
-  HB.othersRender = out;
-
-  let targetX, targetY;
-  if (a && a.ball && b.ball){
-    targetX = a.ball.x + (b.ball.x - a.ball.x) * t;
-    targetY = a.ball.y + (b.ball.y - a.ball.y) * t;
-  } else if (b.ball){
-    targetX = b.ball.x;
-    targetY = b.ball.y;
-  }
-  if (targetX !== undefined){
-    const dx = targetX - HB.ballRender.x;
-    const dy = targetY - HB.ballRender.y;
-    const d = Math.hypot(dx, dy);
-    if (d > 120){
-      HB.ballRender.x = targetX;
-      HB.ballRender.y = targetY;
-    } else {
-      HB.ballRender.x += dx * 0.35;
-      HB.ballRender.y += dy * 0.35;
-    }
-  }
-}
-
-function hbLocalTick(dt){
-  if (!HB.predInit) return;
-
-  const p = HB.me;
-  const ix = HB.input.ix, iy = HB.input.iy;
-  const mag = Math.hypot(ix, iy);
-
-  if (mag > 0.05){
-    p.vx = (ix / mag) * MAX_SPEED * Math.min(1, mag);
-    p.vy = (iy / mag) * MAX_SPEED * Math.min(1, mag);
-  } else {
-    const k = Math.pow(FRICTION, dt * 60);
-    p.vx *= k; p.vy *= k;
-    if (Math.abs(p.vx) < 3) p.vx = 0;
-    if (Math.abs(p.vy) < 3) p.vy = 0;
-  }
-
-  p.x += p.vx * dt;
-  p.y += p.vy * dt;
-
-  if (p.x - PLAYER_R < 0){ p.x = PLAYER_R; p.vx = Math.abs(p.vx) * WALL_E; }
-  if (p.x + PLAYER_R > FIELD_W){ p.x = FIELD_W - PLAYER_R; p.vx = -Math.abs(p.vx) * WALL_E; }
-  if (p.y - PLAYER_R < 0){ p.y = PLAYER_R; p.vy = Math.abs(p.vy) * WALL_E; }
-  if (p.y + PLAYER_R > FIELD_H){ p.y = FIELD_H - PLAYER_R; p.vy = -Math.abs(p.vy) * WALL_E; }
-
-  if (p.kick_cd > 0) p.kick_cd = Math.max(0, p.kick_cd - dt);
-  if (p.kick_glow > 0) p.kick_glow = Math.max(0, p.kick_glow - dt);
-
-  if (HB.input.kick && p.kick_cd <= 0){
-    const bx = HB.ballRender.x, by = HB.ballRender.y;
-    const dx = bx - p.x, dy = by - p.y;
-    if (Math.hypot(dx, dy) < PLAYER_R + BALL_R + 6){
-      p.kick_cd = KICK_COOLDOWN;
-      p.kick_glow = 0.25;
-    }
-  }
-}
-
-// ============================================================
-// РЕНДЕР — как в Haxball (серое поле, белая разметка)
-// ============================================================
-function hbRender(){
-  const ctx = HB.ctx;
-
-  // Фон вне поля — тёмный
-  ctx.fillStyle = '#1c1c1c';
-  ctx.fillRect(0, 0, FIELD_W, FIELD_H);
-
-  // Поле — серое, с лёгкими полосами
-  ctx.fillStyle = '#5a5a5a';
-  ctx.fillRect(0, 0, FIELD_W, FIELD_H);
-
-  // Полосы на поле (чуть темнее)
-  ctx.fillStyle = 'rgba(0,0,0,0.06)';
-  for (let i = 0; i < 8; i += 2){
-    ctx.fillRect(i * (FIELD_W/8), 0, FIELD_W/8, FIELD_H);
-  }
-
-  // ====== ВОРОТА — снаружи поля ======
-  const GOAL_DEPTH = 18;
-
-  // Задние "стенки" ворот
-  ctx.fillStyle = '#3a3a3a';
-  ctx.fillRect(-GOAL_DEPTH, GOAL_Y, GOAL_DEPTH, GOAL_H);
-  ctx.fillRect(FIELD_W, GOAL_Y, GOAL_DEPTH, GOAL_H);
-
-  // Верхняя и нижняя линии ворот
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(-GOAL_DEPTH, GOAL_Y); ctx.lineTo(0, GOAL_Y);
-  ctx.moveTo(-GOAL_DEPTH, GOAL_Y + GOAL_H); ctx.lineTo(0, GOAL_Y + GOAL_H);
-  ctx.moveTo(FIELD_W, GOAL_Y); ctx.lineTo(FIELD_W + GOAL_DEPTH, GOAL_Y);
-  ctx.moveTo(FIELD_W, GOAL_Y + GOAL_H); ctx.lineTo(FIELD_W + GOAL_DEPTH, GOAL_Y + GOAL_H);
-  ctx.stroke();
-
-  // Дальняя стенка ворот (левая/правая)
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-GOAL_DEPTH, GOAL_Y); ctx.lineTo(-GOAL_DEPTH, GOAL_Y + GOAL_H);
-  ctx.moveTo(FIELD_W + GOAL_DEPTH, GOAL_Y); ctx.lineTo(FIELD_W + GOAL_DEPTH, GOAL_Y + GOAL_H);
-  ctx.stroke();
-
-  // ====== РАЗМЕТКА ПОЛЯ ======
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
-
-  // Рамка поля
-  ctx.strokeRect(0, 0, FIELD_W, FIELD_H);
-
-  // Центральная линия
-  ctx.beginPath();
-  ctx.moveTo(FIELD_W/2, 0);
-  ctx.lineTo(FIELD_W/2, FIELD_H);
-  ctx.stroke();
-
-  // Центральный круг
-  ctx.beginPath();
-  ctx.arc(FIELD_W/2, FIELD_H/2, 65, 0, Math.PI*2);
-  ctx.stroke();
-
-  // Точка центра
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(FIELD_W/2, FIELD_H/2, 3.5, 0, Math.PI*2);
-  ctx.fill();
-
-  // Дуги штрафной зоны (полукруг в поле от ворот)
-  ctx.beginPath();
-  ctx.arc(0, FIELD_H/2, 90, -Math.PI/2.4, Math.PI/2.4);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(FIELD_W, FIELD_H/2, 90, Math.PI - Math.PI/2.4, Math.PI + Math.PI/2.4);
-  ctx.stroke();
-
-  // Точки пенальти
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(70, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(FIELD_W - 70, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
-
-  // Чужие игроки
-  for (const o of HB.othersRender){
-    hbDrawPlayer(ctx, o.x, o.y, o.team, (o.slot||0)+1, false, o.name || '', o.kick_glow || 0);
-  }
-
-  // Моя фигура
-  hbDrawPlayer(ctx, HB.me.x, HB.me.y, HB.myTeam, HB.mySlot + 1, true, '', HB.me.kick_glow);
-
-  // Мяч — жёлто-зелёный круг
-  const bx = HB.ballRender.x, by = HB.ballRender.y;
-  ctx.fillStyle = '#e8e000';
-  ctx.beginPath(); ctx.arc(bx, by, BALL_R, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  // Блик на мяче
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.beginPath(); ctx.arc(bx - BALL_R*0.3, by - BALL_R*0.3, BALL_R*0.3, 0, Math.PI*2); ctx.fill();
-}
-
-function hbDrawPlayer(ctx, x, y, team, number, isMe, name, glow){
-  let fill;
-  if (team === 'left') fill = '#3a5fdc';
-  else if (team === 'right') fill = '#dc4040';
-  else fill = '#888';
-
-  // Свечение при ударе
-  if (glow > 0){
-    ctx.strokeStyle = `rgba(255,255,80,${Math.min(0.9, glow * 3)})`;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(x, y, PLAYER_R + 5, 0, Math.PI*2); ctx.stroke();
-  }
-
-  // Фигура — заливка + обводка
-  ctx.fillStyle = fill;
-  ctx.beginPath(); ctx.arc(x, y, PLAYER_R, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Номер внутри — белым
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 14px -apple-system, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(number), x, y + 1);
-
-  // Имя под фигурой — белое с чёрной тенью
-  if (name){
-    ctx.font = 'bold 12px -apple-system, sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-    ctx.lineWidth = 3;
-    ctx.strokeText(name.slice(0, 12), x, y + PLAYER_R + 3);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(name.slice(0, 12), x, y + PLAYER_R + 3);
-  }
-}
-
-function hbUpdateHUD(){
-  const s = HB.nextState;
-  if (!s) return;
-  document.getElementById('hbScoreL').textContent = s.score.left;
-  document.getElementById('hbScoreR').textContent = s.score.right;
-  document.getElementById('hbTimer').textContent = s.timer;
-
-  const teamName = s.my_side === 'left' ? 'СИНИЕ' : (s.my_side === 'right' ? 'КРАСНЫЕ' : '—');
-  document.getElementById('hbMyTeam').textContent = teamName;
-
-  const phase = document.getElementById('hbPhase');
-  phase.classList.remove('win','lose');
-  const l = (s.players||[]).filter(p=>p.team==='left').length;
-  const r = (s.players||[]).filter(p=>p.team==='right').length;
-  const win = s.win_score || 5;
-
-  if (s.phase === 'waiting') phase.textContent = `ЖДЁМ (${l} : ${r}) · до ${win}`;
-  else if (s.phase === 'goal_pause') phase.textContent = '⚽ ГОЛ!';
-  else if (s.phase === 'over'){
-    if (s.winner === 'draw') phase.textContent = '🤝 НИЧЬЯ';
-    else if (s.winner === s.my_side){ phase.textContent = '🏆 ПОБЕДА'; phase.classList.add('win'); }
-    else { phase.textContent = '💀 ПОРАЖЕНИЕ'; phase.classList.add('lose'); }
-  } else phase.textContent = `${l} : ${r} · до ${win}`;
-}
-
-hbLoadLobbies();
-hbApplyOrientation();
-</script>
-</body>
-</html>
+import asyncio
+import json
+import math
+import random
+import string
+import time
+from aiohttp import web
+
+FIELD_W = 840
+FIELD_H = 400
+GOAL_TOP = 150
+GOAL_BOTTOM = 250
+GOAL_DEPTH = 18
+PLAYER_R = 15
+BALL_R = 8
+KICK_DIST = PLAYER_R + BALL_R + 4
+KICK_FORCE = 400
+KICK_BOOST = 1.1
+KICK_COOLDOWN = 0.28
+BALL_FRICTION = 0.994
+RESTITUTION_WALL = 0.85
+RESTITUTION_PLAYER = 0.85
+MAX_TELEPORT = 200
+GOAL_PAUSE = 2.0
+
+games = {}
+
+
+class Player:
+    def __init__(self, uid, name):
+        self.uid = str(uid)
+        self.name = name
+        self.ws = None
+        self.team = None
+        self.slot = 0
+        self.x = 0.0
+        self.y = 0.0
+        self.vx = 0.0
+        self.vy = 0.0
+        self.kick_glow = 0.0
+        self.last_kick = 0.0
+
+
+class Ball:
+    def __init__(self):
+        self.x = FIELD_W / 2
+        self.y = FIELD_H / 2
+        self.vx = 0.0
+        self.vy = 0.0
+
+
+class Game:
+    def __init__(self, code, name, max_players, win_score, match_time):
+        self.code = code
+        self.name = name
+        self.max_players = max_players
+        self.win_score = win_score
+        self.match_time = float(match_time)
+        self.phase = "waiting"
+        self.score = {"left": 0, "right": 0}
+        self.timer = float(match_time)
+        self.players = []
+        self.ball = Ball()
+        self.winner = None
+        self.goal_time = 0.0
+
+    def find(self, uid):
+        uid = str(uid)
+        for p in self.players:
+            if p.uid == uid:
+                return p
+        return None
+
+    def add_player(self, uid, name):
+        uid = str(uid)
+        p = self.find(uid)
+        if p:
+            p.name = name
+            return p
+        if len(self.players) >= self.max_players:
+            return None
+        p = Player(uid, name)
+        left_c = sum(1 for x in self.players if x.team == "left")
+        right_c = sum(1 for x in self.players if x.team == "right")
+        if left_c <= right_c:
+            p.team = "left"
+            p.slot = left_c + 1
+        else:
+            p.team = "right"
+            p.slot = right_c + 1
+        self.reset_player_pos(p)
+        self.players.append(p)
+        if len(self.players) == self.max_players and self.phase == "waiting":
+            self.start_match()
+        return p
+
+    def reset_player_pos(self, p):
+        p.x = 200.0 if p.team == "left" else FIELD_W - 200.0
+        p.y = FIELD_H / 2
+        p.vx = 0.0
+        p.vy = 0.0
+
+    def start_match(self):
+        self.phase = "battle"
+        self.score = {"left": 0, "right": 0}
+        self.timer = float(self.match_time)
+        self.reset_positions()
+
+    def reset_positions(self):
+        self.ball.x = FIELD_W / 2
+        self.ball.y = FIELD_H / 2
+        self.ball.vx = 0.0
+        self.ball.vy = 0.0
+        for p in self.players:
+            self.reset_player_pos(p)
+
+    def clamp_player(self, p):
+        if p.x < PLAYER_R: p.x = PLAYER_R
+        if p.x > FIELD_W - PLAYER_R: p.x = FIELD_W - PLAYER_R
+        if p.y < PLAYER_R: p.y = PLAYER_R
+        if p.y > FIELD_H - PLAYER_R: p.y = FIELD_H - PLAYER_R
+
+    def update_physics(self, dt):
+        if self.phase in ("battle", "goal_pause"):
+            self.timer -= dt
+            if self.timer <= 0:
+                self.timer = 0.0
+                self.end_match()
+                return
+
+        if self.phase != "battle":
+            return
+
+        self.ball.x += self.ball.vx * dt
+        self.ball.y += self.ball.vy * dt
+        self.ball.vx *= BALL_FRICTION
+        self.ball.vy *= BALL_FRICTION
+
+        if self.ball.y - BALL_R < 0:
+            self.ball.y = BALL_R
+            self.ball.vy = -self.ball.vy * RESTITUTION_WALL
+        elif self.ball.y + BALL_R > FIELD_H:
+            self.ball.y = FIELD_H - BALL_R
+            self.ball.vy = -self.ball.vy * RESTITUTION_WALL
+
+        in_goal_y = GOAL_TOP < self.ball.y < GOAL_BOTTOM
+        if self.ball.x - BALL_R < 0:
+            if in_goal_y:
+                if self.ball.x + BALL_R < -GOAL_DEPTH:
+                    self.ball.x = -GOAL_DEPTH + BALL_R
+                    self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+                if self.ball.x < 0:
+                    self.handle_goal("right")
+                    return
+            else:
+                self.ball.x = BALL_R
+                self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+
+        if self.ball.x + BALL_R > FIELD_W:
+            if in_goal_y:
+                if self.ball.x - BALL_R > FIELD_W + GOAL_DEPTH:
+                    self.ball.x = FIELD_W + GOAL_DEPTH - BALL_R
+                    self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+                if self.ball.x > FIELD_W:
+                    self.handle_goal("left")
+                    return
+            else:
+                self.ball.x = FIELD_W - BALL_R
+                self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+
+        for p in self.players:
+            dx = self.ball.x - p.x
+            dy = self.ball.y - p.y
+            dist = math.hypot(dx, dy)
+            if dist < 0.0001:
+                self.ball.y = p.y - (BALL_R + PLAYER_R)
+                continue
+            if dist < BALL_R + PLAYER_R:
+                overlap = BALL_R + PLAYER_R - dist
+                nx = dx / dist
+                ny = dy / dist
+                self.ball.x += nx * overlap
+                self.ball.y += ny * overlap
+                rel_vx = self.ball.vx - p.vx
+                rel_vy = self.ball.vy - p.vy
+                vn = rel_vx * nx + rel_vy * ny
+                if vn < 0:
+                    j = -(1 + RESTITUTION_PLAYER) * vn
+                    self.ball.vx += j * nx
+                    self.ball.vy += j * ny
+
+        for i in range(len(self.players)):
+            for j in range(i + 1, len(self.players)):
+                p1 = self.players[i]
+                p2 = self.players[j]
+                dx = p2.x - p1.x
+                dy = p2.y - p1.y
+                dist = math.hypot(dx, dy)
+                if 0 < dist < PLAYER_R * 2:
+                    overlap = PLAYER_R * 2 - dist
+                    nx = dx / dist
+                    ny = dy / dist
+                    p1.x -= nx * overlap * 0.5
+                    p1.y -= ny * overlap * 0.5
+                    p2.x += nx * overlap * 0.5
+                    p2.y += ny * overlap * 0.5
+
+        for p in self.players:
+            self.clamp_player(p)
+        if self.ball.y < BALL_R: self.ball.y = BALL_R
+        if self.ball.y > FIELD_H - BALL_R: self.ball.y = FIELD_H - BALL_R
+
+    def handle_goal(self, team):
+        if self.phase != "battle":
+            return
+        self.score[team] += 1
+        if self.score[team] >= self.win_score:
+            self.end_match(team)
+        else:
+            self.phase = "goal_pause"
+            self.goal_time = time.time()
+
+    def end_match(self, winner=None):
+        self.phase = "over"
+        if winner:
+            self.winner = winner
+        elif self.score["left"] > self.score["right"]:
+            self.winner = "left"
+        elif self.score["right"] > self.score["left"]:
+            self.winner = "right"
+        else:
+            self.winner = "draw"
+
+    def get_state(self, viewer_uid):
+        viewer_uid = str(viewer_uid)
+        my_side = None
+        for p in self.players:
+            if p.uid == viewer_uid:
+                my_side = p.team
+                break
+        players_out = [{
+            "user_id": p.uid,
+            "name": p.name,
+            "x": round(p.x, 2),
+            "y": round(p.y, 2),
+            "vx": round(p.vx, 2),
+            "vy": round(p.vy, 2),
+            "team": p.team,
+            "slot": p.slot,
+            "kick_glow": round(p.kick_glow, 2),
+            "online": p.ws is not None,
+        } for p in self.players]
+        return {
+            "phase": self.phase,
+            "score": dict(self.score),
+            "timer": max(0, int(self.timer)),
+            "players": players_out,
+            "ball": {
+                "x": round(self.ball.x, 2), "y": round(self.ball.y, 2),
+                "vx": round(self.ball.vx, 2), "vy": round(self.ball.vy, 2),
+            },
+            "my_side": my_side,
+            "winner": self.winner,
+            "win_score": self.win_score,
+            "max_players": self.max_players,
+        }
+
+
+def _gen_code():
+    return "".join(random.choices(string.digits, k=6))
+
+
+async def api_create(request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    uid = data.get("user_id")
+    name = (data.get("user_name") or "Player")[:24]
+    if uid is None or uid == "":
+        return web.json_response({"ok": False, "error": "No user_id"})
+
+    try:
+        max_players = int(data.get("max_players", 2))
+    except (TypeError, ValueError):
+        max_players = 2
+    if max_players not in (2, 4, 6): max_players = 2
+
+    try:
+        win_score = int(data.get("win_score", 5))
+    except (TypeError, ValueError):
+        win_score = 5
+    if win_score not in (3, 5, 7, 10): win_score = 5
+
+    try:
+        match_time = int(data.get("match_time", 180))
+    except (TypeError, ValueError):
+        match_time = 180
+    if match_time not in (60, 120, 180, 300): match_time = 180
+
+    code = _gen_code()
+    while code in games:
+        code = _gen_code()
+
+    g = Game(code, (data.get("game_name") or "Game")[:30], max_players, win_score, match_time)
+    g.add_player(uid, name)
+    games[code] = g
+    return web.json_response({"ok": True, "code": code})
+
+
+async def api_join(request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    code = str(data.get("code") or "").strip().upper()
+    uid = data.get("user_id")
+    name = (data.get("user_name") or "Player")[:24]
+    g = games.get(code)
+    if not g:
+        return web.json_response({"ok": False, "error": "Комната не найдена"})
+    if g.phase == "over":
+        return web.json_response({"ok": False, "error": "Игра уже закончилась"})
+    if g.find(uid):
+        return web.json_response({"ok": True, "code": code})
+    p = g.add_player(uid, name)
+    if not p:
+        return web.json_response({"ok": False, "error": "Комната полная"})
+    return web.json_response({"ok": True, "code": code})
+
+
+async def api_list(request):
+    items = []
+    for code, g in games.items():
+        if g.phase not in ("waiting", "battle"):
+            continue
+        items.append({
+            "code": code,
+            "name": g.name,
+            "host": g.players[0].name if g.players else "Unknown",
+            "players": len(g.players),
+            "max": g.max_players,
+        })
+    return web.json_response({"ok": True, "items": items})
+
+
+async def ws_handler(request):
+    code = request.match_info.get("code", "").upper()
+    uid = str(request.query.get("uid", ""))
+    g = games.get(code)
+    if not g:
+        return web.Response(status=404)
+
+    p = g.find(uid)
+    if not p:
+        return web.Response(status=403)
+
+    ws = web.WebSocketResponse(heartbeat=30)
+    await ws.prepare(request)
+    p.ws = ws
+
+    try:
+        await ws.send_json({"type": "state", "state": g.get_state(uid)})
+    except Exception:
+        pass
+
+    try:
+        async for msg in ws:
+            if msg.type != web.WSMsgType.TEXT:
+                continue
+            try:
+                data = json.loads(msg.data)
+            except Exception:
+                continue
+            if data.get("action") == "move" and g.phase == "battle":
+                try:
+                    nx = float(data.get("x", p.x))
+                    ny = float(data.get("y", p.y))
+                except (TypeError, ValueError):
+                    continue
+                if math.hypot(nx - p.x, ny - p.y) < MAX_TELEPORT:
+                    p.x = nx
+                    p.y = ny
+                    g.clamp_player(p)
+                    try:
+                        p.vx = float(data.get("vx", p.vx))
+                        p.vy = float(data.get("vy", p.vy))
+                    except (TypeError, ValueError):
+                        pass
+
+                if data.get("kick") and time.time() - p.last_kick > KICK_COOLDOWN:
+                    p.last_kick = time.time()
+                    p.kick_glow = 1.0
+                    dist = math.hypot(g.ball.x - p.x, g.ball.y - p.y)
+                    if 0 < dist < KICK_DIST:
+                        nx_k = (g.ball.x - p.x) / dist
+                        ny_k = (g.ball.y - p.y) / dist
+                        g.ball.vx = nx_k * KICK_FORCE + p.vx * KICK_BOOST
+                        g.ball.vy = ny_k * KICK_FORCE + p.vy * KICK_BOOST
+    finally:
+        p.ws = None
+    return ws
+
+
+def register_haxball_routes(app):
+    app.router.add_post('/api/haxball/create', api_create)
+    app.router.add_post('/api/haxball/join', api_join)
+    app.router.add_get('/api/haxball/list', api_list)
+    app.router.add_get('/ws/haxball/{code}', ws_handler)
+
+
+async def haxball_watchdog():
+    tick_time = 1.0 / 60.0
+    broadcast_interval = 0.033
+    last_broadcast = time.time()
+
+    while True:
+        try:
+            start_t = time.time()
+
+            for code in list(games.keys()):
+                g = games.get(code)
+                if not g:
+                    continue
+                if g.phase != "waiting" and not any(p.ws for p in g.players):
+                    games.pop(code, None)
+                    continue
+
+                steps = max(1, int(math.ceil(tick_time / 0.005)))
+                step_dt = tick_time / steps
+                for _ in range(steps):
+                    g.update_physics(step_dt)
+
+                if g.phase == "goal_pause" and time.time() - g.goal_time > GOAL_PAUSE:
+                    g.reset_positions()
+                    g.phase = "battle"
+
+                for p in g.players:
+                    if p.kick_glow > 0:
+                        p.kick_glow = max(0.0, p.kick_glow - tick_time * 5)
+
+            now = time.time()
+            if now - last_broadcast >= broadcast_interval:
+                last_broadcast = now
+                for g in games.values():
+                    for p in g.players:
+                        if p.ws and not p.ws.closed:
+                            try:
+                                await p.ws.send_json({"type": "state", "state": g.get_state(p.uid)})
+                            except Exception:
+                                pass
+
+            elapsed = time.time() - start_t
+            await asyncio.sleep(max(0.0, tick_time - elapsed))
+        except Exception as e:
+            print(f"[haxball] watchdog error: {e}")
+            await asyncio.sleep(0.1)
