@@ -3,6 +3,7 @@ import json
 import math
 import random
 import string
+import time as _time
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 from aiohttp import web
@@ -18,7 +19,6 @@ BALL_RADIUS = 10
 GOAL_HEIGHT = 140
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-# Более отзывчивая физика
 MAX_SPEED = 320.0
 ACCELERATION = 1800.0
 FRICTION = 0.94
@@ -333,6 +333,9 @@ def step_physics(game, dt):
 def update_game_physics(game, dt):
     if game.phase != "battle":
         return
+    # Защита от огромного dt при лагах — не более 100 мс симуляции за раз
+    if dt > 0.1:
+        dt = 0.1
     for _ in range(SUBSTEPS):
         step_physics(game, dt / SUBSTEPS)
 
@@ -504,7 +507,7 @@ async def handle_websocket(request):
                     player.left = bool(data.get("left"))
                     player.right = bool(data.get("right"))
                     player.kick = bool(data.get("kick"))
-            elif msg.type == web.WSMsgType.ERROR:
+            elif msg.type == web.WebSocketType.ERROR if False else msg.type == web.WSMsgType.ERROR:
                 break
     finally:
         game.sockets.pop(user_id, None)
@@ -519,8 +522,17 @@ async def handle_websocket(request):
 async def haxball_watchdog():
     tick_counter = 0
     loop = asyncio.get_event_loop()
+    last = _time.monotonic()
     while True:
         try:
+            now_real = _time.monotonic()
+            real_dt = now_real - last
+            last = now_real
+            if real_dt > 0.1:
+                real_dt = 0.1
+            if real_dt <= 0:
+                real_dt = DT
+
             tick_counter += 1
             now = loop.time()
 
@@ -530,7 +542,7 @@ async def haxball_watchdog():
                     continue
 
                 if game.phase == "battle":
-                    game.timer -= DT
+                    game.timer -= real_dt
                     if game.timer <= 0:
                         game.timer = 0
                         game.phase = "over"
@@ -541,7 +553,7 @@ async def haxball_watchdog():
                         else:
                             game.winner = "draw"
                     else:
-                        update_game_physics(game, DT)
+                        update_game_physics(game, real_dt)
 
                 elif game.phase == "goal_pause":
                     if now >= game.pause_until:
@@ -557,10 +569,11 @@ async def haxball_watchdog():
                         except Exception:
                             game.sockets.pop(uid, None)
 
-            await asyncio.sleep(DT)
+            elapsed = _time.monotonic() - now_real
+            await asyncio.sleep(max(0.0, DT - elapsed))
         except Exception as e:
             print(f"[haxball] watchdog error: {e}")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 
 
 def register_haxball_routes(app):
