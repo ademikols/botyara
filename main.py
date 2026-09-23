@@ -1,6 +1,3 @@
-"""
-Бот анонимных групп — aiogram 3, HTML-разметка, SQLite, всё в одном файле.
-"""
 import asyncio
 import logging
 import os
@@ -26,7 +23,6 @@ from aiogram.types import (
 from aiogram.utils.text_decorations import html_decoration
 from webapp import webapp_router, start_web_server
 
-# ───────────────────────── Настройки ─────────────────────────
 BOT_VERSION = "2.3.9"
 
 TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬТЕ_ТОКЕН_СЮДА")
@@ -58,7 +54,7 @@ SUPPORT_COOLDOWN = SUPPORT_COOLDOWN_H * 3600
 SUPPORT_TTL = 30 * 24 * 3600
 
 
-def _parse_admin_ids() -> set:
+def _parse_admin_ids():
     ids = set()
     for part in os.getenv("ADMIN_IDS", "").replace(";", ",").split(","):
         part = part.strip()
@@ -72,11 +68,9 @@ FOREVER = 4102444800
 MAX_BAN_HOURS = 24 * 365
 ADMIN_PAGE_SIZE = 5
 ACTIVE_WINDOW_MIN = 15
-
 REG_OPEN = 1
 NEWGROUP_OPEN = 1
 RELAY_ON = 1
-
 REPORT_MIN_DIALOG_SEC = 60
 REPORT_SAME_TARGET_COOLDOWN = 3600
 REPORT_MAX_PER_DAY = 3
@@ -381,7 +375,6 @@ def help_back_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# ───────────────────────── БД ─────────────────────────
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
 db.row_factory = sqlite3.Row
 db.executescript("""
@@ -916,7 +909,7 @@ def catalog_text(rows, offset: int, total: int, header: str = "📂 <b>Ката�
     return "\n\n".join(lines)
 
 
-def catalog_kb(rows, offset: int, total: int, prefix: str = "cat") -> Optional[InlineKeyboardMarkup]:
+def catalog_kb(rows, offset: int, total: int, prefix: str = "cat"):
     if not rows:
         return None
     kb = [[InlineKeyboardButton(text=f"Войти: {r['title'][:24]}", callback_data=f"cj:{r['id']}")] for r in rows]
@@ -930,7 +923,7 @@ def catalog_kb(rows, offset: int, total: int, prefix: str = "cat") -> Optional[I
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
-async def edit(c: CallbackQuery, text: str, kb: Optional[InlineKeyboardMarkup] = None):
+async def edit(c: CallbackQuery, text: str, kb=None):
     try:
         await c.message.edit_text(text, reply_markup=kb)
     except (TelegramAPIError, AttributeError):
@@ -1000,7 +993,7 @@ async def staff(m: Message, owner_only: bool = False, gid: Optional[int] = None)
     return mem
 
 
-def reply_group(m: Message) -> Optional[int]:
+def reply_group(m: Message):
     if m.reply_to_message:
         r = one("SELECT group_id FROM relay WHERE chat_id=? AND msg_id=?",
                 (m.chat.id, m.reply_to_message.message_id))
@@ -1089,7 +1082,7 @@ def to_html(m: Message) -> str:
 
 
 async def deliver(m: Message, chat_id: int, nick: str, protect: bool, label: str = "",
-                   reply_to: Optional[int] = None) -> list:
+                   reply_to=None) -> list:
     head = f"<b>{esc(nick)}</b>" + (f" <i>· {esc(label)}</i>" if label else "")
     rp = ReplyParameters(message_id=reply_to, allow_sending_without_reply=True) if reply_to else None
     if m.text:
@@ -1258,7 +1251,7 @@ async def cmd_start(m: Message, command: CommandObject):
 
 
 @router.message(Command("nick"))
-async def cmd_nick(m: Message, command: Optional[CommandObject] = None):
+async def cmd_nick(m: Message, command=None):
     u = ensure_user(m.from_user.id)
     if u["nick"]:
         left = nick_wait(u["user_id"])
@@ -1546,7 +1539,7 @@ async def prof_stats_cb(c: CallbackQuery):
         f"Всего: {p_text + p_media}",
         my_pos, "",
         "🏆 <b>Топ-3 в группе</b>",
-        *top_lines if top_lines else ["Пока никто не писал"], "",
+        *(top_lines if top_lines else ["Пока никто не писал"]), "",
         "👥 <b>Вся группа</b>",
         f"Текст: {g_text} · Медиа: {g_media}",
     ]
@@ -1619,7 +1612,7 @@ async def cmd_stats(m: Message):
         f"Всего: {p_text + p_media}",
         my_pos, "",
         "🏆 <b>Топ-3 в группе</b>",
-        *top_lines if top_lines else ["Пока никто не писал"], "",
+        *(top_lines if top_lines else ["Пока никто не писал"]), "",
         "👥 <b>Вся группа</b>",
         f"Текст: {g_text} · Медиа: {g_media}",
     ]
@@ -1946,7 +1939,7 @@ def member_by_nick(gid: int, nick: str):
                "WHERE m.group_id=? AND u.nick_lc=?", (gid, nick.strip().lstrip("@").lower()))
 
 
-def transfer_error(mem, t) -> Optional[str]:
+def transfer_error(mem, t):
     if not t:
         return "❌ Не нашёл такого участника в этой группе."
     if t["user_id"] == mem["user_id"]:
@@ -2380,12 +2373,12 @@ def save_hidden_cmds(s: set):
         (",".join(sorted(s)),))
 
 
-def get_cmd_desc_override(name: str) -> Optional[str]:
+def get_cmd_desc_override(name: str):
     s = one("SELECT value FROM settings WHERE key=?", (f"cmddesc_{name}",))
     return s["value"] if s and s["value"] else None
 
 
-def set_cmd_desc_override(name: str, desc: Optional[str]):
+def set_cmd_desc_override(name: str, desc):
     if desc:
         run("INSERT INTO settings(key,value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -2608,7 +2601,7 @@ def set_state(uid: int, state: str):
     run("UPDATE users SET state=? WHERE user_id=?", (state, uid))
 
 
-def _arg_id(command: CommandObject) -> Optional[int]:
+def _arg_id(command: CommandObject):
     args = (command.args or "").split()
     if args and re.fullmatch(r"\d{1,15}", args[0]):
         return int(args[0])
@@ -2782,7 +2775,7 @@ def admin_profile(uid: int, back: str = "menu"):
     return "\n".join(lines), admin_ban_kb(uid, with_unban=True, extra_rows=extra, back=back)
 
 
-def ban_precheck(admin_id: int, target: int) -> Optional[str]:
+def ban_precheck(admin_id: int, target: int):
     if target == admin_id:
         return "🙂 Нельзя забанить себя."
     if is_admin(target):
@@ -2792,7 +2785,7 @@ def ban_precheck(admin_id: int, target: int) -> Optional[str]:
     return None
 
 
-async def do_ban(admin_id: int, target: int, hours: Optional[int]) -> str:
+async def do_ban(admin_id: int, target: int, hours) -> str:
     err = ban_precheck(admin_id, target)
     if err:
         return err
@@ -2866,7 +2859,7 @@ def admin_reports_text() -> str:
     return "\n\n".join(lines)[:4000]
 
 
-def resolve_user(raw: str) -> Optional[int]:
+def resolve_user(raw: str):
     raw = (raw or "").strip().lstrip("@")
     if re.fullmatch(r"\d{1,15}", raw):
         r = one("SELECT user_id FROM users WHERE user_id=?", (int(raw),))
@@ -2878,7 +2871,7 @@ def resolve_user(raw: str) -> Optional[int]:
     return r["user_id"] if r else None
 
 
-def _arg_user(command: CommandObject) -> Optional[int]:
+def _arg_user(command: CommandObject):
     args = (command.args or "").split()
     return resolve_user(args[0]) if args else None
 
@@ -2998,8 +2991,8 @@ def settings_back_kb() -> InlineKeyboardMarkup:
 
 
 def texts_view():
-    lines = ["📝 <b>Редактируемые тексты</b> """,
-             "Нажмите ✏️ чтобы изменить или ↩️ чтобы сбросить к заводскому.",]
+    lines = ["📝 <b>Редактируемые тексты</b>",
+             "Нажмите ✏️ чтобы изменить или ↩️ чтобы сбросить к заводскому.", ""]
     kb = []
     for key, meta in TEXT_KEYS.items():
         custom = "✏️" if text_is_custom(key) else "📄"
