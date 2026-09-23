@@ -492,7 +492,7 @@ async def durak_restart(request):
 
     active = [p for p in r["players"] if p.get("leave_reason") != "surrender"]
     if len(active) < 2:
-        return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka (kto-to sdalsya" }, status=400)
+        return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka"}, status=400)
 
     deck = make_deck(r["opts"].get("deck_size", 36))
     random.shuffle(deck)
@@ -897,7 +897,7 @@ async def spy_create(request):
 
 async def spy_join(request):
     d = await request.json()
-V    code = str(d.get("code", "")).stripremya()
+    code = str(d.get("code", "")).strip()
     r = spy_rooms.get(code)
     if not r:
         return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
@@ -908,8 +908,9 @@ V    code = str(d.get("code", "")).stripremya()
         return web.json_response({"ok": False, "error": "Igra uje nachalas"}, status=400)
     if len(r["players"]) >= 15:
         return web.json_response({"ok": False, "error": "Komnata zapolnena"}, status=400)
-    r["players"].append({"user_id": uid, "name": d.get("username") or f"Igroк {len(r['players'])+1}", "vote": None})
-    r["log"].append(f"{d.get('username') or 'Igrok'} zashel")
+    name = d.get("username") or f"Igrok {len(r['players'])+1}"
+    r["players"].append({"user_id": uid, "name": name, "vote": None})
+    r["log"].append(f"{name} zashel")
     await spy_broadcast(r)
     return web.json_response({"ok": True, "code": code})
 
@@ -1004,7 +1005,7 @@ async def spy_watchdog():
                     continue
                 if now_ts - r["vote_started_at"] >= VOTE_TIME_LIMIT:
                     spy_finish_vote(r)
-                    r["log"].append(" vyshlo.")
+                    r["log"].append("Vremya vyshlo.")
                     await spy_broadcast(r)
         except Exception as e:
             print(f"spy watchdog error: {e}", flush=True)
@@ -1117,7 +1118,6 @@ async def start_web_server():
     app.router.add_post("/api/spy/to_vote", spy_to_vote)
     app.router.add_get("/ws/spy/{code}", spy_ws)
 
-    # --- HAXBALL ---
     from haxball import register_haxball_routes, haxball_watchdog
     register_haxball_routes(app)
 
