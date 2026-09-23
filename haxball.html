@@ -36,11 +36,9 @@
   #s-game{position:fixed;top:0;left:0;background:#000;overflow:hidden;touch-action:none;display:none;transform-origin:center center}
   #s-game.active{display:block}
 
-  /* Canvas на весь экран */
-  .canvas-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0}
-  #hb-canvas{width:100%;height:100%;display:block;touch-action:none;object-fit:contain}
+  .canvas-wrap{position:absolute;inset:0}
+  #hb-canvas{width:100%;height:100%;display:block;touch-action:none}
 
-  /* HUD сверху — компактный, поверх поля */
   .game-top{position:absolute;top:0;left:0;right:0;z-index:10;padding:6px 14px 20px;
     background:linear-gradient(to bottom,rgba(0,0,0,0.85),rgba(0,0,0,0.4) 60%,transparent);
     pointer-events:none;text-align:center}
@@ -54,37 +52,35 @@
   .phase-info.win{color:#44ff88;font-weight:700}
   .phase-info.lose{color:#ff4444;font-weight:700}
 
-  /* Контролы внизу — поверх поля */
-  .controls{position:absolute;left:0;right:0;bottom:0;z-index:10;
-    padding:20px 20px 20px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;
-    background:linear-gradient(to top,rgba(0,0,0,0.7),transparent);pointer-events:none}
-  .joy{position:relative;width:120px;height:120px;border-radius:50%;
-    background:radial-gradient(circle at 50% 40%,rgba(40,40,40,0.7),rgba(10,10,10,0.85));
-    border:2px solid rgba(255,255,255,0.18);touch-action:none;flex-shrink:0;
-    box-shadow:0 4px 20px rgba(0,0,0,0.6),inset 0 0 24px rgba(255,255,255,0.04);pointer-events:auto}
-  .joy::before,.joy::after{content:'';position:absolute;background:rgba(255,255,255,0.08);pointer-events:none}
-  .joy::before{left:50%;top:14%;bottom:14%;width:1px;transform:translateX(-50%)}
-  .joy::after{top:50%;left:14%;right:14%;height:1px;transform:translateY(-50%)}
-  .joy-stick{position:absolute;width:56px;height:56px;border-radius:50%;
+  /* Джойстик — плавающий, появляется в точке тапа */
+  #joy{position:absolute;width:130px;height:130px;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%,rgba(50,50,50,0.55),rgba(10,10,10,0.75));
+    border:2px solid rgba(255,255,255,0.2);
+    pointer-events:none;z-index:20;display:none;
+    box-shadow:0 4px 20px rgba(0,0,0,0.6),inset 0 0 24px rgba(255,255,255,0.04);
+    transform:translate(-50%,-50%)}
+  #joy.on{display:block}
+  #joyStick{position:absolute;width:60px;height:60px;border-radius:50%;
     background:radial-gradient(circle at 35% 30%,#fff,#c8c8c8);
     border:2px solid rgba(0,0,0,0.8);top:50%;left:50%;transform:translate(-50%,-50%);
     pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.6)}
-  .joy-stick.active{background:radial-gradient(circle at 35% 30%,#fff,#a5a5a5);
-    box-shadow:0 4px 20px rgba(255,255,255,0.3),0 0 0 3px rgba(255,255,255,0.15)}
 
-  .kick{width:120px;height:120px;border-radius:50%;
+  /* Зона управления (невидимая) — левая половина */
+  #joyZone{position:absolute;left:0;top:0;bottom:0;width:50%;z-index:15;touch-action:none}
+
+  /* Кнопка удара — правая половина */
+  #hbKick{position:absolute;right:24px;bottom:24px;z-index:20;
+    width:120px;height:120px;border-radius:50%;
     background:radial-gradient(circle at 35% 30%,#ff8888,#ff4040);
-    color:#fff;border:2px solid rgba(255,255,255,0.25);font-family:inherit;font-weight:900;font-size:14px;
-    letter-spacing:2px;text-transform:uppercase;cursor:pointer;flex-shrink:0;
+    color:#fff;border:2px solid rgba(255,255,255,0.3);font-family:inherit;font-weight:900;font-size:14px;
+    letter-spacing:2px;text-transform:uppercase;cursor:pointer;touch-action:none;
     box-shadow:0 6px 20px rgba(255,64,64,0.5),inset 0 -4px 10px rgba(0,0,0,0.3);
-    pointer-events:auto;transition:transform .06s,box-shadow .06s;text-shadow:0 1px 2px rgba(0,0,0,0.5)}
-  .kick:active{transform:scale(0.94);box-shadow:0 3px 10px rgba(255,64,64,0.7)}
+    text-shadow:0 1px 2px rgba(0,0,0,0.5);transition:transform .06s,box-shadow .06s}
+  #hbKick:active{transform:scale(0.94);box-shadow:0 3px 10px rgba(255,64,64,0.7)}
 
-  /* Выйти — сверху-справа, мелко */
-  .game-bottom{position:absolute;top:8px;right:10px;z-index:11;pointer-events:auto}
+  .game-bottom{position:absolute;top:8px;right:10px;z-index:11}
   .game-bottom .btn{padding:6px 12px;font-size:10px;width:auto;margin:0;letter-spacing:1px;border-radius:6px;background:rgba(0,0,0,0.5);border-color:rgba(255,255,255,0.25)}
 
-  /* Точка "в сети" — сверху-слева */
   .net-status{position:absolute;top:8px;left:10px;z-index:11;font-size:9px;color:#888;letter-spacing:1px;
     display:flex;align-items:center;gap:5px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,0.5)}
   .net-status .dot{width:6px;height:6px;border-radius:50%;background:#ff4444}
@@ -95,39 +91,32 @@
 
 <div class="top"><h1>⚽ HAXBALL</h1></div>
 
-<!-- МЕНЮ -->
 <div id="s-menu" class="screen active">
   <button class="back-btn" onclick="location.href='/app.html'">← К ИГРАМ</button>
-
   <div class="field"><label>Ваше имя</label><input id="hbName" type="text" placeholder="Игрок" maxlength="20"></div>
-
   <div class="divider"></div>
-
   <div class="big" style="margin-bottom:10px">СОЗДАТЬ ИГРУ</div>
   <div class="field"><label>Название комнаты</label><input id="hbRoomName" type="text" placeholder="Комната" maxlength="30"></div>
   <button class="btn" onclick="hbCreate()">СОЗДАТЬ</button>
-
   <div class="divider"></div>
-
   <div class="big" style="margin-bottom:10px">ВОЙТИ ПО КОДУ</div>
   <div class="field"><label>Код комнаты</label><input id="hbJoinCode" type="tel" inputmode="numeric" maxlength="6" class="code" placeholder="000000"></div>
   <button class="btn ghost" onclick="hbJoinByCode()">ВОЙТИ</button>
-
   <div class="divider"></div>
-
   <div class="big" style="margin-bottom:10px">ОТКРЫТЫЕ ИГРЫ</div>
   <div id="hbLobbyList"><div class="msg">Загрузка...</div></div>
   <button class="btn ghost" onclick="hbLoadLobbies()">🔄 ОБНОВИТЬ</button>
 </div>
 
-<!-- ИГРА -->
 <div id="s-game">
   <div class="net-status"><span class="dot" id="hbDot"></span><span id="hbStatus">...</span></div>
   <div class="game-bottom"><button class="btn sm ghost" onclick="hbLeave()">ВЫЙТИ</button></div>
 
-  <div class="canvas-wrap">
-    <canvas id="hb-canvas" width="800" height="500"></canvas>
-  </div>
+  <div class="canvas-wrap"><canvas id="hb-canvas" width="800" height="500"></canvas></div>
+
+  <div id="joyZone"></div>
+  <div id="joy"><div id="joyStick"></div></div>
+  <button id="hbKick">УДАР</button>
 
   <div class="game-top">
     <div class="score-row">
@@ -137,11 +126,6 @@
     </div>
     <div class="meta-row">⏱ <b id="hbTimer">180</b> · КОД <b id="hbCodeTag">------</b> · <b id="hbMyTeam">—</b></div>
     <div class="phase-info" id="hbPhase">Ожидание...</div>
-  </div>
-
-  <div class="controls">
-    <div class="joy" id="hbJoy"><div class="joy-stick" id="hbJoyStick"></div></div>
-    <button class="kick" id="hbKick">УДАР</button>
   </div>
 </div>
 
@@ -154,13 +138,9 @@ const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
 let USERNAME = tg?.initDataUnsafe?.user?.first_name || ('guest' + String(USER_ID).slice(-4));
 document.getElementById('hbName').value = USERNAME;
 
-// ============================================================================
-// КОНСТАНТЫ
-// ============================================================================
 const FIELD_W = 800, FIELD_H = 500, PLAYER_R = 20, BALL_R = 10;
 const GOAL_H = 140, GOAL_Y = (FIELD_H - GOAL_H) / 2;
-const MAX_SPEED = 320.0, ACCELERATION = 1800.0, FRICTION = 0.94;
-const WALL_E = 0.85, KICK_COOLDOWN = 0.30;
+const MAX_SPEED = 360.0, FRICTION = 0.82, WALL_E = 0.85, KICK_COOLDOWN = 0.28;
 
 // ============================================================================
 // ПОВОРОТ
@@ -193,7 +173,7 @@ const HB = {
   input: {ix:0, iy:0, kick:false},
   canvas: null, ctx: null, raf: null,
   lastSendTs: 0, lastTickTs: 0,
-  joyPointerId: null
+  joyId: null, joyCx: 0, joyCy: 0
 };
 
 function hbGo(id){
@@ -268,7 +248,7 @@ function hbStartGame(){
   hbGo('game');
   document.getElementById('hbCodeTag').textContent = HB.code;
   hbApplyOrientation();
-  hbInitCanvas();
+  hbInitInput();
   hbConnect();
   if (!HB.raf) { HB.lastTickTs = performance.now(); hbLoop(); }
 }
@@ -302,7 +282,7 @@ function hbOnServerState(s){
   const now = performance.now();
   if (!HB.nextState) {
     HB.prevState = s; HB.nextState = s;
-    HB.prevTs = now; HB.nextTs = now + 50;
+    HB.prevTs = now; HB.nextTs = now + 40;
     hbSyncPrediction(s, true);
   } else {
     HB.prevState = HB.nextState; HB.prevTs = HB.nextTs;
@@ -311,7 +291,7 @@ function hbOnServerState(s){
   }
 }
 
-// Мягкий reconciliation — не даём фигуре «откатываться»
+// Очень мягкий reconciliation — фигура не дёргается назад
 function hbSyncPrediction(s, hard){
   const me = (s.players || []).find(p => p.user_id === USER_ID);
   if (!me) { HB.predicted = false; return; }
@@ -327,91 +307,125 @@ function hbSyncPrediction(s, hard){
   const dy = me.y - HB.myPos.y;
   const err = Math.hypot(dx, dy);
 
-  // Огромное расхождение (>200px) — жёсткий синк
-  if (err > 200){
+  // Если ошибка маленькая — вообще ничего не делаем.
+  // Только если фигура уехала далеко (>150px) — телепорт.
+  if (err > 150){
     HB.myPos.x = me.x; HB.myPos.y = me.y;
     HB.myPos.vx = 0; HB.myPos.vy = 0;
-    return;
   }
-
-  // Очень мягкий подтягивающий сдвиг — незаметно глазу
-  HB.myPos.x += dx * 0.05;
-  HB.myPos.y += dy * 0.05;
+  // В остальных случаях НЕ подтягиваем — клиент прав.
 }
 
 // ============================================================================
-// ВВОД — слушаем на WINDOW, чтобы не терять события при уходе пальца
+// ВВОД — плавающий джойстик
 // ============================================================================
-function hbInitCanvas(){
+function hbInitInput(){
   HB.canvas = document.getElementById('hb-canvas');
   HB.ctx = HB.canvas.getContext('2d');
 
   document.addEventListener('keydown', hbKeyDown);
   document.addEventListener('keyup', hbKeyUp);
 
-  const joy = document.getElementById('hbJoy');
-  const stick = document.getElementById('hbJoyStick');
+  const zone = document.getElementById('joyZone');
+  const joy = document.getElementById('joy');
+  const stick = document.getElementById('joyStick');
 
-  function calcInput(cx, cy){
-    const rect = joy.getBoundingClientRect();
-    const jx = rect.left + rect.width / 2;
-    const jy = rect.top + rect.height / 2;
-    let dx = cx - jx;
-    let dy = cy - jy;
-    const dist = Math.hypot(dx, dy);
-    const maxR = rect.width / 2 - 26;
-    if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
-    return { x: dx / maxR, y: dy / maxR, dx, dy };
+  // Джойстик появляется в точке тапа
+  function startJoy(cx, cy){
+    // cx, cy — координаты в системе #s-game (после поворота)
+    HB.joyCx = cx;
+    HB.joyCy = cy;
+    joy.style.left = cx + 'px';
+    joy.style.top  = cy + 'px';
+    joy.classList.add('on');
+    stick.style.transform = 'translate(-50%,-50%)';
   }
 
-  function applyInput(cx, cy){
-    const inp = calcInput(cx, cy);
-    HB.input.ix = inp.x;
-    HB.input.iy = inp.y;
-    if (Math.hypot(inp.x, inp.y) < 0.06){
-      HB.input.ix = 0; HB.input.iy = 0;
+  // Пересчёт координат из clientX/Y (учёт rotate)
+  function toLocal(clientX, clientY){
+    const el = document.getElementById('s-game');
+    const rect = el.getBoundingClientRect();
+    const isRotated = el.style.transform && el.style.transform.includes('rotate');
+    if (isRotated){
+      // Экран повёрнут на 90°. Локальные координаты = от верха повёрнутого экрана.
+      const w = rect.width;  // это vh
+      const h = rect.height; // это vw
+      // После rotate(90deg): x_local = y_screen - rect.top; y_local = rect.right - x_screen
+      return {
+        x: clientY - rect.top,
+        y: rect.right - clientX
+      };
+    } else {
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
     }
-    stick.style.transform = `translate(calc(-50% + ${inp.dx}px), calc(-50% + ${inp.dy}px))`;
-    stick.classList.add('active');
   }
 
-  function resetInput(){
-    HB.joyPointerId = null;
-    stick.classList.remove('active');
+  function applyJoy(clientX, clientY){
+    const p = toLocal(clientX, clientY);
+    let dx = p.x - HB.joyCx;
+    let dy = p.y - HB.joyCy;
+    const dist = Math.hypot(dx, dy);
+    const maxR = 65; // половина диаметра визуального джойстика
+    if (dist > maxR){ dx = dx / dist * maxR; dy = dy / dist * maxR; }
+    stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+    // Аналоговый ввод. Чем дальше от центра — тем быстрее.
+    // Радиус «максимальной скорости» = 45px. Дальше — просто скорость 1.
+    const speedR = 45;
+    let nx = dx / speedR;
+    let ny = dy / speedR;
+    const mag = Math.hypot(nx, ny);
+    if (mag > 1){ nx /= mag; ny /= mag; }
+
+    // Мёртвая зона совсем маленькая
+    if (Math.hypot(nx, ny) < 0.08){
+      HB.input.ix = 0; HB.input.iy = 0;
+    } else {
+      HB.input.ix = nx; HB.input.iy = ny;
+    }
+  }
+
+  function endJoy(){
+    HB.joyId = null;
+    joy.classList.remove('on');
     HB.input.ix = 0; HB.input.iy = 0;
-    stick.style.transform = 'translate(-50%, -50%)';
+    stick.style.transform = 'translate(-50%,-50%)';
   }
 
-  joy.addEventListener('touchstart', (e) => {
+  zone.addEventListener('touchstart', (e) => {
     e.preventDefault();
     const t = e.changedTouches[0];
-    HB.joyPointerId = t.identifier;
-    applyInput(t.clientX, t.clientY);
+    HB.joyId = t.identifier;
+    const p = toLocal(t.clientX, t.clientY);
+    startJoy(p.x, p.y);
+    applyJoy(t.clientX, t.clientY);
   }, {passive:false});
 
-  // Слушаем на window — палец может уйти далеко от джойстика
   window.addEventListener('touchmove', (e) => {
-    if (HB.joyPointerId === null) return;
+    if (HB.joyId === null) return;
     for (const t of e.changedTouches){
-      if (t.identifier === HB.joyPointerId){
+      if (t.identifier === HB.joyId){
         e.preventDefault();
-        applyInput(t.clientX, t.clientY);
+        applyJoy(t.clientX, t.clientY);
         break;
       }
     }
   }, {passive:false});
 
   window.addEventListener('touchend', (e) => {
-    if (HB.joyPointerId === null) return;
+    if (HB.joyId === null) return;
     for (const t of e.changedTouches){
-      if (t.identifier === HB.joyPointerId){ resetInput(); break; }
+      if (t.identifier === HB.joyId){ endJoy(); break; }
     }
   }, {passive:false});
 
   window.addEventListener('touchcancel', (e) => {
-    if (HB.joyPointerId === null) return;
+    if (HB.joyId === null) return;
     for (const t of e.changedTouches){
-      if (t.identifier === HB.joyPointerId){ resetInput(); break; }
+      if (t.identifier === HB.joyId){ endJoy(); break; }
     }
   }, {passive:false});
 
@@ -419,7 +433,7 @@ function hbInitCanvas(){
   const kick = document.getElementById('hbKick');
   kick.addEventListener('touchstart', (e) => { e.preventDefault(); HB.input.kick = true; }, {passive:false});
   kick.addEventListener('touchend',   (e) => { e.preventDefault(); HB.input.kick = false; }, {passive:false});
-  kick.addEventListener('touchcancel',(e) => { HB.input.kick = false; });
+  kick.addEventListener('touchcancel',() => { HB.input.kick = false; });
   kick.addEventListener('mousedown',  () => { HB.input.kick = true; });
   kick.addEventListener('mouseup',    () => { HB.input.kick = false; });
   kick.addEventListener('mouseleave', () => { HB.input.kick = false; });
@@ -449,7 +463,7 @@ function hbKeyUp(e){
 function hbLoop(){
   const now = performance.now();
 
-  if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 30){
+  if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 33){
     HB.lastSendTs = now;
     HB.ws.send(JSON.stringify({
       action:'move', ix: HB.input.ix, iy: HB.input.iy, kick: HB.input.kick
@@ -466,24 +480,22 @@ function hbLoop(){
   HB.raf = requestAnimationFrame(hbLoop);
 }
 
+// Локальная симуляция моего игрока — та же логика, что на сервере
 function hbLocalTick(dt){
   const p = HB.myPos;
   const ix = HB.input.ix, iy = HB.input.iy;
   const mag = Math.hypot(ix, iy);
-  let nx = ix, ny = iy;
-  if (mag > 1) { nx = ix/mag; ny = iy/mag; }
 
-  p.vx += nx * ACCELERATION * dt;
-  p.vy += ny * ACCELERATION * dt;
-
-  const speed = Math.hypot(p.vx, p.vy);
-  if (speed > MAX_SPEED){
-    p.vx = p.vx/speed * MAX_SPEED;
-    p.vy = p.vy/speed * MAX_SPEED;
-  }
-  if (Math.hypot(nx, ny) < 0.05){
+  if (mag > 0.05){
+    // Мгновенная скорость
+    const k = Math.min(1, mag);
+    p.vx = (ix / (mag || 1)) * MAX_SPEED * k;
+    p.vy = (iy / (mag || 1)) * MAX_SPEED * k;
+  } else {
     const k = Math.pow(FRICTION, dt * 60);
     p.vx *= k; p.vy *= k;
+    if (Math.abs(p.vx) < 3) p.vx = 0;
+    if (Math.abs(p.vy) < 3) p.vy = 0;
   }
 
   p.x += p.vx * dt;
@@ -513,7 +525,6 @@ function hbLocalTick(dt){
 // ============================================================================
 function hbRender(){
   const ctx = HB.ctx;
-  const cw = HB.canvas.width, ch = HB.canvas.height;
   const s = HB.nextState;
 
   for (let i = 0; i < 10; i++){
@@ -521,8 +532,7 @@ function hbRender(){
     ctx.fillRect(i * (FIELD_W/10), 0, FIELD_W/10, FIELD_H);
   }
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(FIELD_W/2, 0); ctx.lineTo(FIELD_W/2, FIELD_H); ctx.stroke();
   ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI*2); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
@@ -564,9 +574,7 @@ function hbRender(){
     }
 
     const grad = ctx.createRadialGradient(px-PLAYER_R*0.35, py-PLAYER_R*0.35, PLAYER_R*0.15, px, py, PLAYER_R);
-    grad.addColorStop(0,'#fff');
-    grad.addColorStop(0.15,color);
-    grad.addColorStop(1,dark);
+    grad.addColorStop(0,'#fff'); grad.addColorStop(0.15,color); grad.addColorStop(1,dark);
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(px,py,PLAYER_R,0,Math.PI*2); ctx.fill();
 
@@ -606,7 +614,7 @@ function hbInterpolatePlayers(){
   const now = performance.now();
   const span = HB.nextTs - HB.prevTs;
   let t = span > 0 ? (now - HB.nextTs) / span : 0;
-  t = Math.max(0, Math.min(1.15, t + 0.15));
+  t = Math.max(0, Math.min(1.1, t + 0.12));
   const lerp = (x,y) => x + (y-x)*t;
   const aMap = {};
   for (const p of (a.players||[])) aMap[p.user_id] = p;
@@ -624,7 +632,7 @@ function hbInterpolateBall(){
   const now = performance.now();
   const span = HB.nextTs - HB.prevTs;
   let t = span > 0 ? (now - HB.nextTs) / span : 0;
-  t = Math.max(0, Math.min(1.15, t + 0.15));
+  t = Math.max(0, Math.min(1.1, t + 0.12));
   return { x: a.ball.x + (b.ball.x - a.ball.x)*t, y: a.ball.y + (b.ball.y - a.ball.y)*t };
 }
 
@@ -652,9 +660,6 @@ function hbUpdateHUD(){
   } else phase.textContent = `${l} : ${r}`;
 }
 
-// ============================================================================
-// СТАРТ
-// ============================================================================
 hbLoadLobbies();
 hbApplyOrientation();
 </script>
