@@ -15,7 +15,7 @@ FIELD_HALF_WIDTH = FIELD_WIDTH / 2
 FIELD_HALF_HEIGHT = FIELD_HEIGHT / 2
 
 PLAYER_RADIUS = 15
-BALL_RADIUS = 7
+BALL_RADIUS = 8
 GOAL_HEIGHT = 100
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
@@ -66,6 +66,7 @@ class Player:
             "vx": round(self.vx, 2),
             "vy": round(self.vy, 2),
             "team": self.team,
+            "slot": self.slot,
             "kick_glow": round(self.kick_glow, 2),
         }
 
@@ -189,18 +190,12 @@ def update_ball(ball, dt):
 
     in_goal_y = GOAL_OFFSET_Y < ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
 
-    if ball.x - BALL_RADIUS < 0:
-        if in_goal_y:
-            pass
-        else:
-            ball.x = BALL_RADIUS
-            ball.vx = abs(ball.vx) * WALL_ELASTICITY
-    if ball.x + BALL_RADIUS > FIELD_WIDTH:
-        if in_goal_y:
-            pass
-        else:
-            ball.x = FIELD_WIDTH - BALL_RADIUS
-            ball.vx = -abs(ball.vx) * WALL_ELASTICITY
+    if ball.x - BALL_RADIUS < 0 and not in_goal_y:
+        ball.x = BALL_RADIUS
+        ball.vx = abs(ball.vx) * WALL_ELASTICITY
+    if ball.x + BALL_RADIUS > FIELD_WIDTH and not in_goal_y:
+        ball.x = FIELD_WIDTH - BALL_RADIUS
+        ball.vx = -abs(ball.vx) * WALL_ELASTICITY
     if ball.y - BALL_RADIUS < 0:
         ball.y = BALL_RADIUS
         ball.vy = abs(ball.vy) * WALL_ELASTICITY
@@ -244,7 +239,6 @@ def resolve_player_ball(player, ball):
     if dist >= min_dist:
         return False
     if dist < 0.0001:
-        # Мяч точно в центре игрока — вытолкнуть вверх
         ball.y = player.y - min_dist
         ball.x = player.x
         return False
@@ -287,7 +281,6 @@ def step_physics(game, dt):
         for j in range(i + 1, len(players)):
             resolve_player_player(players[i], players[j])
 
-    # Клампим после расталкивания
     for p in players:
         clamp_player(p)
 
@@ -296,7 +289,6 @@ def step_physics(game, dt):
     for p in players:
         resolve_player_ball(p, game.ball)
 
-    # Клампим мяч после столкновений
     in_goal_y = GOAL_OFFSET_Y < game.ball.y < GOAL_OFFSET_Y + GOAL_HEIGHT
     if game.ball.x < BALL_RADIUS and not in_goal_y:
         game.ball.x = BALL_RADIUS
@@ -511,7 +503,6 @@ async def handle_websocket(request):
                         nvy = float(data.get("vy", 0.0))
                     except (TypeError, ValueError):
                         continue
-                    # Защита от телепорта
                     if math.hypot(nx - player.x, ny - player.y) < 200:
                         player.x = nx
                         player.y = ny
