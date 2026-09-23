@@ -1,457 +1,853 @@
-import asyncio
-import json
-import math
-import random
-import string
-import time
-from aiohttp import web
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Haxball</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #1c1c1c; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; touch-action: none;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
 
-FIELD_W = 840
-FIELD_H = 400
-GOAL_TOP = 150
-GOAL_BOTTOM = 250
-GOAL_DEPTH = 18
-PLAYER_R = 15
-BALL_R = 8
-KICK_DIST = PLAYER_R + BALL_R + 4
-KICK_FORCE = 400
-KICK_BOOST = 1.1
-KICK_COOLDOWN = 0.28
-BALL_FRICTION = 0.994
-RESTITUTION_WALL = 0.85
-RESTITUTION_PLAYER = 0.85
-MAX_TELEPORT = 200
-GOAL_PAUSE = 2.0
+  #s-menu {
+    position: fixed; inset: 0;
+    background: linear-gradient(180deg, #2a2a2a, #151515);
+    color: #eee; overflow-y: auto; padding: 20px 16px 40px;
+  }
+  #s-menu h1 {
+    text-align: center; color: #e8e000;
+    margin: 10px 0 20px; font-size: 28px; letter-spacing: 2px;
+  }
+  .box {
+    background: #232323; border: 1px solid #3a3a3a;
+    border-radius: 10px; padding: 14px; margin-bottom: 14px;
+  }
+  .box h2 {
+    font-size: 14px; color: #aaa; margin: 0 0 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .row label { flex: 1; min-width: 90px; }
+  input[type=text] {
+    width: 100%; padding: 10px; border-radius: 8px;
+    border: 1px solid #444; background: #111; color: #fff; font-size: 16px;
+  }
+  .seg { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
+  .seg button {
+    flex: 1; padding: 10px 4px; background: #111; color: #ccc;
+    border: none; font-size: 13px; border-right: 1px solid #333;
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.active { background: #3a5fdc; color: #fff; }
+  .big-btn {
+    width: 100%; padding: 14px; border-radius: 10px; border: none;
+    font-size: 16px; font-weight: bold; color: #fff; margin-top: 6px;
+  }
+  .btn-green { background: #2fa84f; }
+  .btn-blue { background: #3a5fdc; }
+  .join-row { display: flex; gap: 8px; }
+  .join-row input { flex: 1; }
+  .join-row button {
+    padding: 10px 16px; border-radius: 8px; border: none;
+    background: #3a5fdc; color: #fff; font-weight: bold;
+  }
+  #list-items { margin-top: 6px; }
+  .list-item {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+    padding: 10px; margin-bottom: 6px;
+  }
+  .list-item .info { font-size: 13px; color: #bbb; }
+  .list-item .name { font-size: 15px; color: #fff; font-weight: bold; }
+  .list-item button {
+    padding: 8px 14px; border-radius: 6px; border: none;
+    background: #2fa84f; color: #fff; font-weight: bold;
+  }
+  .empty-hint { color: #666; font-size: 13px; text-align: center; padding: 10px; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px;
+    border-radius: 10px; font-size: 14px; z-index: 999; opacity: 0;
+    transition: opacity 0.25s; pointer-events: none; max-width: 85%; text-align: center;
+  }
+  #toast.show { opacity: 1; }
 
-games = {}
+  #s-game {
+    position: fixed; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: #111; display: none;
+    overflow: hidden;
+    /* важно: origin по центру, иначе rotate(90deg) уедет за экран */
+    transform-origin: center center;
+  }
+  #gcanvas { display: block; background: #111; touch-action: none; }
 
+  #joy-zone {
+    position: absolute; left: 0; top: 0;
+    width: 55%; height: 100%; z-index: 5;
+  }
+  #joy-base, #joy-stick {
+    position: absolute; border-radius: 50%;
+    display: none; pointer-events: none;
+  }
+  #joy-base {
+    width: 100px; height: 100px;
+    background: rgba(255,255,255,0.12);
+    border: 2px solid rgba(255,255,255,0.3);
+  }
+  #joy-stick {
+    width: 46px; height: 46px;
+    background: rgba(255,255,255,0.45);
+    border: 2px solid rgba(255,255,255,0.6);
+  }
+  #kick-btn {
+    position: absolute;
+    width: 110px; height: 110px; right: 18px; bottom: 18px;
+    border-radius: 50%; background: #dc4040; opacity: 0.55;
+    z-index: 6; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: bold; font-size: 16px; letter-spacing: 1px;
+    border: 3px solid rgba(255,255,255,0.4);
+  }
+  #kick-btn.active { opacity: 0.9; }
+  #exit-btn {
+    position: absolute; top: 8px; right: 8px;
+    padding: 6px 12px; background: rgba(0,0,0,0.5); color: #fff;
+    border-radius: 8px; font-size: 12px; z-index: 7;
+  }
+</style>
+</head>
+<body>
 
-class Player:
-    def __init__(self, uid, name):
-        self.uid = str(uid)
-        self.name = name
-        self.ws = None
-        self.team = None
-        self.slot = 0
-        self.x = 0.0
-        self.y = 0.0
-        self.vx = 0.0
-        self.vy = 0.0
-        self.kick_glow = 0.0
-        self.last_kick = 0.0
+<div id="s-menu">
+  <h1>HAXBALL</h1>
 
+  <div class="box">
+    <h2>Имя игрока</h2>
+    <input type="text" id="in-name" maxlength="16" placeholder="Твоё имя">
+  </div>
 
-class Ball:
-    def __init__(self):
-        self.x = FIELD_W / 2
-        self.y = FIELD_H / 2
-        self.vx = 0.0
-        self.vy = 0.0
+  <div class="box">
+    <h2>Создать игру</h2>
+    <div class="row"><input type="text" id="in-gamename" maxlength="24" placeholder="Название игры"></div>
+    <div class="row"><label>Игроков</label></div>
+    <div class="seg" id="seg-players">
+      <button data-v="2">1v1</button>
+      <button data-v="4" class="active">2v2</button>
+      <button data-v="6">3v3</button>
+    </div>
+    <div class="row" style="margin-top:8px;"><label>Голов до победы</label></div>
+    <div class="seg" id="seg-score">
+      <button data-v="3">3</button>
+      <button data-v="5" class="active">5</button>
+      <button data-v="7">7</button>
+      <button data-v="10">10</button>
+    </div>
+    <div class="row" style="margin-top:8px;"><label>Время матча</label></div>
+    <div class="seg" id="seg-time">
+      <button data-v="60">1 мин</button>
+      <button data-v="120">2 мин</button>
+      <button data-v="180" class="active">3 мин</button>
+      <button data-v="300">5 мин</button>
+    </div>
+    <button class="big-btn btn-green" id="btn-create">СОЗДАТЬ ИГРУ</button>
+  </div>
 
+  <div class="box">
+    <h2>Войти по коду</h2>
+    <div class="join-row">
+      <input type="text" id="in-code" maxlength="6" inputmode="numeric" placeholder="Код комнаты">
+      <button id="btn-join">ВОЙТИ</button>
+    </div>
+  </div>
 
-class Game:
-    def __init__(self, code, name, max_players, win_score, match_time):
-        self.code = code
-        self.name = name
-        self.max_players = max_players
-        self.win_score = win_score
-        self.match_time = float(match_time)
-        self.phase = "waiting"
-        self.score = {"left": 0, "right": 0}
-        self.timer = float(match_time)
-        self.players = []
-        self.ball = Ball()
-        self.winner = None
-        self.goal_time = 0.0
+  <div class="box">
+    <h2>Открытые игры</h2>
+    <div id="list-items"></div>
+  </div>
+</div>
 
-    def find(self, uid):
-        uid = str(uid)
-        for p in self.players:
-            if p.uid == uid:
-                return p
-        return None
+<div id="s-game">
+  <canvas id="gcanvas"></canvas>
+  <div id="joy-zone"></div>
+  <div id="joy-base"></div>
+  <div id="joy-stick"></div>
+  <div id="kick-btn">УДАР</div>
+  <div id="exit-btn">ВЫЙТИ</div>
+</div>
 
-    def add_player(self, uid, name):
-        uid = str(uid)
-        p = self.find(uid)
-        if p:
-            p.name = name
-            return p
-        if len(self.players) >= self.max_players:
-            return None
-        p = Player(uid, name)
-        left_c = sum(1 for x in self.players if x.team == "left")
-        right_c = sum(1 for x in self.players if x.team == "right")
-        if left_c <= right_c:
-            p.team = "left"
-            p.slot = left_c + 1
-        else:
-            p.team = "right"
-            p.slot = right_c + 1
-        self.reset_player_pos(p)
-        self.players.append(p)
-        if len(self.players) == self.max_players and self.phase == "waiting":
-            self.start_match()
-        return p
+<div id="toast"></div>
 
-    def reset_player_pos(self, p):
-        p.x = 200.0 if p.team == "left" else FIELD_W - 200.0
-        p.y = FIELD_H / 2
-        p.vx = 0.0
-        p.vy = 0.0
+<script>
+(function () {
+"use strict";
 
-    def start_match(self):
-        self.phase = "battle"
-        self.score = {"left": 0, "right": 0}
-        self.timer = float(self.match_time)
-        self.reset_positions()
+var FIELD_W = 840, FIELD_H = 400;
+var GOAL_TOP = 150, GOAL_BOTTOM = 250, GOAL_DEPTH = 18;
+var PLAYER_R = 15, BALL_R = 8;
 
-    def reset_positions(self):
-        self.ball.x = FIELD_W / 2
-        self.ball.y = FIELD_H / 2
-        self.ball.vx = 0.0
-        self.ball.vy = 0.0
-        for p in self.players:
-            self.reset_player_pos(p)
+var PLAYER_SPEED = 220.0;
+var PLAYER_ACCEL = 12.0;
 
-    def clamp_player(self, p):
-        if p.x < PLAYER_R: p.x = PLAYER_R
-        if p.x > FIELD_W - PLAYER_R: p.x = FIELD_W - PLAYER_R
-        if p.y < PLAYER_R: p.y = PLAYER_R
-        if p.y > FIELD_H - PLAYER_R: p.y = FIELD_H - PLAYER_R
+var SEND_HZ = 25;
+var SEND_INTERVAL = 1000 / SEND_HZ;
 
-    def update_physics(self, dt):
-        if self.phase in ("battle", "goal_pause"):
-            self.timer -= dt
-            if self.timer <= 0:
-                self.timer = 0.0
-                self.end_match()
-                return
+var BALL_SMOOTH = 0.28;
+var BALL_TELEPORT_DIST = 120;
+var REMOTE_SMOOTH = 0.28;
+var REMOTE_TELEPORT_DIST = 120;
+var SELF_CORRECT_TELEPORT = 100;
+var SELF_CORRECT_SOFT = 0.05;
 
-        if self.phase != "battle":
-            return
+function genUid() {
+  var s = "";
+  var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  for (var i = 0; i < 16; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
 
-        self.ball.x += self.ball.vx * dt
-        self.ball.y += self.ball.vy * dt
-        self.ball.vx *= BALL_FRICTION
-        self.ball.vy *= BALL_FRICTION
+var MY_UID = null;
+try {
+  MY_UID = localStorage.getItem("hax_uid");
+  if (!MY_UID) { MY_UID = genUid(); localStorage.setItem("hax_uid", MY_UID); }
+} catch (e) { MY_UID = genUid(); }
 
-        if self.ball.y - BALL_R < 0:
-            self.ball.y = BALL_R
-            self.ball.vy = -self.ball.vy * RESTITUTION_WALL
-        elif self.ball.y + BALL_R > FIELD_H:
-            self.ball.y = FIELD_H - BALL_R
-            self.ball.vy = -self.ball.vy * RESTITUTION_WALL
+var MY_NAME = "Игрок";
+try {
+  var savedName = localStorage.getItem("hax_name");
+  if (savedName) MY_NAME = savedName;
+} catch (e) {}
 
-        in_goal_y = GOAL_TOP < self.ball.y < GOAL_BOTTOM
-        if self.ball.x - BALL_R < 0:
-            if in_goal_y:
-                if self.ball.x + BALL_R < -GOAL_DEPTH:
-                    self.ball.x = -GOAL_DEPTH + BALL_R
-                    self.ball.vx = -self.ball.vx * RESTITUTION_WALL
-                if self.ball.x < 0:
-                    self.handle_goal("right")
-                    return
-            else:
-                self.ball.x = BALL_R
-                self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+var toastEl = document.getElementById("toast");
+var toastTimer = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2600);
+}
 
-        if self.ball.x + BALL_R > FIELD_W:
-            if in_goal_y:
-                if self.ball.x - BALL_R > FIELD_W + GOAL_DEPTH:
-                    self.ball.x = FIELD_W + GOAL_DEPTH - BALL_R
-                    self.ball.vx = -self.ball.vx * RESTITUTION_WALL
-                if self.ball.x > FIELD_W:
-                    self.handle_goal("left")
-                    return
-            else:
-                self.ball.x = FIELD_W - BALL_R
-                self.ball.vx = -self.ball.vx * RESTITUTION_WALL
+var elMenu = document.getElementById("s-menu");
+var elGame = document.getElementById("s-game");
+var inName = document.getElementById("in-name");
+var inGameName = document.getElementById("in-gamename");
+var inCode = document.getElementById("in-code");
+var listItemsEl = document.getElementById("list-items");
 
-        for p in self.players:
-            dx = self.ball.x - p.x
-            dy = self.ball.y - p.y
-            dist = math.hypot(dx, dy)
-            if dist < 0.0001:
-                self.ball.y = p.y - (BALL_R + PLAYER_R)
-                continue
-            if dist < BALL_R + PLAYER_R:
-                overlap = BALL_R + PLAYER_R - dist
-                nx = dx / dist
-                ny = dy / dist
-                self.ball.x += nx * overlap
-                self.ball.y += ny * overlap
-                rel_vx = self.ball.vx - p.vx
-                rel_vy = self.ball.vy - p.vy
-                vn = rel_vx * nx + rel_vy * ny
-                if vn < 0:
-                    j = -(1 + RESTITUTION_PLAYER) * vn
-                    self.ball.vx += j * nx
-                    self.ball.vy += j * ny
+inName.value = MY_NAME;
+inName.addEventListener("input", function () {
+  MY_NAME = inName.value.trim() || "Игрок";
+  try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
+});
 
-        for i in range(len(self.players)):
-            for j in range(i + 1, len(self.players)):
-                p1 = self.players[i]
-                p2 = self.players[j]
-                dx = p2.x - p1.x
-                dy = p2.y - p1.y
-                dist = math.hypot(dx, dy)
-                if 0 < dist < PLAYER_R * 2:
-                    overlap = PLAYER_R * 2 - dist
-                    nx = dx / dist
-                    ny = dy / dist
-                    p1.x -= nx * overlap * 0.5
-                    p1.y -= ny * overlap * 0.5
-                    p2.x += nx * overlap * 0.5
-                    p2.y += ny * overlap * 0.5
+var cfgMaxPlayers = 4, cfgWinScore = 5, cfgMatchTime = 180;
 
-        for p in self.players:
-            self.clamp_player(p)
-        if self.ball.y < BALL_R: self.ball.y = BALL_R
-        if self.ball.y > FIELD_H - BALL_R: self.ball.y = FIELD_H - BALL_R
+function setupSeg(id, onPick) {
+  var el = document.getElementById(id);
+  var btns = el.querySelectorAll("button");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].addEventListener("click", function (ev) {
+      for (var j = 0; j < btns.length; j++) btns[j].classList.remove("active");
+      ev.target.classList.add("active");
+      onPick(parseInt(ev.target.getAttribute("data-v"), 10));
+    });
+  }
+}
+setupSeg("seg-players", function (v) { cfgMaxPlayers = v; });
+setupSeg("seg-score", function (v) { cfgWinScore = v; });
+setupSeg("seg-time", function (v) { cfgMatchTime = v; });
 
-    def handle_goal(self, team):
-        if self.phase != "battle":
-            return
-        self.score[team] += 1
-        if self.score[team] >= self.win_score:
-            self.end_match(team)
-        else:
-            self.phase = "goal_pause"
-            self.goal_time = time.time()
+function postJson(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); });
+}
 
-    def end_match(self, winner=None):
-        self.phase = "over"
-        if winner:
-            self.winner = winner
-        elif self.score["left"] > self.score["right"]:
-            self.winner = "left"
-        elif self.score["right"] > self.score["left"]:
-            self.winner = "right"
-        else:
-            self.winner = "draw"
+document.getElementById("btn-create").addEventListener("click", function () {
+  var gname = inGameName.value.trim() || (MY_NAME + " игра");
+  postJson("/api/haxball/create", {
+    user_id: MY_UID, user_name: MY_NAME, game_name: gname,
+    max_players: cfgMaxPlayers, win_score: cfgWinScore, match_time: cfgMatchTime
+  }).then(function (res) {
+    if (res.ok) enterGame(res.code);
+    else showToast("Не удалось создать игру");
+  }).catch(function () { showToast("Ошибка сети"); });
+});
 
-    def get_state(self, viewer_uid):
-        viewer_uid = str(viewer_uid)
-        my_side = None
-        for p in self.players:
-            if p.uid == viewer_uid:
-                my_side = p.team
-                break
-        players_out = [{
-            "user_id": p.uid,
-            "name": p.name,
-            "x": round(p.x, 2),
-            "y": round(p.y, 2),
-            "vx": round(p.vx, 2),
-            "vy": round(p.vy, 2),
-            "team": p.team,
-            "slot": p.slot,
-            "kick_glow": round(p.kick_glow, 2),
-            "online": p.ws is not None,
-        } for p in self.players]
-        return {
-            "phase": self.phase,
-            "score": dict(self.score),
-            "timer": max(0, int(self.timer)),
-            "players": players_out,
-            "ball": {
-                "x": round(self.ball.x, 2), "y": round(self.ball.y, 2),
-                "vx": round(self.ball.vx, 2), "vy": round(self.ball.vy, 2),
-            },
-            "my_side": my_side,
-            "winner": self.winner,
-            "win_score": self.win_score,
-            "max_players": self.max_players,
-        }
+document.getElementById("btn-join").addEventListener("click", function () {
+  var code = inCode.value.trim();
+  if (!code) { showToast("Введите код"); return; }
+  joinRoom(code);
+});
 
+function joinRoom(code) {
+  postJson("/api/haxball/join", { code: code, user_id: MY_UID, user_name: MY_NAME })
+    .then(function (res) {
+      if (res.ok) enterGame(res.code);
+      else {
+        var msg = "Не удалось войти";
+        if (res.error === "not_found") msg = "Комната не найдена";
+        else if (res.error === "room_full") msg = "Комната заполнена";
+        else if (res.error === "game_over") msg = "Игра уже завершена";
+        showToast(msg);
+      }
+    }).catch(function () { showToast("Ошибка сети"); });
+}
 
-def _gen_code():
-    return "".join(random.choices(string.digits, k=6))
+function refreshList() {
+  if (elMenu.style.display === "none") return;
+  fetch("/api/haxball/list").then(function (r) { return r.json(); }).then(function (res) {
+    if (!res.ok) return;
+    listItemsEl.innerHTML = "";
+    if (res.items.length === 0) {
+      var d = document.createElement("div");
+      d.className = "empty-hint";
+      d.textContent = "Нет открытых игр";
+      listItemsEl.appendChild(d);
+      return;
+    }
+    res.items.forEach(function (it) {
+      var row = document.createElement("div");
+      row.className = "list-item";
+      var info = document.createElement("div");
+      var nameEl = document.createElement("div");
+      nameEl.className = "name";
+      nameEl.textContent = it.name + " [" + it.code + "]";
+      var sub = document.createElement("div");
+      sub.className = "info";
+      sub.textContent = "Хост: " + it.host + " · " + it.players + "/" + it.max;
+      info.appendChild(nameEl);
+      info.appendChild(sub);
+      var btn = document.createElement("button");
+      btn.textContent = "ВОЙТИ";
+      btn.addEventListener("click", function () { joinRoom(it.code); });
+      row.appendChild(info);
+      row.appendChild(btn);
+      listItemsEl.appendChild(row);
+    });
+  }).catch(function () {});
+}
+setInterval(refreshList, 3000);
+refreshList();
 
+var ws = null;
+var roomCode = null;
+var connected = false;
 
-async def api_create(request):
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    uid = data.get("user_id")
-    name = (data.get("user_name") or "Player")[:24]
-    if uid is None or uid == "":
-        return web.json_response({"ok": False, "error": "No user_id"})
+var serverState = null;
+var localSelf = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+var remoteRender = {};
+var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2, tx: FIELD_W / 2, ty: FIELD_H / 2 };
 
-    try:
-        max_players = int(data.get("max_players", 2))
-    except (TypeError, ValueError):
-        max_players = 2
-    if max_players not in (2, 4, 6): max_players = 2
+var joyActive = false;
+var joyDX = 0, joyDY = 0;
+var kickPressed = false;
+var lastSendTime = 0;
 
-    try:
-        win_score = int(data.get("win_score", 5))
-    except (TypeError, ValueError):
-        win_score = 5
-    if win_score not in (3, 5, 7, 10): win_score = 5
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-    try:
-        match_time = int(data.get("match_time", 180))
-    except (TypeError, ValueError):
-        match_time = 180
-    if match_time not in (60, 120, 180, 300): match_time = 180
+function clampPlayerPos(x, y) {
+  y = clamp(y, PLAYER_R, FIELD_H - PLAYER_R);
+  var inMouth = y >= (GOAL_TOP + 2) && y <= (GOAL_BOTTOM - 2);
+  if (inMouth) x = clamp(x, -GOAL_DEPTH + 2, FIELD_W + GOAL_DEPTH - 2);
+  else x = clamp(x, PLAYER_R, FIELD_W - PLAYER_R);
+  return [x, y];
+}
 
-    code = _gen_code()
-    while code in games:
-        code = _gen_code()
+function enterGame(code) {
+  roomCode = code;
+  elMenu.style.display = "none";
+  elGame.style.display = "block";
+  resizeGame();
+  connectWs(code);
+  requestAnimationFrame(gameLoop);
+}
 
-    g = Game(code, (data.get("game_name") or "Game")[:30], max_players, win_score, match_time)
-    g.add_player(uid, name)
-    games[code] = g
-    return web.json_response({"ok": True, "code": code})
+function leaveGame(silent) {
+  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  connected = false;
+  roomCode = null;
+  serverState = null;
+  remoteRender = {};
+  elGame.style.display = "none";
+  elMenu.style.display = "block";
+  refreshList();
+  if (!silent) showToast("Вы вышли из игры");
+}
 
+function connectWs(code) {
+  var proto = location.protocol === "https:" ? "wss:" : "ws:";
+  var url = proto + "//" + location.host + "/ws/haxball/" + code + "?uid=" + encodeURIComponent(MY_UID);
+  try { ws = new WebSocket(url); }
+  catch (e) { showToast("Не удалось подключиться"); leaveGame(true); return; }
+  ws.onopen = function () { connected = true; };
+  ws.onmessage = function (ev) {
+    var data;
+    try { data = JSON.parse(ev.data); } catch (e) { return; }
+    if (data.type === "state") {
+      serverState = data.state;
+      syncSelfFromServer();
+    } else if (data.type === "error") {
+      showToast("Комната недоступна");
+      leaveGame(true);
+    }
+  };
+  ws.onclose = function () {
+    if (roomCode !== null) { showToast("Соединение потеряно"); leaveGame(true); }
+  };
+  ws.onerror = function () {};
+}
 
-async def api_join(request):
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    code = str(data.get("code") or "").strip().upper()
-    uid = data.get("user_id")
-    name = (data.get("user_name") or "Player")[:24]
-    g = games.get(code)
-    if not g:
-        return web.json_response({"ok": False, "error": "Комната не найдена"})
-    if g.phase == "over":
-        return web.json_response({"ok": False, "error": "Игра уже закончилась"})
-    if g.find(uid):
-        return web.json_response({"ok": True, "code": code})
-    p = g.add_player(uid, name)
-    if not p:
-        return web.json_response({"ok": False, "error": "Комната полная"})
-    return web.json_response({"ok": True, "code": code})
+function findMe(state) {
+  if (!state) return null;
+  for (var i = 0; i < state.players.length; i++) {
+    if (state.players[i].user_id === MY_UID) return state.players[i];
+  }
+  return null;
+}
 
+function syncSelfFromServer() {
+  var me = findMe(serverState);
+  if (!me) return;
+  if (serverState.phase !== "battle") {
+    localSelf.x = me.x; localSelf.y = me.y;
+    localSelf.vx = 0; localSelf.vy = 0;
+    return;
+  }
+  var dist = Math.hypot(me.x - localSelf.x, me.y - localSelf.y);
+  if (dist > SELF_CORRECT_TELEPORT) {
+    localSelf.x = me.x; localSelf.y = me.y;
+  } else {
+    localSelf.x += (me.x - localSelf.x) * SELF_CORRECT_SOFT;
+    localSelf.y += (me.y - localSelf.y) * SELF_CORRECT_SOFT;
+  }
+}
 
-async def api_list(request):
-    items = []
-    for code, g in games.items():
-        if g.phase not in ("waiting", "battle"):
-            continue
-        items.append({
-            "code": code,
-            "name": g.name,
-            "host": g.players[0].name if g.players else "Unknown",
-            "players": len(g.players),
-            "max": g.max_players,
-        })
-    return web.json_response({"ok": True, "items": items})
+document.getElementById("exit-btn").addEventListener("click", function () { leaveGame(false); });
 
+var isRotated = false;
+var vw = window.innerWidth, vh = window.innerHeight;
 
-async def ws_handler(request):
-    code = request.match_info.get("code", "").upper()
-    uid = str(request.query.get("uid", ""))
-    g = games.get(code)
-    if not g:
-        return web.Response(status=404)
+function resizeGame() {
+  vw = window.innerWidth; vh = window.innerHeight;
+  isRotated = vw < vh;
+  var container = elGame;
+  if (isRotated) {
+    container.style.width = vh + "px";
+    container.style.height = vw + "px";
+    var tx = (vw - vh) / 2, ty = (vh - vw) / 2;
+    container.style.transform = "translate(" + tx + "px," + ty + "px) rotate(90deg)";
+  } else {
+    container.style.width = vw + "px";
+    container.style.height = vh + "px";
+    container.style.transform = "none";
+  }
+  var canvas = document.getElementById("gcanvas");
+  var cw = isRotated ? vh : vw;
+  var ch = isRotated ? vw : vh;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cw * dpr;
+  canvas.height = ch * dpr;
+  canvas.style.width = cw + "px";
+  canvas.style.height = ch + "px";
+  var ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resizeGame);
+window.addEventListener("orientationchange", function () { setTimeout(resizeGame, 200); });
 
-    p = g.find(uid)
-    if not p:
-        return web.Response(status=403)
+function localPointFromTouch(clientX, clientY) {
+  var rect = elGame.getBoundingClientRect();
+  if (isRotated) return { x: clientY - rect.top, y: rect.right - clientX };
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
 
-    ws = web.WebSocketResponse(heartbeat=30)
-    await ws.prepare(request)
-    p.ws = ws
+var joyZone = document.getElementById("joy-zone");
+var joyBase = document.getElementById("joy-base");
+var joyStick = document.getElementById("joy-stick");
+var kickBtn = document.getElementById("kick-btn");
 
-    try:
-        await ws.send_json({"type": "state", "state": g.get_state(uid)})
-    except Exception:
-        pass
+var joyTouchId = null;
+var joyBaseX = 0, joyBaseY = 0;
+var JOY_MAX_R = 45;
+var JOY_DEAD = 0.06;
 
-    try:
-        async for msg in ws:
-            if msg.type != web.WSMsgType.TEXT:
-                continue
-            try:
-                data = json.loads(msg.data)
-            except Exception:
-                continue
-            if data.get("action") == "move" and g.phase == "battle":
-                try:
-                    nx = float(data.get("x", p.x))
-                    ny = float(data.get("y", p.y))
-                except (TypeError, ValueError):
-                    continue
-                if math.hypot(nx - p.x, ny - p.y) < MAX_TELEPORT:
-                    p.x = nx
-                    p.y = ny
-                    g.clamp_player(p)
-                    try:
-                        p.vx = float(data.get("vx", p.vx))
-                        p.vy = float(data.get("vy", p.vy))
-                    except (TypeError, ValueError):
-                        pass
+function joyShow(x, y) {
+  joyBase.style.display = "block";
+  joyStick.style.display = "block";
+  joyBase.style.left = (x - 50) + "px";
+  joyBase.style.top = (y - 50) + "px";
+  joyStick.style.left = (x - 23) + "px";
+  joyStick.style.top = (y - 23) + "px";
+}
+function joyHide() {
+  joyBase.style.display = "none";
+  joyStick.style.display = "none";
+  joyDX = 0; joyDY = 0;
+  joyActive = false;
+  joyTouchId = null;
+}
+function joyUpdateStick(dx, dy) {
+  var d = Math.hypot(dx, dy);
+  var maxD = JOY_MAX_R;
+  if (d > maxD) { dx = dx / d * maxD; dy = dy / d * maxD; }
+  joyStick.style.left = (joyBaseX + dx - 23) + "px";
+  joyStick.style.top = (joyBaseY + dy - 23) + "px";
+  var mag = Math.min(1, d / maxD);
+  if (mag < JOY_DEAD) { joyDX = 0; joyDY = 0; }
+  else { joyDX = dx / maxD; joyDY = dy / maxD; }
+}
 
-                if data.get("kick") and time.time() - p.last_kick > KICK_COOLDOWN:
-                    p.last_kick = time.time()
-                    p.kick_glow = 1.0
-                    dist = math.hypot(g.ball.x - p.x, g.ball.y - p.y)
-                    if 0 < dist < KICK_DIST:
-                        nx_k = (g.ball.x - p.x) / dist
-                        ny_k = (g.ball.y - p.y) / dist
-                        g.ball.vx = nx_k * KICK_FORCE + p.vx * KICK_BOOST
-                        g.ball.vy = ny_k * KICK_FORCE + p.vy * KICK_BOOST
-    finally:
-        p.ws = None
-    return ws
+joyZone.addEventListener("touchstart", function (ev) {
+  ev.preventDefault();
+  if (joyTouchId !== null) return;
+  var t = ev.changedTouches[0];
+  var p = localPointFromTouch(t.clientX, t.clientY);
+  joyTouchId = t.identifier;
+  joyBaseX = p.x; joyBaseY = p.y;
+  joyActive = true;
+  joyShow(p.x, p.y);
+  joyDX = 0; joyDY = 0;
+}, { passive: false });
 
+window.addEventListener("touchmove", function (ev) {
+  if (joyTouchId === null) return;
+  for (var i = 0; i < ev.changedTouches.length; i++) {
+    var t = ev.changedTouches[i];
+    if (t.identifier === joyTouchId) {
+      ev.preventDefault();
+      var p = localPointFromTouch(t.clientX, t.clientY);
+      joyUpdateStick(p.x - joyBaseX, p.y - joyBaseY);
+    }
+  }
+}, { passive: false });
 
-def register_haxball_routes(app):
-    app.router.add_post('/api/haxball/create', api_create)
-    app.router.add_post('/api/haxball/join', api_join)
-    app.router.add_get('/api/haxball/list', api_list)
-    app.router.add_get('/ws/haxball/{code}', ws_handler)
+function joyEndHandler(ev) {
+  if (joyTouchId === null) return;
+  for (var i = 0; i < ev.changedTouches.length; i++) {
+    if (ev.changedTouches[i].identifier === joyTouchId) joyHide();
+  }
+}
+window.addEventListener("touchend", joyEndHandler, { passive: false });
+window.addEventListener("touchcancel", joyEndHandler, { passive: false });
 
+var kickTouchId = null;
+kickBtn.addEventListener("touchstart", function (ev) {
+  ev.preventDefault();
+  kickTouchId = ev.changedTouches[0].identifier;
+  kickPressed = true;
+  kickBtn.classList.add("active");
+}, { passive: false });
 
-async def haxball_watchdog():
-    tick_time = 1.0 / 60.0
-    broadcast_interval = 0.033
-    last_broadcast = time.time()
+function kickEndHandler(ev) {
+  if (kickTouchId === null) return;
+  for (var i = 0; i < ev.changedTouches.length; i++) {
+    if (ev.changedTouches[i].identifier === kickTouchId) {
+      kickTouchId = null; kickPressed = false; kickBtn.classList.remove("active");
+    }
+  }
+}
+window.addEventListener("touchend", kickEndHandler, { passive: false });
+window.addEventListener("touchcancel", kickEndHandler, { passive: false });
 
-    while True:
-        try:
-            start_t = time.time()
+function stepLocalSelf(dt) {
+  if (!serverState || serverState.phase !== "battle") return;
+  var desiredVx = joyDX * PLAYER_SPEED;
+  var desiredVy = joyDY * PLAYER_SPEED;
+  var accel = 1 - Math.exp(-PLAYER_ACCEL * dt);
+  localSelf.vx += (desiredVx - localSelf.vx) * accel;
+  localSelf.vy += (desiredVy - localSelf.vy) * accel;
+  localSelf.x += localSelf.vx * dt;
+  localSelf.y += localSelf.vy * dt;
+  var c = clampPlayerPos(localSelf.x, localSelf.y);
+  localSelf.x = c[0]; localSelf.y = c[1];
 
-            for code in list(games.keys()):
-                g = games.get(code)
-                if not g:
-                    continue
-                if g.phase != "waiting" and not any(p.ws for p in g.players):
-                    games.pop(code, None)
-                    continue
+  for (var i = 0; i < serverState.players.length; i++) {
+    var p = serverState.players[i];
+    if (p.user_id === MY_UID) continue;
+    var rp = remoteRender[p.user_id];
+    if (!rp) continue;
+    var dx = localSelf.x - rp.x, dy = localSelf.y - rp.y;
+    var d = Math.hypot(dx, dy);
+    var minD = PLAYER_R * 2;
+    if (d > 0 && d < minD) {
+      var ux = dx / d, uy = dy / d;
+      var overlap = (minD - d) * 0.5;
+      localSelf.x += ux * overlap; localSelf.y += uy * overlap;
+      var cc = clampPlayerPos(localSelf.x, localSelf.y);
+      localSelf.x = cc[0]; localSelf.y = cc[1];
+    }
+  }
+}
 
-                steps = max(1, int(math.ceil(tick_time / 0.005)))
-                step_dt = tick_time / steps
-                for _ in range(steps):
-                    g.update_physics(step_dt)
+function maybeSendState(now) {
+  if (!connected || !ws || ws.readyState !== 1) return;
+  if (now - lastSendTime < SEND_INTERVAL) return;
+  lastSendTime = now;
+  try {
+    ws.send(JSON.stringify({
+      action: "move",
+      x: localSelf.x, y: localSelf.y,
+      vx: localSelf.vx, vy: localSelf.vy,
+      kick: kickPressed
+    }));
+  } catch (e) {}
+}
 
-                if g.phase == "goal_pause" and time.time() - g.goal_time > GOAL_PAUSE:
-                    g.reset_positions()
-                    g.phase = "battle"
+function updateRenderTargets() {
+  if (!serverState) return;
+  for (var i = 0; i < serverState.players.length; i++) {
+    var p = serverState.players[i];
+    if (p.user_id === MY_UID) continue;
+    var r = remoteRender[p.user_id];
+    if (!r) {
+      remoteRender[p.user_id] = { x: p.x, y: p.y, tx: p.x, ty: p.y, name: p.name, team: p.team, slot: p.slot, kick_glow: p.kick_glow, online: p.online };
+    } else {
+      r.tx = p.x; r.ty = p.y;
+      r.name = p.name; r.team = p.team; r.slot = p.slot;
+      r.kick_glow = p.kick_glow; r.online = p.online;
+    }
+  }
+  var activeIds = {};
+  for (var j = 0; j < serverState.players.length; j++) activeIds[serverState.players[j].user_id] = true;
+  for (var uid in remoteRender) if (!activeIds[uid]) delete remoteRender[uid];
 
-                for p in g.players:
-                    if p.kick_glow > 0:
-                        p.kick_glow = max(0.0, p.kick_glow - tick_time * 5)
+  ballRender.tx = serverState.ball.x;
+  ballRender.ty = serverState.ball.y;
+}
 
-            now = time.time()
-            if now - last_broadcast >= broadcast_interval:
-                last_broadcast = now
-                for g in games.values():
-                    for p in g.players:
-                        if p.ws and not p.ws.closed:
-                            try:
-                                await p.ws.send_json({"type": "state", "state": g.get_state(p.uid)})
-                            except Exception:
-                                pass
+function stepInterpolation() {
+  for (var uid in remoteRender) {
+    var r = remoteRender[uid];
+    var dist = Math.hypot(r.tx - r.x, r.ty - r.y);
+    if (dist > REMOTE_TELEPORT_DIST) { r.x = r.tx; r.y = r.ty; }
+    else { r.x += (r.tx - r.x) * REMOTE_SMOOTH; r.y += (r.ty - r.y) * REMOTE_SMOOTH; }
+  }
+  var tx = (typeof ballRender.tx === "number") ? ballRender.tx : ballRender.x;
+  var ty = (typeof ballRender.ty === "number") ? ballRender.ty : ballRender.y;
+  var bd = Math.hypot(tx - ballRender.x, ty - ballRender.y);
+  if (bd > BALL_TELEPORT_DIST) { ballRender.x = tx; ballRender.y = ty; }
+  else { ballRender.x += (tx - ballRender.x) * BALL_SMOOTH; ballRender.y += (ty - ballRender.y) * BALL_SMOOTH; }
+}
 
-            elapsed = time.time() - start_t
-            await asyncio.sleep(max(0.0, tick_time - elapsed))
-        except Exception as e:
-            print(f"[haxball] watchdog error: {e}")
-            await asyncio.sleep(0.1)
+var canvas = document.getElementById("gcanvas");
+var ctx = canvas.getContext("2d");
+
+function fieldToScreen(cw, ch) {
+  var margin = 40;
+  var scale = Math.min((cw - margin * 2) / FIELD_W, (ch - margin * 2 - 60) / FIELD_H);
+  var offX = (cw - FIELD_W * scale) / 2;
+  var offY = (ch - FIELD_H * scale) / 2 + 30;
+  return { scale: scale, offX: offX, offY: offY };
+}
+
+function drawField(cw, ch) {
+  var m = fieldToScreen(cw, ch);
+  var s = m.scale, ox = m.offX, oy = m.offY;
+
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0, 0, cw, ch);
+
+  ctx.fillStyle = "#5a5a5a";
+  ctx.fillRect(ox, oy, FIELD_W * s, FIELD_H * s);
+
+  ctx.fillStyle = "rgba(0,0,0,0.06)";
+  var sections = 8;
+  for (var i = 0; i < sections; i += 2) {
+    ctx.fillRect(ox + (i * FIELD_W / sections) * s, oy, (FIELD_W / sections) * s, FIELD_H * s);
+  }
+
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(ox, oy, FIELD_W * s, FIELD_H * s);
+
+  ctx.beginPath();
+  ctx.moveTo(ox + FIELD_W * s / 2, oy);
+  ctx.lineTo(ox + FIELD_W * s / 2, oy + FIELD_H * s);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(ox + FIELD_W * s / 2, oy + FIELD_H * s / 2, 65 * s, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(ox + FIELD_W * s / 2, oy + FIELD_H * s / 2, 3 * s, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath(); ctx.arc(ox + 70 * s, oy + FIELD_H * s / 2, 3 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ox + 770 * s, oy + FIELD_H * s / 2, 3 * s, 0, Math.PI * 2); ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(ox + 70 * s, oy + FIELD_H * s / 2, 90 * s, -Math.PI * 0.32, Math.PI * 0.32);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(ox + 770 * s, oy + FIELD_H * s / 2, 90 * s, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
+  ctx.stroke();
+
+  ctx.fillStyle = "#333333";
+  ctx.fillRect(ox - GOAL_DEPTH * s, oy + GOAL_TOP * s, GOAL_DEPTH * s, (GOAL_BOTTOM - GOAL_TOP) * s);
+  ctx.fillRect(ox + FIELD_W * s, oy + GOAL_TOP * s, GOAL_DEPTH * s, (GOAL_BOTTOM - GOAL_TOP) * s);
+
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(ox - GOAL_DEPTH * s, oy + GOAL_TOP * s); ctx.lineTo(ox, oy + GOAL_TOP * s);
+  ctx.moveTo(ox - GOAL_DEPTH * s, oy + GOAL_BOTTOM * s); ctx.lineTo(ox, oy + GOAL_BOTTOM * s);
+  ctx.moveTo(ox + FIELD_W * s, oy + GOAL_TOP * s); ctx.lineTo(ox + FIELD_W * s + GOAL_DEPTH * s, oy + GOAL_TOP * s);
+  ctx.moveTo(ox + FIELD_W * s, oy + GOAL_BOTTOM * s); ctx.lineTo(ox + FIELD_W * s + GOAL_DEPTH * s, oy + GOAL_BOTTOM * s);
+  ctx.stroke();
+  ctx.lineWidth = 2;
+}
+
+function drawPlayer(m, x, y, team, slot, name, glow) {
+  var sx = m.offX + x * m.scale;
+  var sy = m.offY + y * m.scale;
+  var r = PLAYER_R * m.scale;
+
+  if (glow) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, r + 5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fill();
+  }
+
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle = team === "left" ? "#3a5fdc" : "#dc4040";
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#000";
+  ctx.stroke();
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold " + Math.round(14 * m.scale) + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(slot), sx, sy);
+
+  ctx.font = "bold " + Math.round(12 * m.scale) + "px sans-serif";
+  ctx.shadowColor = "#000";
+  ctx.shadowBlur = 3;
+  ctx.fillText(name, sx, sy + r + 12 * m.scale);
+  ctx.shadowBlur = 0;
+}
+
+function drawBall(m, x, y) {
+  var sx = m.offX + x * m.scale;
+  var sy = m.offY + y * m.scale;
+  var r = BALL_R * m.scale;
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle = "#e8e000";
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#000";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.28, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.fill();
+}
+
+function fmtTime(t) {
+  t = Math.max(0, Math.round(t));
+  var mm = Math.floor(t / 60), ss = t % 60;
+  return (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
+}
+
+function phaseLabel(state) {
+  if (state.phase === "waiting") return "ЖДЁМ ИГРОКОВ";
+  if (state.phase === "goal_pause") return "ГОЛ!";
+  if (state.phase === "over") {
+    if (state.winner === "draw") return "НИЧЬЯ";
+    if (state.winner === state.my_side) return "ПОБЕДА";
+    return "ПОРАЖЕНИЕ";
+  }
+  return "";
+}
+
+function drawHud(cw, ch, state) {
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+
+  ctx.font = "bold 32px sans-serif";
+  ctx.fillStyle = "#3a5fdc";
+  ctx.fillText(String(state.score.left), cw / 2 - 26, 40);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(":", cw / 2, 40);
+  ctx.fillStyle = "#dc4040";
+  ctx.fillText(String(state.score.right), cw / 2 + 26, 40);
+
+  ctx.font = "13px sans-serif";
+  ctx.fillStyle = "#ccc";
+  var sideLabel = state.my_side === "left" ? "ВЫ — СИНИЕ" : (state.my_side === "right" ? "ВЫ — КРАСНЫЕ" : "");
+  ctx.fillText(fmtTime(state.timer) + "  ·  код " + (roomCode || "") + "  ·  " + sideLabel, cw / 2, 58);
+
+  var lbl = phaseLabel(state);
+  if (lbl) {
+    ctx.font = "bold 22px sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 6;
+    ctx.fillText(lbl, cw / 2, ch / 2 - 20);
+    ctx.shadowBlur = 0;
+  }
+}
+
+function render() {
+  var cw = isRotated ? vh : vw;
+  var ch = isRotated ? vw : vh;
+
+  drawField(cw, ch);
+  var m = fieldToScreen(cw, ch);
+
+  if (serverState) {
+    for (var i = 0; i < serverState.players.length; i++) {
+      var p = serverState.players[i];
+      if (p.user_id === MY_UID) continue;
+      var r = remoteRender[p.user_id];
+      if (!r) continue;
+      drawPlayer(m, r.x, r.y, r.team, r.slot, r.name, r.kick_glow);
+    }
+    var me = findMe(serverState);
+    if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow);
+    drawBall(m, ballRender.x, ballRender.y);
+    drawHud(cw, ch, serverState);
+  } else {
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Подключение...", cw / 2, ch / 2);
+  }
+}
+
+var lastFrameTime = performance.now();
+
+function gameLoop(now) {
+  if (elGame.style.display === "none") return;
+  var dt = (now - lastFrameTime) / 1000;
+  if (dt > 0.05) dt = 0.05;
+  lastFrameTime = now;
+
+  updateRenderTargets();
+  stepLocalSelf(dt);
+  stepInterpolation();
+  maybeSendState(now);
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+
+resizeGame();
+
+})();
+</script>
+</body>
+</html>
