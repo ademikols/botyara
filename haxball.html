@@ -70,9 +70,11 @@
     background:radial-gradient(circle at 35% 30%,#ff8888,#ff4040);
     color:#fff;border:2px solid rgba(255,255,255,0.3);font-family:inherit;font-weight:900;font-size:14px;
     letter-spacing:2px;text-transform:uppercase;cursor:pointer;touch-action:none;
-    box-shadow:0 6px 20px rgba(255,64,64,0.5),inset 0 -4px 10px rgba(0,0,0,0.3);
-    text-shadow:0 1px 2px rgba(0,0,0,0.5);transition:transform .06s,box-shadow .06s}
-  #hbKick:active{transform:scale(0.94);box-shadow:0 3px 10px rgba(255,64,64,0.7)}
+    box-shadow:0 6px 20px rgba(255,64,64,0.35),inset 0 -4px 10px rgba(0,0,0,0.3);
+    text-shadow:0 1px 2px rgba(0,0,0,0.5);
+    opacity:0.5;
+    transition:transform .06s,box-shadow .06s,opacity .08s}
+  #hbKick:active{transform:scale(0.94);opacity:0.85;box-shadow:0 3px 14px rgba(255,64,64,0.7)}
 
   .game-bottom{position:absolute;top:8px;right:10px;z-index:11}
   .game-bottom .btn{padding:6px 12px;font-size:10px;width:auto;margin:0;letter-spacing:1px;border-radius:6px;background:rgba(0,0,0,0.5);border-color:rgba(255,255,255,0.25)}
@@ -134,25 +136,23 @@ const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
 let USERNAME = tg?.initDataUnsafe?.user?.first_name || ('guest' + String(USER_ID).slice(-4));
 document.getElementById('hbName').value = USERNAME;
 
-// ============================================================================
-// КОНСТАНТЫ (должны совпадать с сервером)
-// ============================================================================
+// КОНСТАНТЫ — совпадают с сервером
 const FIELD_W = 800, FIELD_H = 500, PLAYER_R = 20, BALL_R = 10;
 const GOAL_H = 140, GOAL_Y = (FIELD_H - GOAL_H) / 2;
-const MAX_SPEED = 360.0;
+const MAX_SPEED = 252.0;   // было 360, теперь -30%
 const FRICTION = 0.82;
 const WALL_E = 0.85;
 const PLAYER_PLAYER_E = 0.55;
 const PLAYER_BALL_E = 0.85;
 const BALL_FRICTION = 0.994;
-const KICK_FORCE = 420.0;
+const KICK_FORCE = 400.0;
 const KICK_COOLDOWN = 0.28;
 const KICK_BONUS = 1.10;
 const TICK_DT = 1.0 / 60.0;
 
-// ============================================================================
-// ПОВОРОТ
-// ============================================================================
+// Дистанция, в пределах которой клиент авторитетен над мячом (не трогаем сервером)
+const BALL_LOCAL_RADIUS = 40;
+
 function hbApplyOrientation(){
   const el = document.getElementById('s-game');
   if (!el) return;
@@ -170,31 +170,20 @@ function hbApplyOrientation(){
 window.addEventListener('resize', hbApplyOrientation);
 window.addEventListener('orientationchange', () => setTimeout(hbApplyOrientation, 150));
 
-// ============================================================================
-// СОСТОЯНИЕ
-// ============================================================================
 const HB = {
   code: null, ws: null,
-
-  // Буфер снапшотов (для интерполяции чужих)
   prevState: null, nextState: null,
   prevTs: 0, nextTs: 0,
-
-  // Локальное предсказание — своя фигура и мяч
-  me: {x: 0, y: 0, vx: 0, vy: 0, kick_cd: 0, kick_glow: 0},
-  ball: {x: 0, y: 0, vx: 0, vy: 0},
-  others: [], // [{user_id, x, y, vx, vy, team, name, kick_glow}] — из интерполяции
-
+  me: {x:0,y:0,vx:0,vy:0,kick_cd:0,kick_glow:0},
+  ball: {x:0,y:0,vx:0,vy:0},
+  others: [],
   predInit: false,
   myTeam: null,
-
-  input: {ix: 0, iy: 0, kick: false},
-
+  input: {ix:0, iy:0, kick:false},
   canvas: null, ctx: null, raf: null,
   lastSendTs: 0,
   tickAcc: 0,
   lastLoopTs: 0,
-
   joyId: null, joyCx: 0, joyCy: 0
 };
 
@@ -207,9 +196,6 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// ============================================================================
-// API
-// ============================================================================
 async function hbCreate(){
   const name = document.getElementById('hbName').value.trim() || USERNAME;
   const roomName = document.getElementById('hbRoomName').value.trim() || 'Haxball';
@@ -263,9 +249,6 @@ async function hbLoadLobbies(){
   } catch(e) { box.innerHTML = '<div class="msg">Ошибка: ' + escapeHtml(e.message) + '</div>'; }
 }
 
-// ============================================================================
-// ИГРА
-// ============================================================================
 function hbStartGame(){
   hbGo('game');
   document.getElementById('hbCodeTag').textContent = HB.code;
@@ -304,11 +287,8 @@ function hbLeave(){
   hbGo('menu'); hbLoadLobbies();
 }
 
-// Обработка серверного снапшота
 function hbOnServerState(s){
   const now = performance.now();
-
-  // буфер для интерполяции чужих
   if (!HB.nextState){
     HB.prevState = s; HB.nextState = s;
     HB.prevTs = now; HB.nextTs = now + 40;
@@ -319,28 +299,29 @@ function hbOnServerState(s){
 
   const sMe = (s.players || []).find(p => p.user_id === USER_ID);
 
-  // Первый снапшот — инициализация
   if (!HB.predInit){
     if (sMe){ HB.me.x = sMe.x; HB.me.y = sMe.y; HB.me.vx = 0; HB.me.vy = 0; }
     HB.ball.x = s.ball.x; HB.ball.y = s.ball.y;
     HB.ball.vx = 0; HB.ball.vy = 0;
     HB.predInit = true;
   } else {
-    // Мягкая коррекция мяча: клиент авторитетен на коротком отрезке
-    const bdx = s.ball.x - HB.ball.x;
-    const bdy = s.ball.y - HB.ball.y;
-    const bErr = Math.hypot(bdx, bdy);
-    if (bErr > 80){
-      // Сильно разошлись — телепорт
-      HB.ball.x = s.ball.x; HB.ball.y = s.ball.y;
-      HB.ball.vx = 0; HB.ball.vy = 0;
-    } else if (bErr > 4){
-      // Плавная подтяжка (мягкая, чтобы не рывками)
-      HB.ball.x += bdx * 0.08;
-      HB.ball.y += bdy * 0.08;
+    // ---- МЯЧ ----
+    // Если я близко к мячу — не трогаем мяч вообще (клиент авторитетен)
+    const distMeBall = Math.hypot(HB.ball.x - HB.me.x, HB.ball.y - HB.me.y);
+    if (distMeBall > BALL_LOCAL_RADIUS){
+      // Я далеко — мягко подтягиваем к серверу, БЕЗ телепорта
+      const bdx = s.ball.x - HB.ball.x;
+      const bdy = s.ball.y - HB.ball.y;
+      // Очень мягкий сдвиг: 5% за снапшот. При 25 Гц это ~75%/сек
+      HB.ball.x += bdx * 0.05;
+      HB.ball.y += bdy * 0.05;
+      // Скорость тоже чуть подтянем
+      HB.ball.vx += (0 - HB.ball.vx) * 0.02;
+      HB.ball.vy += (0 - HB.ball.vy) * 0.02;
     }
+    // Если близко — вообще ничего не делаем
 
-    // Коррекция своей позиции — только при реальном расхождении
+    // ---- МОЯ ФИГУРА ----
     if (sMe){
       const mdx = sMe.x - HB.me.x;
       const mdy = sMe.y - HB.me.y;
@@ -357,9 +338,6 @@ function hbOnServerState(s){
   HB.myTeam = s.my_side;
 }
 
-// ============================================================================
-// ВВОД — плавающий джойстик
-// ============================================================================
 function hbInitInput(){
   HB.canvas = document.getElementById('hb-canvas');
   HB.ctx = HB.canvas.getContext('2d');
@@ -477,16 +455,12 @@ function hbKeyUp(e){
   if (k===' ') HB.input.kick = false;
 }
 
-// ============================================================================
-// ЦИКЛ — фиксированный тик 60 Hz + интерполяция чужих
-// ============================================================================
 function hbLoop(){
   const now = performance.now();
   let elapsed = (now - HB.lastLoopTs) / 1000;
   HB.lastLoopTs = now;
   if (elapsed > 0.1) elapsed = 0.1;
 
-  // Отправляем ввод на сервер ~33 Гц
   if (HB.ws && HB.ws.readyState === 1 && now - HB.lastSendTs > 30){
     HB.lastSendTs = now;
     HB.ws.send(JSON.stringify({
@@ -495,7 +469,6 @@ function hbLoop(){
     }));
   }
 
-  // Фиксированные тики 60 Гц
   HB.tickAcc += elapsed;
   let guard = 0;
   while (HB.tickAcc >= TICK_DT && guard < 6){
@@ -505,7 +478,6 @@ function hbLoop(){
   }
   if (guard >= 6) HB.tickAcc = 0;
 
-  // Обновляем интерполированных чужих
   hbUpdateOthers(now);
 
   if (HB.predInit){
@@ -515,7 +487,6 @@ function hbLoop(){
   HB.raf = requestAnimationFrame(hbLoop);
 }
 
-// Обновление списка чужих игроков для рендера и коллизий
 function hbUpdateOthers(now){
   const a = HB.prevState, b = HB.nextState;
   if (!b){ HB.others = []; return; }
@@ -548,13 +519,9 @@ function hbUpdateOthers(now){
   HB.others = out;
 }
 
-// ============================================================================
-// ЛОКАЛЬНАЯ ФИЗИКА — точно как на сервере
-// ============================================================================
 function hbLocalTick(dt){
   if (!HB.predInit) return;
 
-  // ---- Моя фигура ----
   const p = HB.me;
   const ix = HB.input.ix, iy = HB.input.iy;
   const mag = Math.hypot(ix, iy);
@@ -580,7 +547,6 @@ function hbLocalTick(dt){
   if (p.kick_cd > 0) p.kick_cd = Math.max(0, p.kick_cd - dt);
   if (p.kick_glow > 0) p.kick_glow = Math.max(0, p.kick_glow - dt);
 
-  // Коллизии моей фигуры с чужими (мягкое расталкивание)
   for (const o of HB.others){
     const dx = o.x - p.x, dy = o.y - p.y;
     const dist = Math.hypot(dx, dy);
@@ -595,36 +561,25 @@ function hbLocalTick(dt){
     }
   }
 
-  // ---- Мяч ----
   const b = HB.ball;
   const bk = Math.pow(BALL_FRICTION, dt * 60);
   b.vx *= bk; b.vy *= bk;
   b.x += b.vx * dt;
   b.y += b.vy * dt;
 
-  // Стены мяча
   const inGoalY = GOAL_Y < b.y < GOAL_Y + GOAL_H;
-  if (b.x - BALL_R < 0 && !inGoalY){
-    b.x = BALL_R; b.vx = Math.abs(b.vx) * WALL_E;
-  }
-  if (b.x + BALL_R > FIELD_W && !inGoalY){
-    b.x = FIELD_W - BALL_R; b.vx = -Math.abs(b.vx) * WALL_E;
-  }
+  if (b.x - BALL_R < 0 && !inGoalY){ b.x = BALL_R; b.vx = Math.abs(b.vx) * WALL_E; }
+  if (b.x + BALL_R > FIELD_W && !inGoalY){ b.x = FIELD_W - BALL_R; b.vx = -Math.abs(b.vx) * WALL_E; }
   if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = Math.abs(b.vy) * WALL_E; }
   if (b.y + BALL_R > FIELD_H){ b.y = FIELD_H - BALL_R; b.vy = -Math.abs(b.vy) * WALL_E; }
 
-  // Коллизия моей фигуры с мячом — И ТОЛЧОК ОТ МЯЧА
   hbResolveBallPlayer(p, b, true);
 
-  // Коллизии чужих с мячом (только расталкивание, без удара)
   for (const o of HB.others){
     hbResolveBallPlayer(o, b, false);
   }
-
-  // Коллизии игрок-игрок чужих с мячом уже учтены, а также сами чужие между собой не трогаем
 }
 
-// Единая функция коллизии круг-круг с мячом
 function hbResolveBallPlayer(pl, b, allowKick){
   const dx = b.x - pl.x, dy = b.y - pl.y;
   const dist = Math.hypot(dx, dy);
@@ -633,13 +588,11 @@ function hbResolveBallPlayer(pl, b, allowKick){
 
   const nx = dx / dist, ny = dy / dist;
   const overlap = minD - dist;
-  // Мяч выталкивается, игрок чуть-чуть
   b.x += nx * overlap * 0.9;
   b.y += ny * overlap * 0.9;
   pl.x -= nx * overlap * 0.1;
   pl.y -= ny * overlap * 0.1;
 
-  // Удар (только для моей фигуры и если кнопка нажата)
   if (allowKick && HB.input.kick && HB.me.kick_cd <= 0){
     const pvx = pl.vx || 0, pvy = pl.vy || 0;
     b.vx = nx * KICK_FORCE + pvx * KICK_BONUS;
@@ -649,7 +602,6 @@ function hbResolveBallPlayer(pl, b, allowKick){
     return true;
   }
 
-  // Обычный упругий отскок
   const pvx = pl.vx || 0, pvy = pl.vy || 0;
   const rvx = b.vx - pvx, rvy = b.vy - pvy;
   const vel_n = rvx * nx + rvy * ny;
@@ -664,31 +616,24 @@ function hbResolveBallPlayer(pl, b, allowKick){
   return false;
 }
 
-// ============================================================================
-// РЕНДЕР
-// ============================================================================
 function hbRender(){
   const ctx = HB.ctx;
 
-  // Трава
   for (let i = 0; i < 10; i++){
     ctx.fillStyle = i % 2 === 0 ? '#0d240d' : '#0a1c0a';
     ctx.fillRect(i * (FIELD_W/10), 0, FIELD_W/10, FIELD_H);
   }
 
-  // Разметка
   ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(FIELD_W/2, 0); ctx.lineTo(FIELD_W/2, FIELD_H); ctx.stroke();
   ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI*2); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
   ctx.beginPath(); ctx.arc(FIELD_W/2, FIELD_H/2, 3, 0, Math.PI*2); ctx.fill();
 
-  // Штрафные
   ctx.strokeStyle = 'rgba(255,255,255,0.15)';
   ctx.strokeRect(0, GOAL_Y - 20, 60, GOAL_H + 40);
   ctx.strokeRect(FIELD_W - 60, GOAL_Y - 20, 60, GOAL_H + 40);
 
-  // Ворота
   ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 5;
   ctx.beginPath(); ctx.moveTo(2, GOAL_Y); ctx.lineTo(2, GOAL_Y + GOAL_H); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(FIELD_W-2, GOAL_Y); ctx.lineTo(FIELD_W-2, GOAL_Y + GOAL_H); ctx.stroke();
@@ -696,21 +641,18 @@ function hbRender(){
   ctx.fillStyle = 'rgba(68,136,255,0.18)'; ctx.fillRect(0, GOAL_Y, 8, GOAL_H);
   ctx.fillStyle = 'rgba(255,107,107,0.18)'; ctx.fillRect(FIELD_W-8, GOAL_Y, 8, GOAL_H);
 
-  // Чужие игроки
   for (const o of HB.others){
     const color = o.team === 'left' ? '#4488ff' : '#ff6b6b';
     const dark = o.team === 'left' ? '#2a5ba8' : '#b84242';
     hbDrawPlayer(ctx, o.x, o.y, color, dark, false, o.name || '', o.kick_glow || 0);
   }
 
-  // Моя фигура
   {
     const color = HB.myTeam === 'left' ? '#4488ff' : '#ff6b6b';
     const dark  = HB.myTeam === 'left' ? '#2a5ba8' : '#b84242';
     hbDrawPlayer(ctx, HB.me.x, HB.me.y, color, dark, true, '', HB.me.kick_glow);
   }
 
-  // Мяч
   const b = HB.ball;
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.beginPath();
@@ -725,7 +667,6 @@ function hbRender(){
 }
 
 function hbDrawPlayer(ctx, x, y, color, dark, isMe, name, glow){
-  // Тень
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath();
   ctx.ellipse(x, y + PLAYER_R + 3, PLAYER_R*0.9, PLAYER_R*0.3, 0, 0, Math.PI*2);
@@ -756,7 +697,7 @@ function hbDrawPlayer(ctx, x, y, color, dark, isMe, name, glow){
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '11px -apple-system, sans-serif';
     ctx.textBaseline = 'top';
-    ctx.fillText(name.slice(0, 10), x, y + PLAYER_R + 2);
+    ctx.fillText(name.slice(0, 10), x, y + PLAYER_R + 3);
   }
 }
 
@@ -784,9 +725,6 @@ function hbUpdateHUD(){
   } else phase.textContent = `${l} : ${r}`;
 }
 
-// ============================================================================
-// СТАРТ
-// ============================================================================
 hbLoadLobbies();
 hbApplyOrientation();
 </script>
