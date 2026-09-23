@@ -9,18 +9,17 @@ from typing import Dict, Optional
 from aiohttp import web
 from datetime import datetime
 
-FIELD_WIDTH = 800
-FIELD_HEIGHT = 500
+FIELD_WIDTH = 840
+FIELD_HEIGHT = 400
 FIELD_HALF_WIDTH = FIELD_WIDTH / 2
 FIELD_HALF_HEIGHT = FIELD_HEIGHT / 2
 
-PLAYER_RADIUS = 20
-BALL_RADIUS = 10
-GOAL_HEIGHT = 140
+PLAYER_RADIUS = 15
+BALL_RADIUS = 7
+GOAL_HEIGHT = 100
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-MAX_SPEED = 252.0
-ACCELERATION = 2520.0
+MAX_SPEED = 260.0
 FRICTION = 0.82
 WALL_ELASTICITY = 0.85
 PLAYER_PLAYER_ELASTICITY = 0.55
@@ -33,17 +32,16 @@ KICK_BONUS_FROM_PLAYER_VEL = 1.10
 TICK_RATE = 60
 DT = 1.0 / TICK_RATE
 
-SNAPSHOT_RATE = 25
+SNAPSHOT_RATE = 30
 SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
 
-MAX_PLAYERS = 6
-TEAM_CAP = 3
-MATCH_TIME = 180.0
+DEFAULT_MAX_PLAYERS = 6
+DEFAULT_WIN_SCORE = 5
+DEFAULT_MATCH_TIME = 180.0
 GOAL_PAUSE = 2.0
-WIN_SCORE = 5
 
-LEFT_SPAWN = [(140.0, 120.0), (140.0, 250.0), (140.0, 380.0)]
-RIGHT_SPAWN = [(660.0, 120.0), (660.0, 250.0), (660.0, 380.0)]
+LEFT_SPAWN = [(140.0, 100.0), (140.0, 200.0), (140.0, 300.0)]
+RIGHT_SPAWN = [(700.0, 100.0), (700.0, 200.0), (700.0, 300.0)]
 
 
 @dataclass
@@ -56,12 +54,6 @@ class Player:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
-    ix: float = 0.0
-    iy: float = 0.0
-    up: bool = False
-    down: bool = False
-    left: bool = False
-    right: bool = False
     kick: bool = False
     kick_cd: float = 0.0
     kick_glow: float = 0.0
@@ -72,6 +64,8 @@ class Player:
             "name": self.name,
             "x": round(self.x, 2),
             "y": round(self.y, 2),
+            "vx": round(self.vx, 2),
+            "vy": round(self.vy, 2),
             "team": self.team,
             "kick_glow": round(self.kick_glow, 2),
         }
@@ -85,7 +79,12 @@ class Ball:
     vy: float = 0.0
 
     def to_dict(self):
-        return {"x": round(self.x, 2), "y": round(self.y, 2)}
+        return {
+            "x": round(self.x, 2),
+            "y": round(self.y, 2),
+            "vx": round(self.vx, 2),
+            "vy": round(self.vy, 2),
+        }
 
 
 @dataclass
@@ -94,12 +93,15 @@ class HaxballGame:
     name: str
     host_id: int
     host_name: str
+    max_players: int = DEFAULT_MAX_PLAYERS
+    win_score: int = DEFAULT_WIN_SCORE
+    match_time: float = DEFAULT_MATCH_TIME
     created_at: datetime = field(default_factory=datetime.now)
     players: Dict[int, Player] = field(default_factory=dict)
     ball: Ball = field(default_factory=Ball)
     score: Dict[str, int] = field(default_factory=lambda: {"left": 0, "right": 0})
     phase: str = "waiting"
-    timer: float = MATCH_TIME
+    timer: float = DEFAULT_MATCH_TIME
     pause_until: float = 0.0
     winner: Optional[str] = None
     sockets: Dict[int, web.WebSocketResponse] = field(default_factory=dict)
@@ -117,6 +119,9 @@ class HaxballGame:
             "my_side": my_side,
             "winner": self.winner,
             "last_goal_team": self.last_goal_team,
+            "max_players": self.max_players,
+            "win_score": self.win_score,
+            "match_time": int(self.match_time),
         }
 
 
@@ -135,13 +140,14 @@ def team_count(game, team):
 def pick_team(game):
     lc = team_count(game, "left")
     rc = team_count(game, "right")
+    cap = max(1, game.max_players // 2)
     if lc < rc:
         return "left"
     if rc < lc:
         return "right"
-    if lc < TEAM_CAP:
+    if lc < cap:
         return "left"
-    if rc < TEAM_CAP:
+    if rc < cap:
         return "right"
     return None
 
@@ -161,64 +167,24 @@ def reset_ball(game):
 def reset_positions(game):
     for p in game.players.values():
         p.vx = p.vy = 0.0
-        p.up = p.down = p.left = p.right = p.kick = False
-        p.ix = p.iy = 0.0
+        p.kick = False
         p.kick_cd = 0.0
         x, y = spawn_for(p.team, p.slot)
         p.x = x
         p.y = y
 
 
-def update_player(player, dt):
-    ix = player.ix
-    iy = player.iy
-    if ix == 0.0 and iy == 0.0:
-        if player.up:
-            iy -= 1.0
-        if player.down:
-            iy += 1.0
-        if player.left:
-            ix -= 1.0
-        if player.right:
-            ix += 1.0
+# ---------- ФИЗИКА ----------
 
-    mag = math.hypot(ix, iy)
-    if mag > 1.0:
-        ix /= mag
-        iy /= mag
-
-    if mag > 0.05:
-        player.vx = ix * MAX_SPEED * min(1.0, mag)
-        player.vy = iy * MAX_SPEED * min(1.0, mag)
-    else:
-        k = FRICTION ** (dt * 60.0)
-        player.vx *= k
-        player.vy *= k
-        if abs(player.vx) < 3.0:
-            player.vx = 0.0
-        if abs(player.vy) < 3.0:
-            player.vy = 0.0
-
-    player.x += player.vx * dt
-    player.y += player.vy * dt
-
-    if player.x - PLAYER_RADIUS < 0:
+def clamp_player(player):
+    if player.x < PLAYER_RADIUS:
         player.x = PLAYER_RADIUS
-        player.vx = abs(player.vx) * WALL_ELASTICITY
-    if player.x + PLAYER_RADIUS > FIELD_WIDTH:
+    if player.x > FIELD_WIDTH - PLAYER_RADIUS:
         player.x = FIELD_WIDTH - PLAYER_RADIUS
-        player.vx = -abs(player.vx) * WALL_ELASTICITY
-    if player.y - PLAYER_RADIUS < 0:
+    if player.y < PLAYER_RADIUS:
         player.y = PLAYER_RADIUS
-        player.vy = abs(player.vy) * WALL_ELASTICITY
-    if player.y + PLAYER_RADIUS > FIELD_HEIGHT:
+    if player.y > FIELD_HEIGHT - PLAYER_RADIUS:
         player.y = FIELD_HEIGHT - PLAYER_RADIUS
-        player.vy = -abs(player.vy) * WALL_ELASTICITY
-
-    if player.kick_cd > 0:
-        player.kick_cd = max(0.0, player.kick_cd - dt)
-    if player.kick_glow > 0:
-        player.kick_glow = max(0.0, player.kick_glow - dt)
 
 
 def update_ball(ball, dt):
@@ -269,17 +235,6 @@ def resolve_player_player(p1, p2):
     p1.y -= ny * overlap * 0.5
     p2.x += nx * overlap * 0.5
     p2.y += ny * overlap * 0.5
-    rvx = p2.vx - p1.vx
-    rvy = p2.vy - p1.vy
-    vel_n = rvx * nx + rvy * ny
-    if vel_n > 0:
-        return
-    e = PLAYER_PLAYER_ELASTICITY
-    j = -(1 + e) * vel_n / 2.0
-    p1.vx -= j * nx
-    p1.vy -= j * ny
-    p2.vx += j * nx
-    p2.vy += j * ny
 
 
 def resolve_player_ball(player, ball):
@@ -292,10 +247,8 @@ def resolve_player_ball(player, ball):
     nx = dx / dist
     ny = dy / dist
     overlap = min_dist - dist
-    ball.x += nx * overlap * 0.9
-    ball.y += ny * overlap * 0.9
-    player.x -= nx * overlap * 0.1
-    player.y -= ny * overlap * 0.1
+    ball.x += nx * overlap * 1.0
+    ball.y += ny * overlap * 1.0
 
     if player.kick and player.kick_cd <= 0:
         base_x = nx * KICK_FORCE + player.vx * KICK_BONUS_FROM_PLAYER_VEL
@@ -314,21 +267,27 @@ def resolve_player_ball(player, ball):
         m_player = 3.0
         m_ball = 1.0
         j = -(1 + e) * vel_n / (1.0 / m_player + 1.0 / m_ball)
-        player.vx -= j / m_player * nx
-        player.vy -= j / m_player * ny
         ball.vx += j / m_ball * nx
         ball.vy += j / m_ball * ny
     return False
 
 
 def step_physics(game, dt):
+    # Позиции игроков — авторитет клиента, только клампим и расталкиваем
     for p in game.players.values():
-        update_player(p, dt)
+        clamp_player(p)
+        if p.kick_cd > 0:
+            p.kick_cd = max(0.0, p.kick_cd - dt)
+        if p.kick_glow > 0:
+            p.kick_glow = max(0.0, p.kick_glow - dt)
+
     players = list(game.players.values())
     for i in range(len(players)):
         for j in range(i + 1, len(players)):
             resolve_player_player(players[i], players[j])
+
     update_ball(game.ball, dt)
+
     for p in players:
         resolve_player_ball(p, game.ball)
 
@@ -354,7 +313,7 @@ def update_game_physics(game, dt):
         game.last_goal_team = goal
         reset_ball(game)
         reset_positions(game)
-        if game.score[goal] >= WIN_SCORE:
+        if game.score[goal] >= game.win_score:
             game.phase = "over"
             game.winner = goal
         else:
@@ -379,6 +338,8 @@ async def _kick_from_old_game(user_id):
             pass
 
 
+# ---------- HTTP ----------
+
 async def handle_create(request):
     try:
         data = await request.json()
@@ -391,13 +352,38 @@ async def handle_create(request):
     if not user_id:
         return web.json_response({"ok": False, "error": "No user_id"})
 
+    try:
+        max_players = int(data.get("max_players", DEFAULT_MAX_PLAYERS))
+    except (TypeError, ValueError):
+        max_players = DEFAULT_MAX_PLAYERS
+    if max_players not in (2, 4, 6):
+        max_players = DEFAULT_MAX_PLAYERS
+
+    try:
+        win_score = int(data.get("win_score", DEFAULT_WIN_SCORE))
+    except (TypeError, ValueError):
+        win_score = DEFAULT_WIN_SCORE
+    if win_score not in (3, 5, 7, 10):
+        win_score = DEFAULT_WIN_SCORE
+
+    try:
+        match_time = int(data.get("match_time", DEFAULT_MATCH_TIME))
+    except (TypeError, ValueError):
+        match_time = int(DEFAULT_MATCH_TIME)
+    if match_time not in (60, 120, 180, 300):
+        match_time = int(DEFAULT_MATCH_TIME)
+
     await _kick_from_old_game(user_id)
 
     code = generate_code()
     while code in games:
         code = generate_code()
 
-    game = HaxballGame(code=code, name=game_name, host_id=user_id, host_name=user_name)
+    game = HaxballGame(
+        code=code, name=game_name, host_id=user_id, host_name=user_name,
+        max_players=max_players, win_score=win_score, match_time=float(match_time),
+    )
+    game.timer = float(match_time)
     p = Player(user_id=user_id, name=user_name, team="left", slot=0)
     p.x, p.y = spawn_for("left", 0)
     game.players[user_id] = p
@@ -428,7 +414,7 @@ async def handle_join(request):
 
     if game.phase == "over":
         return web.json_response({"ok": False, "error": "Game already finished"})
-    if len(game.players) >= MAX_PLAYERS:
+    if len(game.players) >= game.max_players:
         return web.json_response({"ok": False, "error": "Game is full"})
 
     team = pick_team(game)
@@ -445,7 +431,7 @@ async def handle_join(request):
 
     if game.phase == "waiting" and len(game.players) >= 2:
         game.phase = "battle"
-        game.timer = MATCH_TIME
+        game.timer = game.match_time
         game.score = {"left": 0, "right": 0}
         reset_ball(game)
         reset_positions(game)
@@ -462,7 +448,7 @@ async def handle_list(request):
             "code": code, "name": game.name,
             "host": game.host_name,
             "players": len(game.players),
-            "max": MAX_PLAYERS,
+            "max": game.max_players,
         })
     return web.json_response({"ok": True, "items": items})
 
@@ -495,7 +481,7 @@ async def handle_websocket(request):
 
     try:
         async for msg in ws:
-            if msg.type == web.WSMsgType.TEXT:
+            if msg.type == web.WebSocketType.TEXT if False else msg.type == web.WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
                 except Exception:
@@ -505,14 +491,19 @@ async def handle_websocket(request):
                     continue
                 if data.get("action") == "move":
                     try:
-                        player.ix = float(data.get("ix", 0.0))
-                        player.iy = float(data.get("iy", 0.0))
+                        nx = float(data.get("x", player.x))
+                        ny = float(data.get("y", player.y))
+                        nvx = float(data.get("vx", 0.0))
+                        nvy = float(data.get("vy", 0.0))
                     except (TypeError, ValueError):
-                        player.ix = player.iy = 0.0
-                    player.up = bool(data.get("up"))
-                    player.down = bool(data.get("down"))
-                    player.left = bool(data.get("left"))
-                    player.right = bool(data.get("right"))
+                        nx, ny = player.x, player.y
+                        nvx, nvy = 0.0, 0.0
+                    # Защита от телепорта
+                    if math.hypot(nx - player.x, ny - player.y) < 500:
+                        player.x = nx
+                        player.y = ny
+                    player.vx = nvx
+                    player.vy = nvy
                     player.kick = bool(data.get("kick"))
             elif msg.type == web.WSMsgType.ERROR:
                 break
