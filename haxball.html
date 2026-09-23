@@ -129,8 +129,12 @@ var SEND_INTERVAL = 1000 / SEND_HZ;
 var SELF_CORRECT_TELEPORT = 100;
 var SELF_CORRECT_SOFT = 0.08;
 
-// Интервал снапшотов сервера (сек). Используется для экстраполяции.
-var SERVER_SNAPSHOT_DT = 0.033;
+// Буферизованная интерполяция: рисуем мир с задержкой RENDER_DELAY_MS
+// между двумя снапшотами из буфера (как в оригинальном haxball.com).
+var RENDER_DELAY_MS = 100;      // можно 90-120
+var BUFFER_KEEP_MS = 500;       // снапшоты старше этого удаляются
+var SNAP_DIST_PLAYER = 150;     // если игрок "прыгнул" дальше — не интерполируем (телепорт после гола)
+var SNAP_DIST_BALL = 200;       // то же для мяча
 
 function genUid() {
   var s = "";
@@ -272,9 +276,12 @@ var connected = false;
 var serverState = null;
 var localSelf = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
 
-// Рендер-состояние для чужих игроков и мяча
+// Рендер-состояние для чужих игроков и мяча (заполняется renderInterpolated)
 var remoteRender = {};
 var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2 };
+
+// Буфер снапшотов: [{ t, players, ball }, ...]
+var snapshotBuffer = [];
 
 var joyActive = false;
 var joyDX = 0, joyDY = 0;
@@ -293,6 +300,8 @@ function clampPlayerPos(x, y) {
 
 function enterGame(code) {
   roomCode = code;
+  snapshotBuffer = [];
+  remoteRender = {};
   elMenu.style.display = "none";
   elGame.style.display = "block";
   resizeGame();
@@ -306,10 +315,19 @@ function leaveGame(silent) {
   roomCode = null;
   serverState = null;
   remoteRender = {};
+  snapshotBuffer = [];
   elGame.style.display = "none";
   elMenu.style.display = "block";
   refreshList();
   if (!silent) showToast("Вы вышли из игры");
+}
+
+function pushSnapshot(state) {
+  var now = performance.now();
+  snapshotBuffer.push({ t: now, players: state.players, ball: state.ball });
+  while (snapshotBuffer.length > 0 && now - snapshotBuffer[0].t > BUFFER_KEEP_MS) {
+    snapshotBuffer.shift();
+  }
 }
 
 function connectWs(code) {
@@ -324,7 +342,7 @@ function connectWs(code) {
     if (data.type === "state") {
       serverState = data.state;
       syncSelfFromServer();
-      syncRenderTargets();
+      pushSnapshot(data.state);
     } else if (data.type === "error") {
       showToast("Комната недоступна");
       leaveGame(true);
@@ -532,98 +550,98 @@ function maybeSendState(now) {
   } catch (e) {}
 }
 
-// ==================== ЭКСТРАПОЛЯЦИЯ ====================
+// ==================== БУФЕРИЗОВАННАЯ ИНТЕРПОЛЯЦИЯ ====================
 
-var ballExt = {
-  x: FIELD_W / 2, y: FIELD_H / 2,
-  vx: 0, vy: 0,
-  t: 0,
-  init: false
-};
+function lerp(a, b, t) { return a + (b - a) * t; }
 
-var remoteExt = {}; // uid -> {x, y, vx, vy, t, name, team, slot, glow, init}
-
-function syncRenderTargets() {
-  if (!serverState) return;
-  var now = performance.now();
-
-  // Чужие игроки
-  var activeIds = {};
-  for (var i = 0; i < serverState.players.length; i++) {
-    var p = serverState.players[i];
-    if (p.user_id === MY_UID) continue;
-    activeIds[p.user_id] = true;
-    var r = remoteExt[p.user_id];
-    if (!r) {
-      remoteExt[p.user_id] = {
-        x: p.x, y: p.y, vx: p.vx || 0, vy: p.vy || 0,
-        t: now,
-        name: p.name, team: p.team, slot: p.slot,
-        glow: p.kick_glow, init: true
-      };
-    } else {
-      // Плавная коррекция: подтягиваем базу к серверу
-      var dx = p.x - r.x;
-      var dy = p.y - r.y;
-      var dist = Math.hypot(dx, dy);
-      if (dist > 80) {
-        r.x = p.x; r.y = p.y;
-      } else if (dist > 2) {
-        r.x += dx * 0.15;
-        r.y += dy * 0.15;
-      }
-      r.vx = p.vx || 0;
-      r.vy = p.vy || 0;
-      r.t = now;
-      r.name = p.name; r.team = p.team; r.slot = p.slot; r.glow = p.kick_glow;
-    }
-  }
-  for (var uid in remoteExt) if (!activeIds[uid]) delete remoteExt[uid];
-
-  // Мяч
-  var b = serverState.ball;
-  if (!ballExt.init) {
-    ballExt.x = b.x; ballExt.y = b.y;
-    ballExt.vx = b.vx || 0; ballExt.vy = b.vy || 0;
-    ballExt.t = now;
-    ballExt.init = true;
-  } else {
-    var bdx = b.x - ballExt.x;
-    var bdy = b.y - ballExt.y;
-    var bdist = Math.hypot(bdx, bdy);
-    if (bdist > 100) {
-      ballExt.x = b.x; ballExt.y = b.y;
-    } else if (bdist > 2) {
-      ballExt.x += bdx * 0.25;
-      ballExt.y += bdy * 0.25;
-    }
-    ballExt.vx = b.vx || 0;
-    ballExt.vy = b.vy || 0;
-    ballExt.t = now;
-  }
+// Интерполяция позиции; при слишком большом скачке (гол, ресет) — сразу B.
+function lerpPos(ax, ay, bx, by, alpha, snapDist) {
+  if (Math.hypot(bx - ax, by - ay) > snapDist) return [bx, by];
+  return [lerp(ax, bx, alpha), lerp(ay, by, alpha)];
 }
 
-function stepInterpolation() {
-  var now = performance.now();
-
-  // Чужие игроки: pos + vel * elapsed
-  for (var uid in remoteExt) {
-    var r = remoteExt[uid];
-    var elapsed = (now - r.t) / 1000;
-    if (elapsed > 0.25) elapsed = 0.25;
-    var predX = r.x + r.vx * elapsed;
-    var predY = r.y + r.vy * elapsed;
-    remoteRender[uid] = {
-      x: predX, y: predY,
-      name: r.name, team: r.team, slot: r.slot, kick_glow: r.glow
+// Применить один снапшот как есть (без интерполяции)
+function applySnapshot(s) {
+  var out = {};
+  for (var i = 0; i < s.players.length; i++) {
+    var p = s.players[i];
+    if (p.user_id === MY_UID) continue;
+    out[p.user_id] = {
+      x: p.x, y: p.y,
+      name: p.name, team: p.team, slot: p.slot, kick_glow: p.kick_glow
     };
   }
+  remoteRender = out;
+  ballRender.x = s.ball.x;
+  ballRender.y = s.ball.y;
+}
 
-  // Мяч: pos + vel * elapsed
-  var elapsedB = (now - ballExt.t) / 1000;
-  if (elapsedB > 0.25) elapsedB = 0.25;
-  ballRender.x = ballExt.x + ballExt.vx * elapsedB;
-  ballRender.y = ballExt.y + ballExt.vy * elapsedB;
+function renderInterpolated(now) {
+  var n = snapshotBuffer.length;
+  if (n === 0) return;
+  if (n === 1) {
+    applySnapshot(snapshotBuffer[0]);
+    return;
+  }
+
+  var rt = now - RENDER_DELAY_MS;
+
+  // rt раньше самого старого снапшота (буфер только начал наполняться) — держим первый,
+  // чтобы не было скачка вперёд к последнему
+  if (rt <= snapshotBuffer[0].t) {
+    applySnapshot(snapshotBuffer[0]);
+    return;
+  }
+
+  // найти два снапшота A и B, между которыми rt
+  var A = null, B = null;
+  for (var i = 0; i < n - 1; i++) {
+    if (snapshotBuffer[i].t <= rt && rt <= snapshotBuffer[i + 1].t) {
+      A = snapshotBuffer[i];
+      B = snapshotBuffer[i + 1];
+      break;
+    }
+  }
+  if (!A) {
+    // rt за пределами буфера (новее последнего) — используем последний
+    applySnapshot(snapshotBuffer[n - 1]);
+    return;
+  }
+
+  var span = B.t - A.t;
+  var alpha = span > 0 ? (rt - A.t) / span : 1;
+  if (alpha < 0) alpha = 0;
+  if (alpha > 1) alpha = 1;
+
+  // игроки по user_id
+  var aById = {};
+  for (var ai = 0; ai < A.players.length; ai++) aById[A.players[ai].user_id] = A.players[ai];
+
+  var out = {};
+  for (var bi = 0; bi < B.players.length; bi++) {
+    var pb = B.players[bi];
+    if (pb.user_id === MY_UID) continue;
+    var pa = aById[pb.user_id];
+    var px, py, glow;
+    if (pa) {
+      var pos = lerpPos(pa.x, pa.y, pb.x, pb.y, alpha, SNAP_DIST_PLAYER);
+      px = pos[0]; py = pos[1];
+      glow = alpha < 0.5 ? pa.kick_glow : pb.kick_glow;
+    } else {
+      px = pb.x; py = pb.y;
+      glow = pb.kick_glow;
+    }
+    out[pb.user_id] = {
+      x: px, y: py,
+      name: pb.name, team: pb.team, slot: pb.slot, kick_glow: glow
+    };
+  }
+  remoteRender = out;
+
+  // мяч
+  var bp = lerpPos(A.ball.x, A.ball.y, B.ball.x, B.ball.y, alpha, SNAP_DIST_BALL);
+  ballRender.x = bp[0];
+  ballRender.y = bp[1];
 }
 
 // ==================== РЕНДЕР ====================
@@ -829,7 +847,7 @@ function gameLoop(now) {
   lastFrameTime = now;
 
   stepLocalSelf(dt);
-  stepInterpolation();
+  renderInterpolated(performance.now());
   maybeSendState(now);
   render();
 
