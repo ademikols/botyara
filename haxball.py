@@ -19,14 +19,15 @@ BALL_RADIUS = 10
 GOAL_HEIGHT = 140
 GOAL_OFFSET_Y = (FIELD_HEIGHT - GOAL_HEIGHT) / 2
 
-MAX_SPEED = 360.0
-ACCELERATION = 3600.0
+# Скорость уменьшена на 30% (было 360/3600)
+MAX_SPEED = 252.0
+ACCELERATION = 2520.0
 FRICTION = 0.82
 WALL_ELASTICITY = 0.85
 PLAYER_PLAYER_ELASTICITY = 0.55
 PLAYER_BALL_ELASTICITY = 0.85
 BALL_FRICTION = 0.994
-KICK_FORCE = 420.0
+KICK_FORCE = 400.0
 KICK_COOLDOWN = 0.28
 KICK_BONUS_FROM_PLAYER_VEL = 1.10
 
@@ -36,7 +37,7 @@ DT = 1.0 / TICK_RATE
 SNAPSHOT_RATE = 25
 SNAPSHOT_EVERY = max(1, TICK_RATE // SNAPSHOT_RATE)
 
-MAX_PLAYERS = 6
+ MAX_PLAYERS = 6
 TEAM_CAP = 3
 MATCH_TIME = 180.0
 GOAL_PAUSE = 2.0
@@ -170,7 +171,7 @@ def reset_positions(game):
 def update_player(player, dt):
     ix = player.ix
     iy = player.iy
-    if ix == 0.0 and iy == 0.0:
+    if ix ==0.0 and iy == 0.0:
         if player.up: iy -= 1.0
         if player.down: iy += 1.0
         if player.left: ix -= 1.0
@@ -182,7 +183,6 @@ def update_player(player, dt):
         iy /= mag
 
     if mag > 0.05:
-        # Мгновенная скорость
         player.vx = ix * MAX_SPEED * min(1.0, mag)
         player.vy = iy * MAX_SPEED * min(1.0, mag)
     else:
@@ -332,7 +332,6 @@ def update_game_physics(game, dt):
     if dt > 1.0 / 15.0:
         dt = 1.0 / 15.0
 
-    # Подшаги ≤ 5 мс — мяч не проскочит сквозь игрока
     max_sub_dt = 0.005
     n_sub = max(1, int(math.ceil(dt / max_sub_dt)))
     if n_sub > 30:
@@ -455,7 +454,7 @@ async def handle_list(request):
         if game.phase == "over":
             continue
         items.append({
-            "code": code, "name": game.name,
+           ix "code": code, "name": game.name,
             "host": game.host_name,
             "players": len(game.players),
             "max": MAX_PLAYERS,
@@ -501,7 +500,7 @@ async def handle_websocket(request):
                     continue
                 if data.get("action") == "move":
                     try:
-                        player.ix = float(data.get("ix", 0.0))
+                        player. = float(data.get("ix", 0.0))
                         player.iy = float(data.get("iy", 0.0))
                     except (TypeError, ValueError):
                         player.ix = player.iy = 0.0
