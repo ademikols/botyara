@@ -398,6 +398,7 @@ const RANK_NAMES={6:'6',7:'7',8:'8',9:'9',10:'10',11:'В',12:'Д',13:'К',14:'Т
 const SUIT_NAMES={h:'♥',d:'♦',c:'♣',s:'♠'};
 let durakWs=null,durakRoom=null,durakState=null;
 let durakUnread=0, durakActiveTab='game', durakLastChatLen=0;
+let durakDeadline = null, durakTick = null;
 
 function durakSwitchTab(tab){
   durakActiveTab=tab;
@@ -416,6 +417,28 @@ function durakUpdateBadge(){
   if(!el)return;
   if(durakUnread>0){el.textContent=durakUnread;el.style.display='inline-block';}
   else el.style.display='none';
+}
+
+function updateDurakTimer(){
+  const s = durakState; if(!s) return;
+  const bar=document.getElementById('durakTimerBar'); const fill=document.getElementById('durakTimerFill');
+  if(!bar || !fill) return;
+  const iAmOut = s.your_left;
+  if(s.phase==='waiting'||s.phase==='over'||iAmOut||!durakDeadline){
+    bar.style.display='none';
+    return;
+  }
+  const total = s.turn_limit || 30;
+  const rem = Math.max(0, (durakDeadline - Date.now()) / 1000);
+  const pct = Math.max(0, Math.min(100, (rem / total) * 100));
+  bar.style.display='block';
+  fill.style.width = pct + '%';
+  fill.classList.toggle('warn', pct < 60 && pct >= 30);
+  fill.classList.toggle('danger', pct < 30);
+}
+function startDurakTick(){
+  if(durakTick) clearInterval(durakTick);
+  durakTick = setInterval(updateDurakTimer, 200);
 }
 
 async function durakCreate(){
@@ -440,7 +463,7 @@ async function durakJoin(){
   const d=await r.json();if(!d.ok){tg?.showAlert?.(d.error);return;}
   durakRoom=c;durakStart();
 }
-function durakStart(){go('durakGame');document.getElementById('durakCodeTag').textContent=durakRoom||'------';const proto=location.protocol==='https:'?'wss':'ws';durakWs=new WebSocket(`${proto}://${location.host}/ws/durak/${durakRoom}?uid=${USER_ID}`);durakWs.onopen=()=>durakDot(true);durakWs.onclose=()=>durakDot(false);durakWs.onmessage=e=>durakHandle(JSON.parse(e.data));}
+function durakStart(){go('durakGame');document.getElementById('durakCodeTag').textContent=durakRoom||'------';startDurakTick();const proto=location.protocol==='https:'?'wss':'ws';durakWs=new WebSocket(`${proto}://${location.host}/ws/durak/${durakRoom}?uid=${USER_ID}`);durakWs.onopen=()=>durakDot(true);durakWs.onclose=()=>durakDot(false);durakWs.onmessage=e=>durakHandle(JSON.parse(e.data));}
 function durakDot(on){document.getElementById('durakDot').classList.toggle('on',on);document.getElementById('durakStatus').textContent=on?'В СЕТИ':'НЕТ СВЯЗИ';}
 function durakHandle(msg){if(msg.type==='state'){durakState=msg.state;durakRender();}else if(msg.type==='error'){tg?.showAlert?.(msg.error);}}
 function durakCardEl(c,clickable){const red=c.s==='h'||c.s==='d';const color=red?'#e05a5a':'#fff';return `<div data-r="${c.r}" data-s="${c.s}" style="width:52px;height:74px;border:2px solid #222;border-radius:8px;background:#1a1a2e;color:${color};display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:17px;line-height:1.1;cursor:${clickable?'pointer':'default'};user-select:none;flex-shrink:0;gap:1px"><div>${RANK_NAMES[c.r]}</div><div style="font-size:19px">${SUIT_NAMES[c.s]}</div></div>`;}
@@ -457,9 +480,13 @@ function durakRender(){
   else info='⏳ ЖДЁМ ХОДА';
   document.getElementById('durakInfo').textContent=info;
 
-  const bar=document.getElementById('durakTimerBar');const fill=document.getElementById('durakTimerFill');
-  if(s.phase==='waiting'||s.phase==='over'||iAmOut){bar.style.display='none';}
-  else{bar.style.display='block';const rem=s.turn_remaining??0;const total=s.turn_limit||30;const pct=Math.max(0,Math.min(100,(rem/total)*100));fill.style.width=pct+'%';fill.classList.toggle('warn',pct<60&&pct>=30);fill.classList.toggle('danger',pct<30);}
+  // Таймер: обновляем deadline и запускаем плавный тик
+  if(s.phase==='waiting'||s.phase==='over'||iAmOut){
+    durakDeadline = null;
+  } else if (s.turn_remaining !== undefined && s.turn_remaining !== null) {
+    durakDeadline = Date.now() + s.turn_remaining * 1000;
+  }
+  updateDurakTimer();
 
   if(s.trump_card){
     const tc=document.getElementById('durakTrumpCard');
