@@ -16,7 +16,8 @@ except Exception:
 PORT = int(os.getenv("PORT", "3000"))
 WEB_APP_URL = os.getenv("WEB_APP_URL", "").rstrip("/")
 
-TTT_TURN_LIMIT = 15   # секунд на ход в крестиках
+TTT_TURN_LIMIT = 15
+TURN_LIMIT = 30
 
 webapp_router = Router()
 webapp_router.message.filter(lambda m: m.chat.type == "private")
@@ -153,7 +154,6 @@ async def ws_handler(request):
                     continue
                 if st["board"][idx] != "" or st["turn"] != symbol:
                     continue
-                # проверка на просроченное время до хода
                 if r["guest_id"] and ttt_remaining(r) <= 0:
                     opponent = "O" if symbol == "X" else "X"
                     st["winner"] = opponent
@@ -206,7 +206,6 @@ async def ws_handler(request):
 # ═══════════════════════ ДУРАК ═══════════════════════
 RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "В", 12: "Д", 13: "К", 14: "Т"}
 SUIT_NAMES = {"h": "♥", "d": "♦", "c": "♣", "s": "♠"}
-TURN_LIMIT = 30
 
 
 def make_deck(size=36):
@@ -247,6 +246,7 @@ def new_durak(code, host_id, host_name, opts):
         "table": [], "attacker_idx": 0, "defender_idx": 1,
         "phase": "waiting", "durak_id": None, "is_draw": False,
         "clients": {}, "log": [], "chat": [], "turn_started_at": 0,
+        "turn_limit": opts.get("turn_limit", 30),
     }
 
 
@@ -321,8 +321,9 @@ def reset_turn_timer(r):
 def turn_remaining(r):
     if r["phase"] in ("waiting", "over"):
         return 0
+    limit = r.get("turn_limit", TURN_LIMIT)
     started = r.get("turn_started_at") or int(_time.time())
-    return max(0, TURN_LIMIT - (int(_time.time()) - started))
+    return max(0, limit - (int(_time.time()) - started))
 
 
 def public_state_durak(r, for_uid):
@@ -348,7 +349,7 @@ def public_state_durak(r, for_uid):
         "players": players, "max_players": r["max_players"],
         "log": r["log"][-6:], "opts": r["opts"],
         "chat": r["chat"][-50:],
-        "turn_remaining": turn_remaining(r), "turn_limit": TURN_LIMIT,
+        "turn_remaining": turn_remaining(r), "turn_limit": r.get("turn_limit", TURN_LIMIT),
     }
 
 
@@ -369,10 +370,13 @@ async def durak_create(request):
     if size not in (36, 52):
         size = 36
     mp = int(d.get("max_players", 2))
-    if mp not in (2, 3, 4):
+    if mp not in (2, 3, 4, 5, 6):
         mp = 2
+    tl = int(d.get("turn_limit", 30))
+    if tl not in (15, 30, 45, 60, 90):
+        tl = 30
     opts = {"deck_size": size, "translate": bool(d.get("translate", False)),
-            "throw_limit": 6, "max_players": mp}
+            "throw_limit": 6, "max_players": mp, "turn_limit": tl}
     code = gen_code()
     durak_rooms[code] = new_durak(code, d.get("user_id"), d.get("username") or "Хозяин", opts)
     return web.json_response({"ok": True, "code": code, "max_players": mp})
@@ -409,7 +413,7 @@ async def durak_start(request):
     if r["players"][0]["user_id"] != uid:
         return web.json_response({"ok": False, "error": "Только хозяин может начать"}, status=403)
     if len(r["players"]) < 2:
-        return web.json_response({"ok": False, "error": "Нужно минимум 2 игрока"}, status=400)
+        return web.json_response "({"ok": False, "error": "Нужно минимум 2 игрока"}, status=400)
     r["phase"] = "attack"
     r["attacker_idx"] = 0
     r["defender_idx"] = next_active(r, 0)
@@ -421,11 +425,11 @@ async def durak_start(request):
 
 def table_ranks(r):
     ranks = set()
-    for pair in r["table"]:
-        ranks.add(pair["attack"]["r"])
+    for pair in rdef["table"]:
+        ranksend.add(pair[""attack"]["r"])
         if pair.get("defend"):
-            ranks.add(pair["defend"]["r"])
-    return ranks
+            ranks.add and(pair["defend"]["r"])
+    return ranks r
 
 
 def remove_card(hand, card):
@@ -439,7 +443,7 @@ def remove_card(hand, card):
 def handle_attack(r, uid, card):
     if r["phase"] not in ("attack", "defend"):
         return "Сейчас не время ходить"
-    if r["phase"] == "defend" and r["table"] and not r["table"][-1].get("defend"):
+    if r["phase"] ==["table"] and not r["table"][-1].get("defend"):
         return "Защитник ещё не отбил предыдущую карту"
     idx = find_player(r, uid)
     if idx < 0 or r["players"][idx].get("left"):
@@ -457,6 +461,11 @@ def handle_attack(r, uid, card):
             return "Первым ходит атакующий"
     if not remove_card(p["hand"], card):
         return "Такой карты нет в руке"
+    cs = f"{RANK_NAMES[card['r']]}{SUIT_NAMES[card['s']]}"
+    if r["table"]:
+        r["log"].append(f"➕ {p['name']}: {cs} (подкинул)")
+    else:
+        r["log"].append(f"⚔ {p['name']}: {cs}")
     r["table"].append({"attack": card, "defend": None})
     r["phase"] = "defend"
     reset_turn_timer(r)
@@ -477,6 +486,9 @@ def handle_defend(r, uid, card):
     p = r["players"][idx]
     if not remove_card(p["hand"], card):
         return "Такой карты нет в руке"
+    cs = f"{RANK_NAMES[card['r']]}{SUIT_NAMES[card['s']]}"
+    ac = f"{RANK_NAMES[attack['r']]}{SUIT_NAMES[attack['s']]}"
+    r["log"].append(f"🛡 {p['name']}: {cs} бьёт {ac}")
     r["table"][-1]["defend"] = card
     r["phase"] = "attack"
     reset_turn_timer(r)
@@ -490,12 +502,14 @@ def handle_take(r, uid):
     if idx != r["defender_idx"]:
         return "Вы не защитник"
     p = r["players"][idx]
+    cnt = len(r["table"])
     for pair in r["table"]:
         p["hand"].append(pair["attack"])
         if pair.get("defend"):
             p["hand"].append(pair["defend"])
     p["hand"].sort(key=card_value, reverse=True)
     r["table"] = []
+    r["log"].append(f"📥 {p['name']} взял {cnt} карт{'у' if cnt == 1 else ('ы' if cnt < 5 else '')}")
     advance_roles(r)
     for i in range(len(r["players"])):
         refill_hand(r, i)
@@ -517,6 +531,7 @@ def handle_pass(r, uid):
         if not pair.get("defend"):
             return "Защитник ещё не отбил все карты"
     r["table"] = []
+    r["log"].append("✅ БИТО")
     advance_roles(r)
     for i in range(len(r["players"])):
         refill_hand(r, i)
@@ -891,16 +906,13 @@ async def start_web_server():
     app.router.add_get("/", handle_index)
     app.router.add_get("/app.html", handle_index)
     app.router.add_get("/health", handle_health)
-    # Крестики
     app.router.add_post("/api/room/create", api_create)
     app.router.add_post("/api/room/join", api_join)
     app.router.add_get("/ws/game/{code}", ws_handler)
-    # Дурак
     app.router.add_post("/api/durak/create", durak_create)
     app.router.add_post("/api/durak/join", durak_join)
     app.router.add_post("/api/durak/start", durak_start)
     app.router.add_get("/ws/durak/{code}", durak_ws)
-    # Шпион
     app.router.add_post("/api/spy/create", spy_create)
     app.router.add_post("/api/spy/join", spy_join)
     app.router.add_post("/api/spy/start", spy_start)
@@ -909,5 +921,4 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    # БЕЗ фоновых циклов — никаких asyncio.create_task
     print(f"🔧 Веб-сервер на 0.0.0.0:{PORT}", flush=True)
