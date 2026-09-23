@@ -19,118 +19,50 @@
     background: linear-gradient(180deg, #2a2a2a, #151515);
     color: #eee; overflow-y: auto; padding: 20px 16px 40px;
   }
-  #s-menu h1 {
-    text-align: center; color: #e8e000;
-    margin: 10px 0 20px; font-size: 28px; letter-spacing: 2px;
-  }
-  .box {
-    background: #232323; border: 1px solid #3a3a3a;
-    border-radius: 10px; padding: 14px; margin-bottom: 14px;
-  }
-  .box h2 {
-    font-size: 14px; color: #aaa; margin: 0 0 10px;
-    text-transform: uppercase; letter-spacing: 1px;
-  }
+  #s-menu h1 { text-align: center; color: #e8e000; margin: 10px 0 20px; font-size: 28px; letter-spacing: 2px; }
+  .box { background: #232323; border: 1px solid #3a3a3a; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .box h2 { font-size: 14px; color: #aaa; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 1px; }
   .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
   .row label { flex: 1; min-width: 90px; }
-  input[type=text] {
-    width: 100%; padding: 10px; border-radius: 8px;
-    border: 1px solid #444; background: #111; color: #fff; font-size: 16px;
-  }
+  input[type=text] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff; font-size: 16px; }
   .seg { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
-  .seg button {
-    flex: 1; padding: 10px 4px; background: #111; color: #ccc;
-    border: none; font-size: 13px; border-right: 1px solid #333;
-  }
+  .seg button { flex: 1; padding: 10px 4px; background: #111; color: #ccc; border: none; font-size: 13px; border-right: 1px solid #333; }
   .seg button:last-child { border-right: none; }
   .seg button.active { background: #3a5fdc; color: #fff; }
-  .big-btn {
-    width: 100%; padding: 14px; border-radius: 10px; border: none;
-    font-size: 16px; font-weight: bold; color: #fff; margin-top: 6px;
-  }
+  .big-btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 16px; font-weight: bold; color: #fff; margin-top: 6px; }
   .btn-green { background: #2fa84f; }
-  .btn-blue { background: #3a5fdc; }
   .join-row { display: flex; gap: 8px; }
   .join-row input { flex: 1; }
-  .join-row button {
-    padding: 10px 16px; border-radius: 8px; border: none;
-    background: #3a5fdc; color: #fff; font-weight: bold;
-  }
+  .join-row button { padding: 10px 16px; border-radius: 8px; border: none; background: #3a5fdc; color: #fff; font-weight: bold; }
   #list-items { margin-top: 6px; }
-  .list-item {
-    display: flex; justify-content: space-between; align-items: center;
-    background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
-    padding: 10px; margin-bottom: 6px;
-  }
+  .list-item { display: flex; justify-content: space-between; align-items: center; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 6px; }
   .list-item .info { font-size: 13px; color: #bbb; }
   .list-item .name { font-size: 15px; color: #fff; font-weight: bold; }
-  .list-item button {
-    padding: 8px 14px; border-radius: 6px; border: none;
-    background: #2fa84f; color: #fff; font-weight: bold;
-  }
+  .list-item button { padding: 8px 14px; border-radius: 6px; border: none; background: #2fa84f; color: #fff; font-weight: bold; }
   .empty-hint { color: #666; font-size: 13px; text-align: center; padding: 10px; }
-  #toast {
-    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
-    background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px;
-    border-radius: 10px; font-size: 14px; z-index: 999; opacity: 0;
-    transition: opacity 0.25s; pointer-events: none; max-width: 85%; text-align: center;
-  }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 14px; z-index: 999; opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: 85%; text-align: center; }
   #toast.show { opacity: 1; }
 
-  #s-game {
-    position: fixed; top: 0; left: 0;
-    width: 100vw; height: 100vh;
-    background: #111; display: none;
-    overflow: hidden;
-    /* важно: origin по центру, иначе rotate(90deg) уедет за экран */
-    transform-origin: center center;
-  }
+  #s-game { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; display: none; overflow: hidden; transform-origin: center center; }
   #gcanvas { display: block; background: #111; touch-action: none; }
 
-  #joy-zone {
-    position: absolute; left: 0; top: 0;
-    width: 55%; height: 100%; z-index: 5;
-  }
-  #joy-base, #joy-stick {
-    position: absolute; border-radius: 50%;
-    display: none; pointer-events: none;
-  }
-  #joy-base {
-    width: 100px; height: 100px;
-    background: rgba(255,255,255,0.12);
-    border: 2px solid rgba(255,255,255,0.3);
-  }
-  #joy-stick {
-    width: 46px; height: 46px;
-    background: rgba(255,255,255,0.45);
-    border: 2px solid rgba(255,255,255,0.6);
-  }
-  #kick-btn {
-    position: absolute;
-    width: 110px; height: 110px; right: 18px; bottom: 18px;
-    border-radius: 50%; background: #dc4040; opacity: 0.55;
-    z-index: 6; display: flex; align-items: center; justify-content: center;
-    color: #fff; font-weight: bold; font-size: 16px; letter-spacing: 1px;
-    border: 3px solid rgba(255,255,255,0.4);
-  }
+  #joy-zone { position: absolute; left: 0; top: 0; width: 55%; height: 100%; z-index: 5; }
+  #joy-base, #joy-stick { position: absolute; border-radius: 50%; display: none; pointer-events: none; }
+  #joy-base { width: 100px; height: 100px; background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.3); }
+  #joy-stick { width: 46px; height: 46px; background: rgba(255,255,255,0.45); border: 2px solid rgba(255,255,255,0.6); }
+  #kick-btn { position: absolute; width: 110px; height: 110px; right: 18px; bottom: 18px; border-radius: 50%; background: #dc4040; opacity: 0.55; z-index: 6; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 16px; letter-spacing: 1px; border: 3px solid rgba(255,255,255,0.4); }
   #kick-btn.active { opacity: 0.9; }
-  #exit-btn {
-    position: absolute; top: 8px; right: 8px;
-    padding: 6px 12px; background: rgba(0,0,0,0.5); color: #fff;
-    border-radius: 8px; font-size: 12px; z-index: 7;
-  }
+  #exit-btn { position: absolute; top: 8px; right: 8px; padding: 6px 12px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 8px; font-size: 12px; z-index: 7; }
 </style>
 </head>
 <body>
 
 <div id="s-menu">
   <h1>HAXBALL</h1>
-
   <div class="box">
     <h2>Имя игрока</h2>
     <input type="text" id="in-name" maxlength="16" placeholder="Твоё имя">
   </div>
-
   <div class="box">
     <h2>Создать игру</h2>
     <div class="row"><input type="text" id="in-gamename" maxlength="24" placeholder="Название игры"></div>
@@ -156,7 +88,6 @@
     </div>
     <button class="big-btn btn-green" id="btn-create">СОЗДАТЬ ИГРУ</button>
   </div>
-
   <div class="box">
     <h2>Войти по коду</h2>
     <div class="join-row">
@@ -164,7 +95,6 @@
       <button id="btn-join">ВОЙТИ</button>
     </div>
   </div>
-
   <div class="box">
     <h2>Открытые игры</h2>
     <div id="list-items"></div>
@@ -196,12 +126,11 @@ var PLAYER_ACCEL = 12.0;
 var SEND_HZ = 25;
 var SEND_INTERVAL = 1000 / SEND_HZ;
 
-var BALL_SMOOTH = 0.28;
-var BALL_TELEPORT_DIST = 120;
-var REMOTE_SMOOTH = 0.28;
-var REMOTE_TELEPORT_DIST = 120;
 var SELF_CORRECT_TELEPORT = 100;
-var SELF_CORRECT_SOFT = 0.05;
+var SELF_CORRECT_SOFT = 0.08;
+
+// Интервал снапшотов сервера (сек). Используется для экстраполяции.
+var SERVER_SNAPSHOT_DT = 0.033;
 
 function genUid() {
   var s = "";
@@ -342,8 +271,10 @@ var connected = false;
 
 var serverState = null;
 var localSelf = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+
+// Рендер-состояние для чужих игроков и мяча
 var remoteRender = {};
-var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2, tx: FIELD_W / 2, ty: FIELD_H / 2 };
+var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2 };
 
 var joyActive = false;
 var joyDX = 0, joyDY = 0;
@@ -393,6 +324,7 @@ function connectWs(code) {
     if (data.type === "state") {
       serverState = data.state;
       syncSelfFromServer();
+      syncRenderTargets();
     } else if (data.type === "error") {
       showToast("Комната недоступна");
       leaveGame(true);
@@ -600,41 +532,101 @@ function maybeSendState(now) {
   } catch (e) {}
 }
 
-function updateRenderTargets() {
+// ==================== ЭКСТРАПОЛЯЦИЯ ====================
+
+var ballExt = {
+  x: FIELD_W / 2, y: FIELD_H / 2,
+  vx: 0, vy: 0,
+  t: 0,
+  init: false
+};
+
+var remoteExt = {}; // uid -> {x, y, vx, vy, t, name, team, slot, glow, init}
+
+function syncRenderTargets() {
   if (!serverState) return;
+  var now = performance.now();
+
+  // Чужие игроки
+  var activeIds = {};
   for (var i = 0; i < serverState.players.length; i++) {
     var p = serverState.players[i];
     if (p.user_id === MY_UID) continue;
-    var r = remoteRender[p.user_id];
+    activeIds[p.user_id] = true;
+    var r = remoteExt[p.user_id];
     if (!r) {
-      remoteRender[p.user_id] = { x: p.x, y: p.y, tx: p.x, ty: p.y, name: p.name, team: p.team, slot: p.slot, kick_glow: p.kick_glow, online: p.online };
+      remoteExt[p.user_id] = {
+        x: p.x, y: p.y, vx: p.vx || 0, vy: p.vy || 0,
+        t: now,
+        name: p.name, team: p.team, slot: p.slot,
+        glow: p.kick_glow, init: true
+      };
     } else {
-      r.tx = p.x; r.ty = p.y;
-      r.name = p.name; r.team = p.team; r.slot = p.slot;
-      r.kick_glow = p.kick_glow; r.online = p.online;
+      // Плавная коррекция: подтягиваем базу к серверу
+      var dx = p.x - r.x;
+      var dy = p.y - r.y;
+      var dist = Math.hypot(dx, dy);
+      if (dist > 80) {
+        r.x = p.x; r.y = p.y;
+      } else if (dist > 2) {
+        r.x += dx * 0.15;
+        r.y += dy * 0.15;
+      }
+      r.vx = p.vx || 0;
+      r.vy = p.vy || 0;
+      r.t = now;
+      r.name = p.name; r.team = p.team; r.slot = p.slot; r.glow = p.kick_glow;
     }
   }
-  var activeIds = {};
-  for (var j = 0; j < serverState.players.length; j++) activeIds[serverState.players[j].user_id] = true;
-  for (var uid in remoteRender) if (!activeIds[uid]) delete remoteRender[uid];
+  for (var uid in remoteExt) if (!activeIds[uid]) delete remoteExt[uid];
 
-  ballRender.tx = serverState.ball.x;
-  ballRender.ty = serverState.ball.y;
+  // Мяч
+  var b = serverState.ball;
+  if (!ballExt.init) {
+    ballExt.x = b.x; ballExt.y = b.y;
+    ballExt.vx = b.vx || 0; ballExt.vy = b.vy || 0;
+    ballExt.t = now;
+    ballExt.init = true;
+  } else {
+    var bdx = b.x - ballExt.x;
+    var bdy = b.y - ballExt.y;
+    var bdist = Math.hypot(bdx, bdy);
+    if (bdist > 100) {
+      ballExt.x = b.x; ballExt.y = b.y;
+    } else if (bdist > 2) {
+      ballExt.x += bdx * 0.25;
+      ballExt.y += bdy * 0.25;
+    }
+    ballExt.vx = b.vx || 0;
+    ballExt.vy = b.vy || 0;
+    ballExt.t = now;
+  }
 }
 
 function stepInterpolation() {
-  for (var uid in remoteRender) {
-    var r = remoteRender[uid];
-    var dist = Math.hypot(r.tx - r.x, r.ty - r.y);
-    if (dist > REMOTE_TELEPORT_DIST) { r.x = r.tx; r.y = r.ty; }
-    else { r.x += (r.tx - r.x) * REMOTE_SMOOTH; r.y += (r.ty - r.y) * REMOTE_SMOOTH; }
+  var now = performance.now();
+
+  // Чужие игроки: pos + vel * elapsed
+  for (var uid in remoteExt) {
+    var r = remoteExt[uid];
+    var elapsed = (now - r.t) / 1000;
+    if (elapsed > 0.25) elapsed = 0.25;
+    var predX = r.x + r.vx * elapsed;
+    var predY = r.y + r.vy * elapsed;
+    remoteRender[uid] = {
+      x: predX, y: predY,
+      name: r.name, team: r.team, slot: r.slot, kick_glow: r.glow
+    };
   }
-  var tx = (typeof ballRender.tx === "number") ? ballRender.tx : ballRender.x;
-  var ty = (typeof ballRender.ty === "number") ? ballRender.ty : ballRender.y;
-  var bd = Math.hypot(tx - ballRender.x, ty - ballRender.y);
-  if (bd > BALL_TELEPORT_DIST) { ballRender.x = tx; ballRender.y = ty; }
-  else { ballRender.x += (tx - ballRender.x) * BALL_SMOOTH; ballRender.y += (ty - ballRender.y) * BALL_SMOOTH; }
+
+  // Мяч: pos + vel * elapsed
+  var elapsedB = (now - ballExt.t) / 1000;
+  if (elapsedB > 0.25) elapsedB = 0.25;
+  ballRender.x = ballExt.x + ballExt.vx * elapsedB;
+  ballRender.y = ballExt.y + ballExt.vy * elapsedB;
 }
+
+// ==================== РЕНДЕР ====================
 
 var canvas = document.getElementById("gcanvas");
 var ctx = canvas.getContext("2d");
@@ -836,7 +828,6 @@ function gameLoop(now) {
   if (dt > 0.05) dt = 0.05;
   lastFrameTime = now;
 
-  updateRenderTargets();
   stepLocalSelf(dt);
   stepInterpolation();
   maybeSendState(now);
