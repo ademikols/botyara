@@ -115,6 +115,7 @@
   <button class="btn" onclick="go('create')">❌ КРЕСТИКИ-НОЛИКИ</button>
   <button class="btn" onclick="go('durakCreate')">🃏 ДУРАК</button>
   <button class="btn" onclick="go('spyCreate')">🕵️ ШПИОН</button>
+  <button class="btn" onclick="location.href='/haxball.html'">⚽ HAXBALL</button>
 </div>
 
 <!-- КРЕСТИКИ: создать -->
@@ -361,8 +362,8 @@ tg?.ready(); tg?.expand();
 const USER_ID = tg?.initDataUnsafe?.user?.id || Date.now();
 let USERNAME = 'guest' + String(USER_ID).slice(-4);
 
-let lobbiesFrom = 'create'; // 'create' | 'durakCreate' | 'spyCreate'
-let lobbiesType = 'ttt';    // 'ttt' | 'durak' | 'spy'
+let lobbiesFrom = 'create';
+let lobbiesType = 'ttt';
 
 function go(s) {
   document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
@@ -708,7 +709,6 @@ function durakRender(){
   takeBtn.style.display=(isMyDefense&&s.phase==='defend')?'block':'none';
   if(surBtn) surBtn.style.display=(s.phase==='over'||iAmOut||s.phase==='waiting')?'none':'block';
   if(restartBtn){
-    // Показываем новую партию только хозяину и когда игра закончилась или все сдались
     const showRestart = s.is_host && (s.phase==='over' || s.players.filter(p=>!p.left).length < 2);
     restartBtn.style.display = showRestart ? 'block' : 'none';
   }
