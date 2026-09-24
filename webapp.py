@@ -31,7 +31,7 @@ async def cmd_play(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Otkryt igry", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
     ]])
-    await m.answer("Mini App: Krestiki, Durak, Shpion", reply_markup=kb)
+    await m.answer("Mini App: Krestiki, Durak, Shpion, Haxball", reply_markup=kb)
 
 
 rooms = {}
@@ -67,7 +67,6 @@ async def handle_health(request):
     return web.json_response({"ok": True})
 
 
-# ================= Krestiki-noliki =================
 def new_ttt():
     return {"board": [""] * 9, "turn": "X", "winner": None}
 
@@ -229,7 +228,6 @@ async def ws_handler(request):
     return ws
 
 
-# ================= Durak =================
 RANK_NAMES = {6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "V", 12: "D", 13: "K", 14: "T"}
 SUIT_NAMES = {"h": "H", "d": "D", "c": "C", "s": "S"}
 
@@ -489,11 +487,9 @@ async def durak_restart(request):
         return web.json_response({"ok": False, "error": "Komnata ne naidena"}, status=404)
     if r["players"][0]["user_id"] != uid:
         return web.json_response({"ok": False, "error": "Tolko hozain"}, status=403)
-
     active = [p for p in r["players"] if p.get("leave_reason") != "surrender"]
     if len(active) < 2:
         return web.json_response({"ok": False, "error": "Nujno minimum 2 igroka"}, status=400)
-
     deck = make_deck(r["opts"].get("deck_size", 36))
     random.shuffle(deck)
     trump_card = deck[-1]
@@ -502,14 +498,12 @@ async def durak_restart(request):
     for _ in active:
         hands.append(sorted(deck[:6], key=card_value, reverse=True))
         deck = deck[6:]
-
     new_players = []
     for i, p in enumerate(active):
         new_players.append({
             "user_id": p["user_id"], "name": p["name"],
             "hand": hands[i], "left": False, "leave_reason": None,
         })
-
     r["players"] = new_players
     r["max_players"] = len(new_players)
     r["pending_hands"] = []
@@ -794,7 +788,6 @@ async def durak_ws(request):
     return ws
 
 
-# ================= Shpion =================
 VOTE_TIME_LIMIT = 90
 
 
@@ -1094,7 +1087,6 @@ async def spy_ws(request):
     return ws
 
 
-# ================= Zapusk =================
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle_index)
@@ -1118,14 +1110,13 @@ async def start_web_server():
     app.router.add_post("/api/spy/to_vote", spy_to_vote)
     app.router.add_get("/ws/spy/{code}", spy_ws)
 
-    # HAXBALL временно отключён — раскомментируй когда починим haxball.py
-    # from haxball import register_haxball_routes, haxball_watchdog
-    # register_haxball_routes(app)
+    from haxball import register_haxball_routes, haxball_watchdog
+    register_haxball_routes(app)
 
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     asyncio.create_task(durak_watchdog())
     asyncio.create_task(spy_watchdog())
-    # asyncio.create_task(haxball_watchdog())
+    asyncio.create_task(haxball_watchdog())
     print(f"Web server started on 0.0.0.0:{PORT}", flush=True)
