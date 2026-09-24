@@ -241,7 +241,6 @@ class Player:
         self.kick_cooldown_until = 0.0
         self.online = True
         self.ws = None
-        # Группа коллизий зависит от команды
         if team == "left":
             self.c_group = CGROUP_RED
             self.c_mask = MASK_RED
@@ -535,7 +534,6 @@ class Room:
                 b["x"] = FIELD_W + GOAL_DEPTH - BALL_R
                 b["vx"] = -b["vx"] * bounce
 
-        # Мяч vs игроки (с учётом collision filters)
         for p in self.players.values():
             if not (self.ball_mask & p.c_group):
                 continue
@@ -557,7 +555,6 @@ class Room:
                     b["vx"] -= (1 + PLAYER_BALL_BOUNCE) * dot * ux
                     b["vy"] -= (1 + PLAYER_BALL_BOUNCE) * dot * uy
 
-        # Игрок vs игрок (с учётом collision filters)
         plist = list(self.players.values())
         for i in range(len(plist)):
             for j in range(i + 1, len(plist)):
