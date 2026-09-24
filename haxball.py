@@ -35,7 +35,7 @@ KICK_GLOW_TIME = 0.15
 
 BALL_FRICTION = 0.994
 WALL_BOUNCE = 0.85
-PLAYER_BALL_BOUNCE = 0.85
+PLAYER_BALL_BOUNCE = 0.95
 PLAYER_PLAYER_BOUNCE = 0.55
 
 BOUNCE_VALUES = {"low": 0.70, "normal": 0.85, "high": 0.95}
@@ -71,15 +71,12 @@ CORNERS = (
 ROOMS = {}
 
 
-# ==================== БАЗА ДАННЫХ (профили игроков) ====================
-
 DB_PATH = "/app/data/haxball.db"
 
 PROFILE_COLS = ("user_id", "name", "jersey", "matches", "goals", "wins", "losses", "draws")
 
 
 def _init_db():
-    # Создаём папку и таблицу при старте
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.execute(
@@ -114,7 +111,6 @@ def empty_profile(uid):
 
 
 def db_get_profile(uid):
-    # Нет записи в БД -- возвращаем нули
     try:
         cur = DB.execute(
             "SELECT user_id, name, jersey, matches, goals, wins, losses, draws "
@@ -154,7 +150,6 @@ def db_get_jersey(uid):
 
 
 def db_save_profile(uid, name, jersey):
-    # UPSERT: обновляем только имя и номер, статистику не трогаем
     try:
         DB.execute(
             "INSERT INTO haxball_profiles (user_id, name, jersey) VALUES (?, ?, ?) "
@@ -169,7 +164,6 @@ def db_save_profile(uid, name, jersey):
 
 
 def _ensure_row(uid):
-    # Пустая запись для игрока, у которого ещё нет профиля
     DB.execute(
         "INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')",
         (uid,),
@@ -186,7 +180,6 @@ def add_goal_for_player(uid):
 
 
 def update_stats_for_player(uid, result):
-    # result: "win" / "loss" / "draw"
     col = {"win": "wins", "loss": "losses", "draw": "draws"}.get(result)
     if col is None:
         return
@@ -201,8 +194,6 @@ def update_stats_for_player(uid, result):
     except sqlite3.Error:
         log.exception("update_stats_for_player failed")
 
-
-# ==================== ИГРА ====================
 
 def gen_code():
     while True:
@@ -310,7 +301,6 @@ class Room:
             return False, "no_user_id"
         if user_id in self.players:
             self.players[user_id].online = True
-            # Подтягиваем актуальный номер из БД
             self.players[user_id].jersey = db_get_jersey(user_id)
             return True, None
         if self.phase == "over":
@@ -320,7 +310,6 @@ class Room:
         team, slot = self.next_team_slot()
         if team is None:
             return False, "room_full"
-        # Номер на футболке берём из БД по uid
         p = Player(user_id, name, team, slot, db_get_jersey(user_id))
         self.players[user_id] = p
         self.empty_since = None
@@ -460,7 +449,6 @@ class Room:
                 self.ball["vy"] = uy * KICK_POWER + p.vy * KICK_VEL_BONUS
                 p.kick_cooldown_until = now + KICK_COOLDOWN
                 p.kick_glow_until = now + KICK_GLOW_TIME
-                # Запоминаем, кто последним ударил по мячу
                 self.last_kicker_uid = p.user_id
 
     def physics_step(self, dt):
@@ -472,14 +460,11 @@ class Room:
         self.check_goal()
 
     def _corner_collide(self, b):
-        # Мяч не может быть ближе (CORNER_R - BALL_R) к центру угла.
-        # Если ближе — выталкиваем наружу и отражаем скорость.
         bounce = self.wall_bounce
         lim = CORNER_R - BALL_R
         for cx, cy, sx, sy in CORNERS:
             dx = b["x"] - cx
             dy = b["y"] - cy
-            # работаем только в "своём" угловом квадрате
             if dx * sx > 0 or dy * sy > 0:
                 continue
             d = math.hypot(dx, dy)
@@ -562,8 +547,6 @@ class Room:
                     p2.x, p2.y = self.clamp_player_pos(p2.x, p2.y)
 
     def credit_goal(self, scorer):
-        # Гол в статистику автора: последний, кто ударил по мячу.
-        # Автогол (удар игрока команды, которая пропустила) не засчитываем.
         uid = self.last_kicker_uid
         self.last_kicker_uid = None
         if not uid:
@@ -574,7 +557,6 @@ class Room:
         add_goal_for_player(uid)
 
     def check_goal(self):
-        # Гол засчитывается, когда ЦЕНТР мяча пересёк линию ворот.
         b = self.ball
         scorer = None
         if b["x"] < 0 and GOAL_TOP < b["y"] < GOAL_BOTTOM:
@@ -588,7 +570,6 @@ class Room:
             self.credit_goal(scorer)
 
     def save_match_stats(self):
-        # Итоги матча -- в профили всех игроков комнаты
         for p in self.players.values():
             if self.winner == "draw":
                 result = "draw"
@@ -643,7 +624,8 @@ async def handle_create(request):
     match_time = data.get("match_time", 180)
     field_color = data.get("field_color", "gray")
     player_speed = data.get("player_speed", 100)
-    ball_bounce = data.get("ball_bounce", "normal")
+    ball_bounce = data.get("()
+ball_bounce", "normal")
 
     if not user_id:
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
@@ -678,9 +660,9 @@ async def handle_join(request):
 
     code = str(data.get("code", "")).strip()
     user_id = str(data.get("user_id", "")).strip()
-    user_name = str(data.get("user_name", "Игрок")).strip() or "Игрок"
+    user   _name = str(data.get("user_name", if "Игрок")).strip() or not "Игрок"
 
-    room = ROOMS.get(code)
+ ok    room = ROOMS.get(code)
     if not room:
         return web.json_response({"ok": False, "error": "not_found"})
 
@@ -724,8 +706,7 @@ async def handle_restart(request):
         return web.json_response({"ok": False, "error": "not_found"})
     if user_id != room.host_id:
         return web.json_response({"ok": False, "error": "not_host"})
-    ok, err = room.restart()
-    if not ok:
+    ok, err = room.restart:
         return web.json_response({"ok": False, "error": err})
     return web.json_response({"ok": True})
 
