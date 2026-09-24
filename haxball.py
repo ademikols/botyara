@@ -56,20 +56,14 @@ ROOM_TTL_EMPTY = 60.0
 PROFILE_NAME_MAX = 16
 JERSEY_MAX = 99
 
-# Группы коллизий (как в Haxball)
 CGROUP_WALL = 1
 CGROUP_BALL = 2
 CGROUP_RED = 4
 CGROUP_BLUE = 8
 
-# Кто с кем сталкивается:
-# - мяч сталкивается со стенами и всеми игроками
-# - игрок сталкивается со стенами, мячом и игроками ПРОТИВОПОЛОЖНОЙ команды
-# - стена сталкивается со всеми
 MASK_BALL = CGROUP_WALL | CGROUP_RED | CGROUP_BLUE
 MASK_RED = CGROUP_WALL | CGROUP_BALL | CGROUP_BLUE
 MASK_BLUE = CGROUP_WALL | CGROUP_BALL | CGROUP_RED
-MASK_WALL = CGROUP_BALL | CGROUP_RED | CGROUP_BLUE
 
 SLOT_X = {
     "left": {1: 330.0, 2: 170.0, 3: 60.0},
@@ -84,7 +78,6 @@ CORNERS = (
 )
 
 ROOMS = {}
-
 
 DB_PATH = "/app/data/haxball.db"
 
