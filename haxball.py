@@ -42,6 +42,19 @@ BOUNCE_VALUES = {"low": 0.70, "normal": 0.85, "high": 0.95}
 FIELD_COLORS = ("gray", "green", "blue", "dark")
 SPEED_VALUES = (80, 100, 120)
 
+TEAM_COLORS = (
+    "#5689e5",  # синий (по умолчанию для левых)
+    "#e56e56",  # красный (по умолчанию для правых)
+    "#4eaa5e",  # зелёный
+    "#e0c93f",  # жёлтый
+    "#9b5de5",  # фиолетовый
+    "#e88c3f",  # оранжевый
+)
+DEFAULT_LEFT_COLOR = TEAM_COLORS[0]
+DEFAULT_RIGHT_COLOR = TEAM_COLORS[1]
+
+TEAM_NAME_MAX = 12
+
 TELEPORT_GUARD = 200.0
 
 TICK_HZ = 60
@@ -107,14 +120,8 @@ DB = _init_db()
 
 def empty_profile(uid):
     return {
-        "user_id": uid,
-        "name": "",
-        "jersey": 0,
-        "matches": 0,
-        "goals": 0,
-        "wins": 0,
-        "losses": 0,
-        "draws": 0,
+        "user_id": uid, "name": "", "jersey": 0, "matches": 0,
+        "goals": 0, "wins": 0, "losses": 0, "draws": 0,
     }
 
 
@@ -122,9 +129,7 @@ def db_get_profile(uid):
     try:
         cur = DB.execute(
             "SELECT user_id, name, jersey, matches, goals, wins, losses, draws "
-            "FROM haxball_profiles WHERE user_id = ?",
-            (uid,),
-        )
+            "FROM haxball_profiles WHERE user_id = ?", (uid,))
         row = cur.fetchone()
     except sqlite3.Error:
         log.exception("db_get_profile failed")
@@ -162,8 +167,7 @@ def db_save_profile(uid, name, jersey):
         DB.execute(
             "INSERT INTO haxball_profiles (user_id, name, jersey) VALUES (?, ?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET name = excluded.name, jersey = excluded.jersey",
-            (uid, name, jersey),
-        )
+            (uid, name, jersey))
         DB.commit()
         return True
     except sqlite3.Error:
@@ -172,10 +176,7 @@ def db_save_profile(uid, name, jersey):
 
 
 def _ensure_row(uid):
-    DB.execute(
-        "INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')",
-        (uid,),
-    )
+    DB.execute("INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')", (uid,))
 
 
 def add_goal_for_player(uid):
@@ -195,9 +196,7 @@ def update_stats_for_player(uid, result):
         _ensure_row(uid)
         DB.execute(
             "UPDATE haxball_profiles SET matches = matches + 1, "
-            + col + " = " + col + " + 1 WHERE user_id = ?",
-            (uid,),
-        )
+            + col + " = " + col + " + 1 WHERE user_id = ?", (uid,))
         DB.commit()
     except sqlite3.Error:
         log.exception("update_stats_for_player failed")
@@ -216,6 +215,19 @@ def clamp(v, lo, hi):
     if v > hi:
         return hi
     return v
+
+
+def clean_team_name(raw, default):
+    s = " ".join((raw or "").split())
+    if not s:
+        return default
+    return s[:TEAM_NAME_MAX]
+
+
+def clean_team_color(raw, default):
+    if raw in TEAM_COLORS:
+        return raw
+    return default
 
 
 class Player:
@@ -267,7 +279,9 @@ class Player:
 
 class Room:
     def __init__(self, code, name, host_id, max_players, match_time,
-                 field_color="gray", player_speed=100, ball_bounce="normal"):
+                 field_color="gray", player_speed=100, ball_bounce="normal",
+                 is_private=False, left_name="СИНИЕ", right_name="КРАСНЫЕ",
+                 left_color=DEFAULT_LEFT_COLOR, right_color=DEFAULT_RIGHT_COLOR):
         self.code = code
         self.name = (name or "Игра")[:24]
         self.host_id = host_id
@@ -278,6 +292,12 @@ class Room:
         self.player_speed = player_speed
         self.ball_bounce = ball_bounce
         self.wall_bounce = BOUNCE_VALUES.get(ball_bounce, WALL_BOUNCE)
+        self.is_private = bool(is_private)
+        self.left_name = left_name
+        self.right_name = right_name
+        self.left_color = left_color
+        self.right_color = right_color
+
         self.phase = "waiting"
         self.score = {"left": 0, "right": 0}
         self.winner = None
@@ -288,6 +308,8 @@ class Room:
         self.last_kicker_uid = None
         self.goal_pause_until = 0.0
         self.countdown_end = 0.0
+        self.match_started_at = 0.0
+        self.goal_log = []
         self.last_tick = time.monotonic()
         self.last_broadcast = 0.0
         self.empty_since = None
@@ -344,6 +366,8 @@ class Room:
         self.score = {"left": 0, "right": 0}
         self.winner = None
         self.timer = float(self.match_time_total)
+        self.match_started_at = time.monotonic()
+        self.goal_log = []
         self.begin_countdown(time.monotonic())
         return True, None
 
@@ -353,6 +377,8 @@ class Room:
         self.score = {"left": 0, "right": 0}
         self.winner = None
         self.timer = float(self.match_time_total)
+        self.match_started_at = time.monotonic()
+        self.goal_log = []
         self.begin_countdown(time.monotonic())
         return True, None
 
@@ -400,6 +426,12 @@ class Room:
                 "player_speed": self.player_speed,
                 "ball_bounce": self.ball_bounce,
                 "host_id": self.host_id,
+                "is_private": self.is_private,
+                "left_name": self.left_name,
+                "right_name": self.right_name,
+                "left_color": self.left_color,
+                "right_color": self.right_color,
+                "goal_log": list(self.goal_log),
             },
         }
 
@@ -410,7 +442,6 @@ class Room:
             x = clamp(x, -GOAL_DEPTH + 2, FIELD_W + GOAL_DEPTH - 2)
         else:
             x = clamp(x, PLAYER_R, FIELD_W - PLAYER_R)
-
         cx = None
         cy = None
         if x < CORNER_R:
@@ -443,13 +474,11 @@ class Room:
             kick = bool(data.get("kick", False))
         except (TypeError, ValueError):
             return
-
         dist = math.hypot(nx - p.x, ny - p.y)
         if dist <= TELEPORT_GUARD:
             nx, ny = self.clamp_player_pos(nx, ny)
             p.x, p.y = nx, ny
             p.vx, p.vy = nvx, nvy
-
         p.kick = kick
         now = time.monotonic()
         if kick and now >= p.kick_cooldown_until:
@@ -501,16 +530,13 @@ class Room:
         b["y"] += b["vy"] * dt
         b["vx"] *= BALL_FRICTION
         b["vy"] *= BALL_FRICTION
-
         self._corner_collide(b)
-
         if b["y"] - BALL_R < 0:
             b["y"] = BALL_R
             b["vy"] = -b["vy"] * bounce
         elif b["y"] + BALL_R > FIELD_H:
             b["y"] = FIELD_H - BALL_R
             b["vy"] = -b["vy"] * bounce
-
         in_goal_y = GOAL_TOP < b["y"] < GOAL_BOTTOM
         if not in_goal_y:
             if b["x"] - BALL_R < 0:
@@ -526,7 +552,6 @@ class Room:
             elif b["x"] + BALL_R > FIELD_W + GOAL_DEPTH:
                 b["x"] = FIELD_W + GOAL_DEPTH - BALL_R
                 b["vx"] = -b["vx"] * bounce
-
         for p in self.players.values():
             if not (self.ball_mask & p.c_group):
                 continue
@@ -547,7 +572,6 @@ class Room:
                 if dot < 0:
                     b["vx"] -= (1 + PLAYER_BALL_BOUNCE) * dot * ux
                     b["vy"] -= (1 + PLAYER_BALL_BOUNCE) * dot * uy
-
         plist = list(self.players.values())
         for i in range(len(plist)):
             for j in range(i + 1, len(plist)):
@@ -579,6 +603,19 @@ class Room:
         if p is None or p.team != scorer:
             return
         add_goal_for_player(uid)
+        if self.match_started_at > 0:
+            at_sec = max(0, int(time.monotonic() - self.match_started_at))
+        else:
+            at_sec = 0
+        self.goal_log.append({
+            "team": scorer,
+            "uid": p.user_id,
+            "name": p.name,
+            "jersey": p.jersey if p.jersey > 0 else p.slot,
+            "at_sec": at_sec,
+        })
+        if len(self.goal_log) > 60:
+            self.goal_log = self.goal_log[-60:]
 
     def check_goal(self):
         b = self.ball
@@ -622,16 +659,12 @@ class Room:
         if dt > 0.25:
             dt = 0.25
         self.last_tick = now
-
         if self.phase == "goal_pause" and now >= self.goal_pause_until:
             self.begin_countdown(now)
-
         if self.phase == "countdown" and now >= self.countdown_end:
             self.phase = "battle"
-
         if self.phase == "battle":
             self.physics_step(dt)
-
         self.tick_timer(dt)
 
 
@@ -649,6 +682,13 @@ async def handle_create(request):
     field_color = data.get("field_color", "gray")
     player_speed = data.get("player_speed", 100)
     ball_bounce = data.get("ball_bounce", "normal")
+    is_private = bool(data.get("is_private", False))
+    left_name = clean_team_name(data.get("left_name"), "СИНИЕ")
+    right_name = clean_team_name(data.get("right_name"), "КРАСНЫЕ")
+    left_color = clean_team_color(data.get("left_color"), DEFAULT_LEFT_COLOR)
+    right_color = clean_team_color(data.get("right_color"), DEFAULT_RIGHT_COLOR)
+    if left_color == right_color:
+        right_color = DEFAULT_RIGHT_COLOR if left_color != DEFAULT_RIGHT_COLOR else DEFAULT_LEFT_COLOR
 
     if not user_id:
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
@@ -669,7 +709,8 @@ async def handle_create(request):
 
     code = gen_code()
     room = Room(code, game_name, user_id, max_players, match_time,
-                field_color, player_speed, ball_bounce)
+                field_color, player_speed, ball_bounce,
+                is_private, left_name, right_name, left_color, right_color)
     ROOMS[code] = room
     room.add_player(user_id, user_name)
     return web.json_response({"ok": True, "code": code})
@@ -680,15 +721,12 @@ async def handle_join(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad_json"}, status=400)
-
     code = str(data.get("code", "")).strip()
     user_id = str(data.get("user_id", "")).strip()
     user_name = str(data.get("user_name", "Игрок")).strip() or "Игрок"
-
     room = ROOMS.get(code)
     if not room:
         return web.json_response({"ok": False, "error": "not_found"})
-
     ok, err = room.add_player(user_id, user_name)
     if not ok:
         return web.json_response({"ok": False, "error": err})
@@ -700,10 +738,8 @@ async def handle_start(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad_json"}, status=400)
-
     code = str(data.get("code", "")).strip()
     user_id = str(data.get("user_id", "")).strip()
-
     room = ROOMS.get(code)
     if not room:
         return web.json_response({"ok": False, "error": "not_found"})
@@ -720,10 +756,8 @@ async def handle_restart(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad_json"}, status=400)
-
     code = str(data.get("code", "")).strip()
     user_id = str(data.get("user_id", "")).strip()
-
     room = ROOMS.get(code)
     if not room:
         return web.json_response({"ok": False, "error": "not_found"})
@@ -738,6 +772,8 @@ async def handle_restart(request):
 async def handle_list(request):
     items = []
     for room in ROOMS.values():
+        if room.is_private:
+            continue
         if room.phase != "over" and len(room.players) < room.max_players:
             items.append(room.public_summary())
     return web.json_response({"ok": True, "items": items})
@@ -755,18 +791,15 @@ async def handle_profile_post(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad_json"}, status=400)
-
     uid = str(data.get("user_id", "")).strip()
     if not uid:
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
-
     name = str(data.get("name", "")).strip()[:PROFILE_NAME_MAX]
     try:
         jersey = int(data.get("jersey", 0))
     except (TypeError, ValueError):
         jersey = 0
     jersey = int(clamp(jersey, 0, JERSEY_MAX))
-
     if not db_save_profile(uid, name, jersey):
         return web.json_response({"ok": False, "error": "db_error"}, status=500)
     return web.json_response({"ok": True})
@@ -776,19 +809,15 @@ async def handle_ws(request):
     code = request.match_info.get("code", "")
     user_id = request.query.get("uid", "")
     room = ROOMS.get(code)
-
     ws = web.WebSocketResponse(heartbeat=20)
     await ws.prepare(request)
-
     if not room or user_id not in room.players:
         await ws.send_json({"type": "error", "error": "not_found"})
         await ws.close()
         return ws
-
     player = room.players[user_id]
     player.online = True
     player.ws = ws
-
     try:
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
@@ -796,17 +825,24 @@ async def handle_ws(request):
                     data = json.loads(msg.data)
                 except Exception:
                     continue
-                if data.get("action") == "move":
+                act = data.get("action")
+                if act == "move":
                     room.apply_move(user_id, data)
+                elif act == "leave":
+                    room.players.pop(user_id, None)
+                    if not room.players:
+                        ROOMS.pop(code, None)
+                    elif user_id == room.host_id:
+                        room.host_id = next(iter(room.players))
+                    break
             elif msg.type == WSMsgType.ERROR:
                 break
     finally:
         player.online = False
         if player.ws is ws:
             player.ws = None
-        if all(not p.online for p in room.players.values()):
+        if room.code in ROOMS and all(not p.online for p in room.players.values()):
             room.empty_since = time.monotonic()
-
     return ws
 
 
@@ -838,11 +874,8 @@ async def haxball_watchdog():
                 dead_codes.append(code)
         for code in dead_codes:
             ROOMS.pop(code, None)
-
         if sends:
             await asyncio.gather(
                 *[ws.send_json(snap) for ws, snap in sends],
-                return_exceptions=True
-            )
-
+                return_exceptions=True)
         await asyncio.sleep(TICK_DT)
