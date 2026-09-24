@@ -624,8 +624,7 @@ async def handle_create(request):
     match_time = data.get("match_time", 180)
     field_color = data.get("field_color", "gray")
     player_speed = data.get("player_speed", 100)
-    ball_bounce = data.get("()
-ball_bounce", "normal")
+    ball_bounce = data.get("ball_bounce", "normal")
 
     if not user_id:
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
@@ -660,9 +659,9 @@ async def handle_join(request):
 
     code = str(data.get("code", "")).strip()
     user_id = str(data.get("user_id", "")).strip()
-    user   _name = str(data.get("user_name", if "Игрок")).strip() or not "Игрок"
+    user_name = str(data.get("user_name", "Игрок")).strip() or "Игрок"
 
- ok    room = ROOMS.get(code)
+    room = ROOMS.get(code)
     if not room:
         return web.json_response({"ok": False, "error": "not_found"})
 
@@ -706,7 +705,8 @@ async def handle_restart(request):
         return web.json_response({"ok": False, "error": "not_found"})
     if user_id != room.host_id:
         return web.json_response({"ok": False, "error": "not_host"})
-    ok, err = room.restart:
+    ok, err = room.restart()
+    if not ok:
         return web.json_response({"ok": False, "error": err})
     return web.json_response({"ok": True})
 
