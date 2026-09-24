@@ -197,6 +197,7 @@ var RENDER_DELAY_MS = 100;
 var BUFFER_KEEP_MS = 500;
 var SNAP_DIST_PLAYER = 150;
 var SNAP_DIST_BALL = 200;
+var EXTRAPOLATE_MAX_MS = 200;
 
 var GO_SHOW_MS = 900;
 
@@ -440,6 +441,7 @@ var connected = false;
 
 var serverState = null;
 var localSelf = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
+var myTeam = null;
 
 var remoteRender = {};
 var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2 };
@@ -577,6 +579,7 @@ function connectWs(code) {
       }
       prevPhase = st.phase;
       serverState = st;
+      myTeam = st.my_side;
       syncSelfFromServer();
       pushSnapshot(st);
       updateButtons(st);
@@ -756,9 +759,11 @@ function stepLocalSelf(dt) {
   var c = clampPlayerPos(localSelf.x, localSelf.y);
   localSelf.x = c[0]; localSelf.y = c[1];
 
+  // Коллизии с чужими (только с противоположной командой)
   for (var i = 0; i < serverState.players.length; i++) {
     var p = serverState.players[i];
     if (p.user_id === MY_UID) continue;
+    if (p.team === myTeam) continue; // свои проходят сквозь
     var rp = remoteRender[p.user_id];
     if (!rp) continue;
     var dx = localSelf.x - rp.x, dy = localSelf.y - rp.y;
@@ -773,6 +778,7 @@ function stepLocalSelf(dt) {
     }
   }
 
+  // Не даём своей фигуре залезать внутрь мяча (только локально на клиенте).
   var bdx = localSelf.x - ballRender.x;
   var bdy = localSelf.y - ballRender.y;
   var bd = Math.hypot(bdx, bdy);
@@ -802,6 +808,8 @@ function maybeSendState(now) {
   } catch (e) {}
 }
 
+// ==================== ИНТЕРПОЛЯЦИЯ + ЭКСТРАПОЛЯЦИЯ ====================
+
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 function lerpPos(ax, ay, bx, by, alpha, snapDist) {
@@ -825,6 +833,24 @@ function applySnapshot(s) {
   ballRender.y = s.ball.y;
 }
 
+// Экстраполяция: снапшот опоздал — двигаем объекты по их скорости
+function extrapolateFrom(s, dtSec) {
+  var out = {};
+  for (var i = 0; i < s.players.length; i++) {
+    var p = s.players[i];
+    if (p.user_id === MY_UID) continue;
+    out[p.user_id] = {
+      x: p.x + (p.vx || 0) * dtSec,
+      y: p.y + (p.vy || 0) * dtSec,
+      name: p.name, team: p.team, slot: p.slot, jersey: p.jersey || 0,
+      kick_glow: p.kick_glow
+    };
+  }
+  remoteRender = out;
+  ballRender.x = s.ball.x + (s.ball.vx || 0) * dtSec;
+  ballRender.y = s.ball.y + (s.ball.vy || 0) * dtSec;
+}
+
 function renderInterpolated(now) {
   var n = snapshotBuffer.length;
   if (n === 0) return;
@@ -837,6 +863,15 @@ function renderInterpolated(now) {
 
   if (rt <= snapshotBuffer[0].t) {
     applySnapshot(snapshotBuffer[0]);
+    return;
+  }
+
+  // Экстраполяция: rt новее последнего снапшота
+  var lastSnap = snapshotBuffer[n - 1];
+  if (rt > lastSnap.t) {
+    var dtMs = rt - lastSnap.t;
+    if (dtMs > EXTRAPOLATE_MAX_MS) dtMs = EXTRAPOLATE_MAX_MS;
+    extrapolateFrom(lastSnap, dtMs / 1000);
     return;
   }
 
@@ -888,8 +923,17 @@ function renderInterpolated(now) {
   ballRender.y = bp[1];
 }
 
+// ==================== РЕНДЕР ====================
+
 var canvas = document.getElementById("gcanvas");
 var ctx = canvas.getContext("2d");
+
+// Offscreen canvas для статики поля
+var fieldCanvas = document.createElement("canvas");
+fieldCanvas.width = FIELD_W;
+fieldCanvas.height = FIELD_H;
+var fieldCtx = fieldCanvas.getContext("2d");
+var fieldColorDrawn = null;
 
 function fieldToScreen(cw, ch) {
   var margin = 40;
@@ -899,90 +943,104 @@ function fieldToScreen(cw, ch) {
   return { scale: scale, offX: offX, offY: offY };
 }
 
-function roundRectPath(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
-  ctx.lineTo(x + r, y + h);
-  ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
-  ctx.lineTo(x, y + r);
-  ctx.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
-  ctx.closePath();
+function roundRectPathTo(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+  c.lineTo(x + w, y + h - r);
+  c.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+  c.lineTo(x + r, y + h);
+  c.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+  c.lineTo(x, y + r);
+  c.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+  c.closePath();
+}
+
+// Рисует статическую часть поля в offscreen canvas (один раз)
+function redrawFieldStatic(colorKey) {
+  var c = fieldCtx;
+  var s = 1, ox = 0, oy = 0;
+  var baseColor = FIELD_COLORS[colorKey] || FIELD_COLORS.gray;
+
+  c.clearRect(0, 0, FIELD_W, FIELD_H);
+  c.fillStyle = "#111";
+  c.fillRect(0, 0, FIELD_W, FIELD_H);
+
+  roundRectPathTo(c, ox, oy, FIELD_W, FIELD_H, CORNER_R);
+  c.fillStyle = baseColor;
+  c.fill();
+
+  c.save();
+  c.clip();
+
+  c.fillStyle = "rgba(0,0,0,0.06)";
+  var sections = 8;
+  for (var i = 0; i < sections; i += 2) {
+    c.fillRect(i * (FIELD_W / sections), 0, (FIELD_W / sections), FIELD_H);
+  }
+
+  c.strokeStyle = "#ffffff";
+  c.lineWidth = 2;
+
+  c.beginPath();
+  c.moveTo(FIELD_W / 2, 0);
+  c.lineTo(FIELD_W / 2, FIELD_H);
+  c.stroke();
+
+  c.beginPath();
+  c.arc(FIELD_W / 2, FIELD_H / 2, 65, 0, Math.PI * 2);
+  c.stroke();
+
+  c.fillStyle = "#fff";
+  c.beginPath();
+  c.arc(FIELD_W / 2, FIELD_H / 2, 3, 0, Math.PI * 2);
+  c.fill();
+
+  c.beginPath(); c.arc(70, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(770, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
+
+  c.beginPath();
+  c.arc(70, FIELD_H / 2, 90, -Math.PI * 0.32, Math.PI * 0.32);
+  c.stroke();
+  c.beginPath();
+  c.arc(770, FIELD_H / 2, 90, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
+  c.stroke();
+
+  c.restore();
+
+  c.strokeStyle = "#ffffff";
+  c.lineWidth = 2;
+  roundRectPathTo(c, 0, 0, FIELD_W, FIELD_H, CORNER_R);
+  c.stroke();
+
+  c.fillStyle = "#333333";
+  c.fillRect(-GOAL_DEPTH, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP);
+  c.fillRect(FIELD_W, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP);
+
+  c.strokeStyle = "#ffffff";
+  c.lineWidth = 4;
+  c.beginPath();
+  c.moveTo(-GOAL_DEPTH, GOAL_TOP); c.lineTo(0, GOAL_TOP);
+  c.moveTo(-GOAL_DEPTH, GOAL_BOTTOM); c.lineTo(0, GOAL_BOTTOM);
+  c.moveTo(FIELD_W, GOAL_TOP); c.lineTo(FIELD_W + GOAL_DEPTH, GOAL_TOP);
+  c.moveTo(FIELD_W, GOAL_BOTTOM); c.lineTo(FIELD_W + GOAL_DEPTH, GOAL_BOTTOM);
+  c.stroke();
+
+  fieldColorDrawn = colorKey;
 }
 
 function drawField(cw, ch, state) {
-  var m = fieldToScreen(cw, ch);
-  var s = m.scale, ox = m.offX, oy = m.offY;
-
   var colorKey = state && state.field_color ? state.field_color : "gray";
-  var baseColor = FIELD_COLORS[colorKey] || FIELD_COLORS.gray;
+  if (fieldColorDrawn !== colorKey) {
+    redrawFieldStatic(colorKey);
+  }
 
   ctx.fillStyle = "#111";
   ctx.fillRect(0, 0, cw, ch);
 
-  roundRectPath(ox, oy, FIELD_W * s, FIELD_H * s, CORNER_R * s);
-  ctx.fillStyle = baseColor;
-  ctx.fill();
-
-  ctx.save();
-  ctx.clip();
-
-  ctx.fillStyle = "rgba(0,0,0,0.06)";
-  var sections = 8;
-  for (var i = 0; i < sections; i += 2) {
-    ctx.fillRect(ox + (i * FIELD_W / sections) * s, oy, (FIELD_W / sections) * s, FIELD_H * s);
-  }
-
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-
-  ctx.beginPath();
-  ctx.moveTo(ox + FIELD_W * s / 2, oy);
-  ctx.lineTo(ox + FIELD_W * s / 2, oy + FIELD_H * s);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(ox + FIELD_W * s / 2, oy + FIELD_H * s / 2, 65 * s, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(ox + FIELD_W * s / 2, oy + FIELD_H * s / 2, 3 * s, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.beginPath(); ctx.arc(ox + 70 * s, oy + FIELD_H * s / 2, 3 * s, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(ox + 770 * s, oy + FIELD_H * s / 2, 3 * s, 0, Math.PI * 2); ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(ox + 70 * s, oy + FIELD_H * s / 2, 90 * s, -Math.PI * 0.32, Math.PI * 0.32);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(ox + 770 * s, oy + FIELD_H * s / 2, 90 * s, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
-  ctx.stroke();
-
-  ctx.restore();
-
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-  roundRectPath(ox, oy, FIELD_W * s, FIELD_H * s, CORNER_R * s);
-  ctx.stroke();
-
-  ctx.fillStyle = "#333333";
-  ctx.fillRect(ox - GOAL_DEPTH * s, oy + GOAL_TOP * s, GOAL_DEPTH * s, (GOAL_BOTTOM - GOAL_TOP) * s);
-  ctx.fillRect(ox + FIELD_W * s, oy + GOAL_TOP * s, GOAL_DEPTH * s, (GOAL_BOTTOM - GOAL_TOP) * s);
-
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(ox - GOAL_DEPTH * s, oy + GOAL_TOP * s); ctx.lineTo(ox, oy + GOAL_TOP * s);
-  ctx.moveTo(ox - GOAL_DEPTH * s, oy + GOAL_BOTTOM * s); ctx.lineTo(ox, oy + GOAL_BOTTOM * s);
-  ctx.moveTo(ox + FIELD_W * s, oy + GOAL_TOP * s); ctx.lineTo(ox + FIELD_W * s + GOAL_DEPTH * s, oy + GOAL_TOP * s);
-  ctx.moveTo(ox + FIELD_W * s, oy + GOAL_BOTTOM * s); ctx.lineTo(ox + FIELD_W * s + GOAL_DEPTH * s, oy + GOAL_BOTTOM * s);
-  ctx.stroke();
-  ctx.lineWidth = 2;
+  var m = fieldToScreen(cw, ch);
+  ctx.drawImage(fieldCanvas, m.offX, m.offY, FIELD_W * m.scale, FIELD_H * m.scale);
 }
 
 function drawPlayer(m, x, y, team, slot, name, glow, jersey) {
@@ -1175,7 +1233,6 @@ function gameLoop(now) {
 }
 
 resizeGame();
-
 loadProfile(true);
 
 })();
