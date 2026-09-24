@@ -169,7 +169,6 @@ var inName=$("in-name");
 inName.value=MY_NAME;
 inName.addEventListener("input",function(){MY_NAME=inName.value.trim()||"Игрок";try{localStorage.setItem("hax_name",MY_NAME);}catch(e){}});
 
-// ==================== TABS ====================
 var tabMain=$("tab-main"), tabLob=$("tab-lob");
 var btnMain=$("tab-btn-main"), btnLob=$("tab-btn-lob");
 var lobActive=false;
@@ -234,7 +233,6 @@ function buildPal(containerId, side){
 buildPal("pal-left","left");
 buildPal("pal-right","right");
 
-// ==================== ПРОФИЛЬ ====================
 var inPN=$("in-prof-name"),inPJ=$("in-prof-jersey");
 function hasLocalName(){try{return!!localStorage.getItem("hax_name");}catch(e){return false;}}
 function fillStats(p){
@@ -284,7 +282,6 @@ $("btn-prof-save").addEventListener("click",function(){
   }).catch(function(){showToast("Ошибка сети");});
 });
 
-// ==================== ЛОББИ ====================
 $("btn-create").addEventListener("click",function(){
   var ln=inLeftName.value.trim()||"СИНИЕ";
   var rn=inRightName.value.trim()||"КРАСНЫЕ";
@@ -335,7 +332,6 @@ function refreshList(){
 }
 setInterval(function(){if(lobActive)refreshList();},5000);
 
-// ==================== СОСТОЯНИЕ ИГРЫ ====================
 var ws=null,roomCode=null,connected=false,looping=false;
 var serverState=null,myTeam=null;
 var localSelf={x:FW/2,y:FH/2,vx:0,vy:0};
@@ -470,7 +466,6 @@ function syncSelf(){
   else{localSelf.x+=(me.x-localSelf.x)*SOFT;localSelf.y+=(me.y-localSelf.y)*SOFT;}
 }
 
-// ==================== ЭКРАН, ДЖОЙСТИК ====================
 var isRot=false,vw=window.innerWidth,vh=window.innerHeight;
 var canvas=$("gcanvas"),ctx=canvas.getContext("2d");
 
@@ -536,7 +531,6 @@ function touchEnd(ev){
 window.addEventListener("touchend",touchEnd,{passive:false});
 window.addEventListener("touchcancel",touchEnd,{passive:false});
 
-// ==================== ФИЗИКА СВОЕЙ ФИГУРЫ ====================
 function stepSelf(dt){
   if(!serverState||serverState.phase!=="battle")return;
   var k=(serverState.player_speed||100)/100;
@@ -573,7 +567,6 @@ function maybeSend(now){
   }catch(e){}
 }
 
-// ==================== ИНТЕРПОЛЯЦИЯ ====================
 function lerp(a,b,t){return a+(b-a)*t;}
 function rp(p,x,y,vx,vy,g){
   return {x:x,y:y,vx:vx||0,vy:vy||0,name:p.name,team:p.team,slot:p.slot,jersey:p.jersey||0,glow:g};
@@ -616,7 +609,6 @@ function renderInterp(now){
   else{ballRender.x=lerp(A.ball.x,B.ball.x,al);ballRender.y=lerp(A.ball.y,B.ball.y,al);}
 }
 
-// ==================== РЕНДЕР ====================
 function fieldMap(cw,ch){
   var top=66,bottom=18,side=22+GD;
   var s=Math.min((cw-side*2)/FW,(ch-top-bottom)/FH);
