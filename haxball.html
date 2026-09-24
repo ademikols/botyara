@@ -759,11 +759,10 @@ function stepLocalSelf(dt) {
   var c = clampPlayerPos(localSelf.x, localSelf.y);
   localSelf.x = c[0]; localSelf.y = c[1];
 
-  // Коллизии с чужими (только с противоположной командой)
   for (var i = 0; i < serverState.players.length; i++) {
     var p = serverState.players[i];
     if (p.user_id === MY_UID) continue;
-    if (p.team === myTeam) continue; // свои проходят сквозь
+    if (p.team === myTeam) continue;
     var rp = remoteRender[p.user_id];
     if (!rp) continue;
     var dx = localSelf.x - rp.x, dy = localSelf.y - rp.y;
@@ -778,7 +777,6 @@ function stepLocalSelf(dt) {
     }
   }
 
-  // Не даём своей фигуре залезать внутрь мяча (только локально на клиенте).
   var bdx = localSelf.x - ballRender.x;
   var bdy = localSelf.y - ballRender.y;
   var bd = Math.hypot(bdx, bdy);
@@ -833,7 +831,6 @@ function applySnapshot(s) {
   ballRender.y = s.ball.y;
 }
 
-// Экстраполяция: снапшот опоздал — двигаем объекты по их скорости
 function extrapolateFrom(s, dtSec) {
   var out = {};
   for (var i = 0; i < s.players.length; i++) {
@@ -866,7 +863,6 @@ function renderInterpolated(now) {
     return;
   }
 
-  // Экстраполяция: rt новее последнего снапшота
   var lastSnap = snapshotBuffer[n - 1];
   if (rt > lastSnap.t) {
     var dtMs = rt - lastSnap.t;
@@ -928,7 +924,6 @@ function renderInterpolated(now) {
 var canvas = document.getElementById("gcanvas");
 var ctx = canvas.getContext("2d");
 
-// Offscreen canvas для статики поля
 var fieldCanvas = document.createElement("canvas");
 fieldCanvas.width = FIELD_W;
 fieldCanvas.height = FIELD_H;
@@ -957,17 +952,15 @@ function roundRectPathTo(c, x, y, w, h, r) {
   c.closePath();
 }
 
-// Рисует статическую часть поля в offscreen canvas (один раз)
 function redrawFieldStatic(colorKey) {
   var c = fieldCtx;
-  var s = 1, ox = 0, oy = 0;
   var baseColor = FIELD_COLORS[colorKey] || FIELD_COLORS.gray;
 
   c.clearRect(0, 0, FIELD_W, FIELD_H);
   c.fillStyle = "#111";
   c.fillRect(0, 0, FIELD_W, FIELD_H);
 
-  roundRectPathTo(c, ox, oy, FIELD_W, FIELD_H, CORNER_R);
+  roundRectPathTo(c, 0, 0, FIELD_W, FIELD_H, CORNER_R);
   c.fillStyle = baseColor;
   c.fill();
 
@@ -1014,18 +1007,33 @@ function redrawFieldStatic(colorKey) {
   roundRectPathTo(c, 0, 0, FIELD_W, FIELD_H, CORNER_R);
   c.stroke();
 
-  c.fillStyle = "#333333";
+  c.fillStyle = "#ffffff";
   c.fillRect(-GOAL_DEPTH, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP);
   c.fillRect(FIELD_W, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP);
 
-  c.strokeStyle = "#ffffff";
-  c.lineWidth = 4;
+  c.strokeStyle = "#000";
+  c.lineWidth = 2;
   c.beginPath();
   c.moveTo(-GOAL_DEPTH, GOAL_TOP); c.lineTo(0, GOAL_TOP);
   c.moveTo(-GOAL_DEPTH, GOAL_BOTTOM); c.lineTo(0, GOAL_BOTTOM);
   c.moveTo(FIELD_W, GOAL_TOP); c.lineTo(FIELD_W + GOAL_DEPTH, GOAL_TOP);
   c.moveTo(FIELD_W, GOAL_BOTTOM); c.lineTo(FIELD_W + GOAL_DEPTH, GOAL_BOTTOM);
   c.stroke();
+
+  c.strokeStyle = "rgba(0,0,0,0.3)";
+  c.lineWidth = 1;
+  for (var gx = -GOAL_DEPTH + 4; gx < 0; gx += 6) {
+    c.beginPath();
+    c.moveTo(gx, GOAL_TOP);
+    c.lineTo(gx, GOAL_BOTTOM);
+    c.stroke();
+  }
+  for (var gx2 = FIELD_W + 4; gx2 < FIELD_W + GOAL_DEPTH; gx2 += 6) {
+    c.beginPath();
+    c.moveTo(gx2, GOAL_TOP);
+    c.lineTo(gx2, GOAL_BOTTOM);
+    c.stroke();
+  }
 
   fieldColorDrawn = colorKey;
 }
@@ -1050,20 +1058,39 @@ function drawPlayer(m, x, y, team, slot, name, glow, jersey) {
 
   var displayNumber = (jersey > 0) ? jersey : slot;
 
-  if (glow) {
-    ctx.beginPath();
-    ctx.arc(sx, sy, r + 5, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.fill();
-  }
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.4)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 3;
 
   ctx.beginPath();
   ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  ctx.fillStyle = team === "left" ? "#3a5fdc" : "#dc4040";
+  var grad = ctx.createRadialGradient(sx - r*0.3, sy - r*0.3, r*0.1, sx, sy, r);
+  if (team === "left") {
+    grad.addColorStop(0, "#5a7fdc");
+    grad.addColorStop(1, "#2a4a9c");
+  } else {
+    grad.addColorStop(0, "#dc6060");
+    grad.addColorStop(1, "#9c3030");
+  }
+  ctx.fillStyle = grad;
   ctx.fill();
+
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#000";
   ctx.stroke();
+
+  if (glow) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, r + 6, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.stroke();
+  }
 
   ctx.fillStyle = "#fff";
   ctx.font = "bold " + Math.round(14 * m.scale) + "px sans-serif";
@@ -1082,16 +1109,31 @@ function drawBall(m, x, y) {
   var sx = m.offX + x * m.scale;
   var sy = m.offY + y * m.scale;
   var r = BALL_R * m.scale;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.4)";
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 2;
+
   ctx.beginPath();
   ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  ctx.fillStyle = "#e8e000";
+  var bg = ctx.createRadialGradient(sx - r*0.3, sy - r*0.3, r*0.1, sx, sy, r);
+  bg.addColorStop(0, "#ffffa0");
+  bg.addColorStop(0.6, "#e8e000");
+  bg.addColorStop(1, "#a0a000");
+  ctx.fillStyle = bg;
   ctx.fill();
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";
   ctx.stroke();
+
   ctx.beginPath();
-  ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.28, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.25, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
   ctx.fill();
 }
 
