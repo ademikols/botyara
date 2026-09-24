@@ -35,7 +35,7 @@ KICK_GLOW_TIME = 0.15
 
 BALL_FRICTION = 0.994
 WALL_BOUNCE = 0.85
-PLAYER_BALL_BOUNCE = 0.95
+PLAYER_BALL_BOUNCE = 0.5
 PLAYER_PLAYER_BOUNCE = 0.55
 
 BOUNCE_VALUES = {"low": 0.70, "normal": 0.85, "high": 0.95}
@@ -55,6 +55,21 @@ ROOM_TTL_EMPTY = 60.0
 
 PROFILE_NAME_MAX = 16
 JERSEY_MAX = 99
+
+# Группы коллизий (как в Haxball)
+CGROUP_WALL = 1
+CGROUP_BALL = 2
+CGROUP_RED = 4
+CGROUP_BLUE = 8
+
+# Кто с кем сталкивается:
+# - мяч сталкивается со стенами и всеми игроками
+# - игрок сталкивается со стенами, мячом и игроками ПРОТИВОПОЛОЖНОЙ команды
+# - стена сталкивается со всеми
+MASK_BALL = CGROUP_WALL | CGROUP_RED | CGROUP_BLUE
+MASK_RED = CGROUP_WALL | CGROUP_BALL | CGROUP_BLUE
+MASK_BLUE = CGROUP_WALL | CGROUP_BALL | CGROUP_RED
+MASK_WALL = CGROUP_BALL | CGROUP_RED | CGROUP_BLUE
 
 SLOT_X = {
     "left": {1: 330.0, 2: 170.0, 3: 60.0},
@@ -226,6 +241,13 @@ class Player:
         self.kick_cooldown_until = 0.0
         self.online = True
         self.ws = None
+        # Группа коллизий зависит от команды
+        if team == "left":
+            self.c_group = CGROUP_RED
+            self.c_mask = MASK_RED
+        else:
+            self.c_group = CGROUP_BLUE
+            self.c_mask = MASK_BLUE
         self.spawn()
 
     def spawn(self):
@@ -269,6 +291,8 @@ class Room:
         self.winner = None
         self.players = {}
         self.ball = {"x": FIELD_W / 2.0, "y": FIELD_H / 2.0, "vx": 0.0, "vy": 0.0}
+        self.ball_group = CGROUP_BALL
+        self.ball_mask = MASK_BALL
         self.last_kicker_uid = None
         self.goal_pause_until = 0.0
         self.countdown_end = 0.0
@@ -511,7 +535,12 @@ class Room:
                 b["x"] = FIELD_W + GOAL_DEPTH - BALL_R
                 b["vx"] = -b["vx"] * bounce
 
+        # Мяч vs игроки (с учётом collision filters)
         for p in self.players.values():
+            if not (self.ball_mask & p.c_group):
+                continue
+            if not (p.c_mask & self.ball_group):
+                continue
             dx = b["x"] - p.x
             dy = b["y"] - p.y
             d = math.hypot(dx, dy)
@@ -528,10 +557,15 @@ class Room:
                     b["vx"] -= (1 + PLAYER_BALL_BOUNCE) * dot * ux
                     b["vy"] -= (1 + PLAYER_BALL_BOUNCE) * dot * uy
 
+        # Игрок vs игрок (с учётом collision filters)
         plist = list(self.players.values())
         for i in range(len(plist)):
             for j in range(i + 1, len(plist)):
                 p1, p2 = plist[i], plist[j]
+                if not (p1.c_mask & p2.c_group):
+                    continue
+                if not (p2.c_mask & p1.c_group):
+                    continue
                 dx = p2.x - p1.x
                 dy = p2.y - p1.y
                 d = math.hypot(dx, dy)
