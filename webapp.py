@@ -31,7 +31,7 @@ async def cmd_play(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Otkryt igry", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app.html"))
     ]])
-    await m.answer("Mini App: Krestiki, Durak, Shpion, Haxball", reply_markup=kb)
+    await m.answer("Mini App: Krestiki, Durak, Shpion", reply_markup=kb)
 
 
 rooms = {}
@@ -1118,13 +1118,14 @@ async def start_web_server():
     app.router.add_post("/api/spy/to_vote", spy_to_vote)
     app.router.add_get("/ws/spy/{code}", spy_ws)
 
-    from haxball import register_haxball_routes, haxball_watchdog
-    register_haxball_routes(app)
+    # HAXBALL временно отключён — раскомментируй когда починим haxball.py
+    # from haxball import register_haxball_routes, haxball_watchdog
+    # register_haxball_routes(app)
 
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     asyncio.create_task(durak_watchdog())
     asyncio.create_task(spy_watchdog())
-    asyncio.create_task(haxball_watchdog())
+    # asyncio.create_task(haxball_watchdog())
     print(f"Web server started on 0.0.0.0:{PORT}", flush=True)
