@@ -201,6 +201,10 @@ var EXTRAPOLATE_MAX_MS = 200;
 
 var GO_SHOW_MS = 900;
 
+// Offscreen canvas с запасом для ворот
+var OFFSCREEN_W = FIELD_W + 2 * GOAL_DEPTH;
+var OFFSCREEN_H = FIELD_H;
+
 var FIELD_COLORS = {
   gray: "#5a5a5a",
   green: "#36793b",
@@ -806,8 +810,6 @@ function maybeSendState(now) {
   } catch (e) {}
 }
 
-// ==================== ИНТЕРПОЛЯЦИЯ + ЭКСТРАПОЛЯЦИЯ ====================
-
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 function lerpPos(ax, ay, bx, by, alpha, snapDist) {
@@ -821,7 +823,7 @@ function applySnapshot(s) {
     var p = s.players[i];
     if (p.user_id === MY_UID) continue;
     out[p.user_id] = {
-      x: p.x, y: p.y,
+      x: p.x, y: p.y, vx: p.vx || 0, vy: p.vy || 0,
       name: p.name, team: p.team, slot: p.slot, jersey: p.jersey || 0,
       kick_glow: p.kick_glow
     };
@@ -839,6 +841,7 @@ function extrapolateFrom(s, dtSec) {
     out[p.user_id] = {
       x: p.x + (p.vx || 0) * dtSec,
       y: p.y + (p.vy || 0) * dtSec,
+      vx: p.vx || 0, vy: p.vy || 0,
       name: p.name, team: p.team, slot: p.slot, jersey: p.jersey || 0,
       kick_glow: p.kick_glow
     };
@@ -908,6 +911,8 @@ function renderInterpolated(now) {
     }
     out[pb.user_id] = {
       x: px, y: py,
+      vx: lerp(pa ? (pa.vx || 0) : 0, pb.vx || 0, alpha),
+      vy: lerp(pa ? (pa.vy || 0) : 0, pb.vy || 0, alpha),
       name: pb.name, team: pb.team, slot: pb.slot, jersey: pb.jersey || 0,
       kick_glow: glow
     };
@@ -919,20 +924,19 @@ function renderInterpolated(now) {
   ballRender.y = bp[1];
 }
 
-// ==================== РЕНДЕР ====================
-
 var canvas = document.getElementById("gcanvas");
 var ctx = canvas.getContext("2d");
 
 var fieldCanvas = document.createElement("canvas");
-fieldCanvas.width = FIELD_W;
-fieldCanvas.height = FIELD_H;
+fieldCanvas.width = OFFSCREEN_W;
+fieldCanvas.height = OFFSCREEN_H;
 var fieldCtx = fieldCanvas.getContext("2d");
 var fieldColorDrawn = null;
 
 function fieldToScreen(cw, ch) {
   var margin = 40;
-  var scale = Math.min((cw - margin * 2) / FIELD_W, (ch - margin * 2 - 60) / FIELD_H);
+  var scale = Math.min((cw - margin * 2 - 2 * GOAL_DEPTH) / FIELD_W,
+                       (ch - margin * 2 - 60) / FIELD_H);
   var offX = (cw - FIELD_W * scale) / 2;
   var offY = (ch - FIELD_H * scale) / 2 + 30;
   return { scale: scale, offX: offX, offY: offY };
@@ -952,88 +956,121 @@ function roundRectPathTo(c, x, y, w, h, r) {
   c.closePath();
 }
 
+// Рисует статику в offscreen canvas с запасом под ворота.
+// Внутри offscreen поле смещено на GOAL_DEPTH вправо.
 function redrawFieldStatic(colorKey) {
   var c = fieldCtx;
   var baseColor = FIELD_COLORS[colorKey] || FIELD_COLORS.gray;
+  var offX = GOAL_DEPTH; // сдвиг поля внутри offscreen
 
-  c.clearRect(0, 0, FIELD_W, FIELD_H);
+  c.clearRect(0, 0, OFFSCREEN_W, OFFSCREEN_H);
   c.fillStyle = "#111";
-  c.fillRect(0, 0, FIELD_W, FIELD_H);
+  c.fillRect(0, 0, OFFSCREEN_W, OFFSCREEN_H);
 
-  roundRectPathTo(c, 0, 0, FIELD_W, FIELD_H, CORNER_R);
+  // Заливка поля
+  roundRectPathTo(c, offX, 0, FIELD_W, FIELD_H, CORNER_R);
   c.fillStyle = baseColor;
   c.fill();
 
   c.save();
+  roundRectPathTo(c, offX, 0, FIELD_W, FIELD_H, CORNER_R);
   c.clip();
 
+  // Полосы
   c.fillStyle = "rgba(0,0,0,0.06)";
   var sections = 8;
   for (var i = 0; i < sections; i += 2) {
-    c.fillRect(i * (FIELD_W / sections), 0, (FIELD_W / sections), FIELD_H);
+    c.fillRect(offX + i * (FIELD_W / sections), 0, (FIELD_W / sections), FIELD_H);
   }
 
   c.strokeStyle = "#ffffff";
   c.lineWidth = 2;
 
+  // Центральная линия
   c.beginPath();
-  c.moveTo(FIELD_W / 2, 0);
-  c.lineTo(FIELD_W / 2, FIELD_H);
+  c.moveTo(offX + FIELD_W / 2, 0);
+  c.lineTo(offX + FIELD_W / 2, FIELD_H);
   c.stroke();
 
+  // Центральный круг
   c.beginPath();
-  c.arc(FIELD_W / 2, FIELD_H / 2, 65, 0, Math.PI * 2);
+  c.arc(offX + FIELD_W / 2, FIELD_H / 2, 65, 0, Math.PI * 2);
   c.stroke();
 
   c.fillStyle = "#fff";
   c.beginPath();
-  c.arc(FIELD_W / 2, FIELD_H / 2, 3, 0, Math.PI * 2);
+  c.arc(offX + FIELD_W / 2, FIELD_H / 2, 3, 0, Math.PI * 2);
   c.fill();
 
-  c.beginPath(); c.arc(70, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
-  c.beginPath(); c.arc(770, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
+  // Точки пенальти
+  c.beginPath(); c.arc(offX + 70, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(offX + 770, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
 
+  // Дуги
   c.beginPath();
-  c.arc(70, FIELD_H / 2, 90, -Math.PI * 0.32, Math.PI * 0.32);
+  c.arc(offX + 70, FIELD_H / 2, 90, -Math.PI * 0.32, Math.PI * 0.32);
   c.stroke();
   c.beginPath();
-  c.arc(770, FIELD_H / 2, 90, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
+  c.arc(offX + 770, FIELD_H / 2, 90, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
   c.stroke();
 
   c.restore();
 
+  // Контур поля
   c.strokeStyle = "#ffffff";
   c.lineWidth = 2;
-  roundRectPathTo(c, 0, 0, FIELD_W, FIELD_H, CORNER_R);
+  roundRectPathTo(c, offX, 0, FIELD_W, FIELD_H, CORNER_R);
   c.stroke();
 
-  c.fillStyle = "#ffffff";
-  c.fillRect(-GOAL_DEPTH, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP);
-  c.fillRect(FIELD_W, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP);
+  // ===== ВОРОТА (теперь внутри offscreen) =====
 
+  // Заливка ворот (светлая)
+  c.fillStyle = "#e8e8e8";
+  c.fillRect(0, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP); // левые
+  c.fillRect(offX + FIELD_W, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP); // правые
+
+  // Обводка ворот
   c.strokeStyle = "#000";
   c.lineWidth = 2;
-  c.beginPath();
-  c.moveTo(-GOAL_DEPTH, GOAL_TOP); c.lineTo(0, GOAL_TOP);
-  c.moveTo(-GOAL_DEPTH, GOAL_BOTTOM); c.lineTo(0, GOAL_BOTTOM);
-  c.moveTo(FIELD_W, GOAL_TOP); c.lineTo(FIELD_W + GOAL_DEPTH, GOAL_TOP);
-  c.moveTo(FIELD_W, GOAL_BOTTOM); c.lineTo(FIELD_W + GOAL_DEPTH, GOAL_BOTTOM);
-  c.stroke();
+  c.strokeRect(0.5, GOAL_TOP, GOAL_DEPTH - 1, GOAL_BOTTOM - GOAL_TOP);
+  c.strokeRect(offX + FIELD_W + 0.5, GOAL_TOP, GOAL_DEPTH - 1, GOAL_BOTTOM - GOAL_TOP);
 
-  c.strokeStyle = "rgba(0,0,0,0.3)";
+  // Сетка внутри ворот
+  c.strokeStyle = "rgba(0,0,0,0.25)";
   c.lineWidth = 1;
-  for (var gx = -GOAL_DEPTH + 4; gx < 0; gx += 6) {
+  for (var gx = 4; gx < GOAL_DEPTH; gx += 5) {
     c.beginPath();
     c.moveTo(gx, GOAL_TOP);
     c.lineTo(gx, GOAL_BOTTOM);
     c.stroke();
   }
-  for (var gx2 = FIELD_W + 4; gx2 < FIELD_W + GOAL_DEPTH; gx2 += 6) {
+  for (var gx2 = offX + FIELD_W + 4; gx2 < offX + FIELD_W + GOAL_DEPTH; gx2 += 5) {
     c.beginPath();
     c.moveTo(gx2, GOAL_TOP);
     c.lineTo(gx2, GOAL_BOTTOM);
     c.stroke();
   }
+  // Горизонтальные линии сетки
+  for (var gy = GOAL_TOP + 12; gy < GOAL_BOTTOM; gy += 12) {
+    c.beginPath();
+    c.moveTo(0, gy);
+    c.lineTo(GOAL_DEPTH, gy);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(offX + FIELD_W, gy);
+    c.lineTo(offX + FIELD_W + GOAL_DEPTH, gy);
+    c.stroke();
+  }
+
+  // Верхняя и нижняя толстые линии ворот
+  c.strokeStyle = "#ffffff";
+  c.lineWidth = 3;
+  c.beginPath();
+  c.moveTo(0, GOAL_TOP); c.lineTo(GOAL_DEPTH, GOAL_TOP);
+  c.moveTo(0, GOAL_BOTTOM); c.lineTo(GOAL_DEPTH, GOAL_BOTTOM);
+  c.moveTo(offX + FIELD_W, GOAL_TOP); c.lineTo(offX + FIELD_W + GOAL_DEPTH, GOAL_TOP);
+  c.moveTo(offX + FIELD_W, GOAL_BOTTOM); c.lineTo(offX + FIELD_W + GOAL_DEPTH, GOAL_BOTTOM);
+  c.stroke();
 
   fieldColorDrawn = colorKey;
 }
@@ -1048,56 +1085,80 @@ function drawField(cw, ch, state) {
   ctx.fillRect(0, 0, cw, ch);
 
   var m = fieldToScreen(cw, ch);
-  ctx.drawImage(fieldCanvas, m.offX, m.offY, FIELD_W * m.scale, FIELD_H * m.scale);
+  var drawX = m.offX - GOAL_DEPTH * m.scale;
+  var drawY = m.offY;
+  var drawW = OFFSCREEN_W * m.scale;
+  var drawH = OFFSCREEN_H * m.scale;
+  ctx.drawImage(fieldCanvas, drawX, drawY, drawW, drawH);
 }
 
-function drawPlayer(m, x, y, team, slot, name, glow, jersey) {
+function drawPlayer(m, x, y, team, slot, name, glow, jersey, vx, vy) {
   var sx = m.offX + x * m.scale;
   var sy = m.offY + y * m.scale;
   var r = PLAYER_R * m.scale;
 
   var displayNumber = (jersey > 0) ? jersey : slot;
 
-  ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.4)";
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetY = 3;
-
+  // Тень
   ctx.beginPath();
-  ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  var grad = ctx.createRadialGradient(sx - r*0.3, sy - r*0.3, r*0.1, sx, sy, r);
-  if (team === "left") {
-    grad.addColorStop(0, "#5a7fdc");
-    grad.addColorStop(1, "#2a4a9c");
-  } else {
-    grad.addColorStop(0, "#dc6060");
-    grad.addColorStop(1, "#9c3030");
-  }
-  ctx.fillStyle = grad;
+  ctx.ellipse(sx, sy + r * 0.5, r * 0.9, r * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.fill();
 
-  ctx.restore();
-
+  // Градиентная заливка
+  var grad = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
+  if (team === "left") {
+    grad.addColorStop(0, "#6a8fec");
+    grad.addColorStop(1, "#2a4a9c");
+  } else {
+    grad.addColorStop(0, "#ec7070");
+    grad.addColorStop(1, "#9c3030");
+  }
   ctx.beginPath();
   ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#000";
   ctx.stroke();
 
-  if (glow) {
+  // Стрелка в сторону движения
+  var speed = Math.hypot(vx || 0, vy || 0);
+  if (speed > 15) {
+    var angle = Math.atan2(vy || 0, vx || 0);
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
     ctx.beginPath();
-    ctx.arc(sx, sy, r + 6, 0, Math.PI * 2);
+    ctx.moveTo(r * 0.65, 0);
+    ctx.lineTo(-r * 0.15, -r * 0.45);
+    ctx.lineTo(-r * 0.15, r * 0.45);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Пульсирующее кольцо при ударе
+  if (glow) {
+    var kickAge = 1 - glow;
+    var ringR = r + 4 + kickAge * 12;
+    var ringA = glow * 0.9;
+    ctx.beginPath();
+    ctx.arc(sx, sy, ringR, 0, Math.PI * 2);
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.strokeStyle = "rgba(255,255,100," + ringA + ")";
     ctx.stroke();
   }
 
+  // Номер
   ctx.fillStyle = "#fff";
   ctx.font = "bold " + Math.round(14 * m.scale) + "px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(String(displayNumber), sx, sy);
 
+  // Имя
   ctx.font = "bold " + Math.round(12 * m.scale) + "px sans-serif";
   ctx.shadowColor = "#000";
   ctx.shadowBlur = 3;
@@ -1110,27 +1171,26 @@ function drawBall(m, x, y) {
   var sy = m.offY + y * m.scale;
   var r = BALL_R * m.scale;
 
-  ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.4)";
-  ctx.shadowBlur = 5;
-  ctx.shadowOffsetY = 2;
-
+  // Тень
   ctx.beginPath();
-  ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  var bg = ctx.createRadialGradient(sx - r*0.3, sy - r*0.3, r*0.1, sx, sy, r);
+  ctx.ellipse(sx, sy + r * 0.6, r * 0.9, r * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fill();
+
+  // Мяч с градиентом
+  var bg = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
   bg.addColorStop(0, "#ffffa0");
   bg.addColorStop(0.6, "#e8e000");
   bg.addColorStop(1, "#a0a000");
-  ctx.fillStyle = bg;
-  ctx.fill();
-  ctx.restore();
-
   ctx.beginPath();
   ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle = bg;
+  ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";
   ctx.stroke();
 
+  // Блик
   ctx.beginPath();
   ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.25, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(255,255,255,0.7)";
@@ -1243,10 +1303,10 @@ function render() {
       if (p.user_id === MY_UID) continue;
       var r = remoteRender[p.user_id];
       if (!r) continue;
-      drawPlayer(m, r.x, r.y, r.team, r.slot, r.name, r.kick_glow, r.jersey);
+      drawPlayer(m, r.x, r.y, r.team, r.slot, r.name, r.kick_glow, r.jersey, r.vx, r.vy);
     }
     var me = findMe(serverState);
-    if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow, me.jersey);
+    if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow, me.jersey, localSelf.vx, localSelf.vy);
     drawBall(m, ballRender.x, ballRender.y);
     drawHud(cw, ch, serverState);
     drawCountdown(cw, ch, m, serverState);
