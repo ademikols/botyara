@@ -5,27 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Haxball</title>
 <style>
-html,body{margin:0;width:100%;height:100%;background:#1c1c1c;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;font-family:-apple-system,"Helvetica Neue",Arial,sans-serif}
+html,body{margin:0;width:100%;height:100%;background:#1c1c1c;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none;font-family:-apple-system,Arial,sans-serif}
 *{box-sizing:border-box}
-.scr{position:fixed;inset:0;background:linear-gradient(180deg,#2a2a2a,#151515);color:#eee;overflow-y:auto;padding:20px 16px 40px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+.scr{position:fixed;inset:0;background:linear-gradient(180deg,#2a2a2a,#151515);color:#eee;overflow-y:auto;padding:20px 16px 40px}
 #s-profile{display:none}
 .hdr{display:flex;align-items:center;justify-content:space-between;margin:0 0 14px}
-.hdr .logo{color:#e8e000;font-size:24px;font-weight:bold;letter-spacing:3px}
-.hdr .prof-ico{width:44px;height:44px;border-radius:50%;background:#2fa84f;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;border:2px solid rgba(255,255,255,0.2)}
-.hdr .prof-ico:active{transform:scale(0.95)}
+.logo{color:#e8e000;font-size:24px;font-weight:bold;letter-spacing:3px}
+.ico{width:44px;height:44px;border-radius:50%;background:#2fa84f;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer}
 .tabs{display:flex;background:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #333;margin-bottom:14px}
-.tabs .tab{flex:1;padding:12px 8px;background:transparent;color:#888;border:none;font-size:13px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;cursor:pointer;font-family:inherit}
-.tabs .tab.active{background:#3a5fdc;color:#fff}
+.tab{flex:1;padding:12px 8px;background:transparent;color:#888;border:none;font-size:13px;font-weight:bold;letter-spacing:1px;cursor:pointer;font-family:inherit}
+.tab.active{background:#3a5fdc;color:#fff}
 .box{background:#232323;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin-bottom:14px}
-.box h2{font-size:14px;color:#aaa;margin:0 0 10px;text-transform:uppercase;letter-spacing:1px}
+.box h2{font-size:14px;color:#aaa;margin:0 0 10px;letter-spacing:1px}
 .lbl{font-size:13px;color:#bbb;margin:10px 0 6px}
-input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#111;color:#fff;font-size:16px;-webkit-user-select:text;user-select:text}
+input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#111;color:#fff;font-size:16px}
 .seg{display:flex;border-radius:8px;overflow:hidden;border:1px solid #444}
 .seg button{flex:1;padding:10px 4px;background:#111;color:#ccc;border:none;font-size:13px;border-right:1px solid #333;font-family:inherit}
 .seg button:last-child{border-right:none}
 .seg button.active{background:#3a5fdc;color:#fff}
 .big{width:100%;padding:14px;border-radius:10px;border:none;font-size:16px;font-weight:bold;color:#fff;margin-top:10px;font-family:inherit}
-.green{background:#2fa84f}.blue{background:#3a5fdc}.gray{background:#555}
+.green{background:#2fa84f}.blue{background:#3a5fdc}
 .jr{display:flex;gap:8px}
 .jr button{padding:10px 16px;border-radius:8px;border:none;background:#3a5fdc;color:#fff;font-weight:bold;font-family:inherit}
 .li{display:flex;justify-content:space-between;align-items:center;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:8px}
@@ -35,12 +34,13 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 .empty{color:#666;font-size:14px;text-align:center;padding:30px 10px}
 .hint{color:#888;font-size:12px;margin-top:8px}
 .st{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #333;font-size:15px;color:#ccc}
-.st:last-child{border-bottom:none}.st b{color:#fff;font-size:17px}
-.chk{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;user-select:none}
+.st:last-child{border-bottom:none}
+.st b{color:#fff;font-size:17px}
+.chk{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer}
 .chk input{width:20px;height:20px;accent-color:#3a5fdc}
 .pal{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
-.pal .sw{width:36px;height:36px;border-radius:8px;border:2px solid #333;cursor:pointer}
-.pal .sw.active{border-color:#fff;transform:scale(1.08)}
+.sw{width:36px;height:36px;border-radius:8px;border:2px solid #333;cursor:pointer}
+.sw.active{border-color:#fff}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:10px 18px;border-radius:10px;font-size:14px;z-index:999;opacity:0;transition:opacity .25s;pointer-events:none;max-width:85%;text-align:center}
 #toast.show{opacity:1}
 #s-game{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#111;display:none;overflow:hidden;transform-origin:center center}
@@ -49,20 +49,17 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 #joy-base,#joy-stick{position:absolute;border-radius:50%;display:none;pointer-events:none}
 #joy-base{width:100px;height:100px;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.3)}
 #joy-stick{width:46px;height:46px;background:rgba(255,255,255,.45);border:2px solid rgba(255,255,255,.6)}
-#kick-btn{position:absolute;width:110px;height:110px;right:18px;bottom:18px;border-radius:50%;background:#dc4040;opacity:.55;z-index:6;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:16px;letter-spacing:1px;border:3px solid rgba(255,255,255,.4)}
+#kick-btn{position:absolute;width:110px;height:110px;right:18px;bottom:18px;border-radius:50%;background:#dc4040;opacity:.55;z-index:6;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:16px;border:3px solid rgba(255,255,255,.4)}
 #kick-btn.active{opacity:.9}
-#exit-btn{position:absolute;top:8px;right:8px;padding:6px 12px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;font-size:12px;z-index:7;border:1px solid rgba(255,255,255,.25);font-family:inherit}
-.act{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);padding:14px 34px;border-radius:12px;border:2px solid rgba(255,255,255,.5);background:#2fa84f;color:#fff;font-size:18px;font-weight:bold;letter-spacing:1px;z-index:8;display:none;font-family:inherit}
+#exit-btn{position:absolute;top:8px;right:8px;padding:6px 12px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;font-size:12px;z-index:7;font-family:inherit}
+.act{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);padding:14px 34px;border-radius:12px;border:2px solid rgba(255,255,255,.5);background:#2fa84f;color:#fff;font-size:18px;font-weight:bold;z-index:8;display:none;font-family:inherit}
 #rematch-btn{background:#3a5fdc}
 </style>
 </head>
 <body>
 
 <div id="s-menu" class="scr">
-  <div class="hdr">
-    <div class="logo">HAXBALL</div>
-    <div class="prof-ico" id="btn-profile">👤</div>
-  </div>
+  <div class="hdr"><div class="logo">HAXBALL</div><div class="ico" id="btn-profile">U</div></div>
   <div class="tabs">
     <button class="tab active" id="tab-btn-main">ОСНОВНОЕ</button>
     <button class="tab" id="tab-btn-lob">ОТКРЫТЫЕ ИГРЫ</button>
@@ -90,7 +87,7 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
     </div>
     <div class="box">
       <h2>Войти по коду</h2>
-      <div class="jr"><input type="text" id="in-code" maxlength="6" inputmode="numeric" placeholder="Код комнаты"><button id="btn-join">ВОЙТИ</button></div>
+      <div class="jr"><input type="text" id="in-code" maxlength="6" placeholder="Код"><button id="btn-join">ВОЙТИ</button></div>
     </div>
   </div>
   <div id="tab-lob" style="display:none">
@@ -99,14 +96,11 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 </div>
 
 <div id="s-profile" class="scr">
-  <div class="hdr">
-    <div class="logo">ПРОФИЛЬ</div>
-    <div class="prof-ico" id="btn-prof-back">←</div>
-  </div>
+  <div class="hdr"><div class="logo">ПРОФИЛЬ</div><div class="ico" id="btn-prof-back">X</div></div>
   <div class="box"><h2>Имя игрока</h2><input type="text" id="in-prof-name" maxlength="16" placeholder="Твоё имя"></div>
   <div class="box"><h2>Номер на футболке</h2>
-    <input type="number" id="in-prof-jersey" min="0" max="99" inputmode="numeric" placeholder="1-99">
-    <div class="hint">0 — без номера, номер по позиции</div>
+    <input type="number" id="in-prof-jersey" min="0" max="99" placeholder="1-99">
+    <div class="hint">0 - без номера, номер по позиции</div>
   </div>
   <div class="box"><h2>Статистика</h2>
     <div class="st"><span>Матчей</span><b id="st-matches">0</b></div>
@@ -129,18 +123,18 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 <div id="toast"></div>
 
 <script>
-(function () {
+(function(){
 "use strict";
-var $ = function (i) { return document.getElementById(i); };
+var $=function(i){return document.getElementById(i);};
 
-var FW = 840, FH = 400, GT = 150, GB = 250, GD = 18, CR = 40, PR = 15, BR = 8;
-var SPEED = 220, ACCEL = 12, SEND_MS = 40, TELE = 100, SOFT = 0.04;
-var DELAY = 90, KEEP = 600, SNAP_P = 150, SNAP_B = 200;
-var GO_MS = 900, GOAL_MS = 1600;
-var DEF_L = "#5689e5", DEF_R = "#e56e56";
-var PALETTE = ["#5689e5","#e56e56","#4eaa5e","#e0c93f","#9b5de5","#e88c3f"];
-var FCOL = { gray:"#5a5a5a", green:"#36793b", blue:"#2c5b8f", dark:"#1f2226" };
-var TEAM_L_COLOR = DEF_L, TEAM_R_COLOR = DEF_R;
+var FW=840,FH=400,GT=150,GB=250,GD=18,CR=40,PR=15,BR=8;
+var SPEED=220,ACCEL=12,SEND_MS=40,TELE=100,SOFT=0.04;
+var DELAY=90,KEEP=600,SNAP_P=150,SNAP_B=200;
+var GO_MS=900,GOAL_MS=1600;
+var DEF_L="#5689e5",DEF_R="#e56e56";
+var PALETTE=["#5689e5","#e56e56","#4eaa5e","#e0c93f","#9b5de5","#e88c3f"];
+var FCOL={gray:"#5a5a5a",green:"#36793b",blue:"#2c5b8f",dark:"#1f2226"};
+var TEAM_L_COLOR=DEF_L,TEAM_R_COLOR=DEF_R;
 
 function genUid(){var s="",c="abcdefghijklmnopqrstuvwxyz0123456789";for(var i=0;i<16;i++)s+=c[Math.floor(Math.random()*c.length)];return s;}
 var MY_UID=null;
@@ -158,11 +152,11 @@ var inName=$("in-name");
 inName.value=MY_NAME;
 inName.addEventListener("input",function(){MY_NAME=inName.value.trim()||"Игрок";try{localStorage.setItem("hax_name",MY_NAME);}catch(e){}});
 
-var tabMain=$("tab-main"), tabLob=$("tab-lob");
-var btnMain=$("tab-btn-main"), btnLob=$("tab-btn-lob");
+var tabMain=$("tab-main"),tabLob=$("tab-lob");
+var btnMain=$("tab-btn-main"),btnLob=$("tab-btn-lob");
 var lobActive=false;
-function setTab(name){
-  if(name==="main"){tabMain.style.display="block";tabLob.style.display="none";btnMain.classList.add("active");btnLob.classList.remove("active");lobActive=false;}
+function setTab(n){
+  if(n==="main"){tabMain.style.display="block";tabLob.style.display="none";btnMain.classList.add("active");btnLob.classList.remove("active");lobActive=false;}
   else{tabMain.style.display="none";tabLob.style.display="block";btnMain.classList.remove("active");btnLob.classList.add("active");lobActive=true;refreshList();}
 }
 btnMain.addEventListener("click",function(){setTab("main");});
@@ -183,18 +177,18 @@ seg("sg-color","field_color",[["gray","Серый"],["green","Зелёный"],[
 seg("sg-speed","player_speed",[[80,"80%"],[100,"100%"],[120,"120%"]],100);
 seg("sg-bounce","ball_bounce",[["low","Низкий"],["normal","Нормальный"],["high","Высокий"]],"normal");
 
-var inLeftName=$("in-left-name"), inRightName=$("in-right-name");
-inLeftName.value="СИНИЕ"; inRightName.value="КРАСНЫЕ";
-var teamColorL=DEF_L, teamColorR=DEF_R;
-function buildPal(containerId, side){
-  var c=$(containerId);
+var inLeftName=$("in-left-name"),inRightName=$("in-right-name");
+inLeftName.value="СИНИЕ";inRightName.value="КРАСНЫЕ";
+var teamColorL=DEF_L,teamColorR=DEF_R;
+function buildPal(id,side){
+  var c=$(id);
   PALETTE.forEach(function(col){
     var sw=document.createElement("div");sw.className="sw";sw.style.background=col;
     if(side==="left"&&col===teamColorL)sw.classList.add("active");
     if(side==="right"&&col===teamColorR)sw.classList.add("active");
     sw.addEventListener("click",function(){
-      if(side==="left"){if(col===teamColorR){showToast("Цвет совпадает с правой командой");return;}teamColorL=col;}
-      else{if(col===teamColorL){showToast("Цвет совпадает с левой командой");return;}teamColorR=col;}
+      if(side==="left"){if(col===teamColorR){showToast("Цвет занят");return;}teamColorL=col;}
+      else{if(col===teamColorL){showToast("Цвет занят");return;}teamColorR=col;}
       var kids=c.children;for(var i=0;i<kids.length;i++)kids[i].classList.remove("active");sw.classList.add("active");
     });
     c.appendChild(sw);
@@ -204,10 +198,10 @@ buildPal("pal-left","left");
 buildPal("pal-right","right");
 
 var inPN=$("in-prof-name"),inPJ=$("in-prof-jersey");
-function hasLocalName(){try{return!!localStorage.getItem("hax_name");}catch(e){returnProf false;}}
-.stylefunction fillStats(p){
-  $("st-m.displayatches").textContent=String(p=".matches||0);
-block  $("st-goals").textContent=String(p.goals||0);
+function hasLocalName(){try{return!!localStorage.getItem("hax_name");}catch(e){return false;}}
+function fillStats(p){
+  $("st-matches").textContent=String(p.matches||0);
+  $("st-goals").textContent=String(p.goals||0);
   $("st-wins").textContent=String(p.wins||0);
   $("st-losses").textContent=String(p.losses||0);
   $("st-draws").textContent=String(p.draws||0);
@@ -225,10 +219,10 @@ function loadProfile(applyName){
 }
 $("btn-profile").addEventListener("click",function(){
   inPN.value=MY_NAME;inPJ.value=MY_JERSEY>0?String(MY_JERSEY):"";fillStats({});
-  elMenu.style.display="none";el";elProf.scrollTop=0;
+  elMenu.style.display="none";elProf.style.display="block";elProf.scrollTop=0;
   loadProfile(false).then(function(p){
     if(elProf.style.display==="none")return;
-    if(!p){showToast("Не удалось загрузить профиль");return;}
+    if(!p){showToast("Ошибка загрузки");return;}
     inPJ.value=MY_JERSEY>0?String(MY_JERSEY):"";fillStats(p);
   });
 });
@@ -238,7 +232,7 @@ $("btn-prof-save").addEventListener("click",function(){
   var name=inPN.value.trim().slice(0,16)||"Игрок";
   var j=parseInt(inPJ.value,10);if(isNaN(j)||j<0)j=0;if(j>99)j=99;
   post("/api/haxball/profile",{user_id:MY_UID,name:name,jersey:j}).then(function(res){
-    if(!res||!res.ok){showToast("Не удалось сохранить профиль");return;}
+    if(!res||!res.ok){showToast("Ошибка сохранения");return;}
     MY_NAME=name;MY_JERSEY=j;inName.value=name;inPN.value=name;inPJ.value=j>0?String(j):"";
     try{localStorage.setItem("hax_name",MY_NAME);}catch(e){}
     showToast("Профиль сохранён");
@@ -255,7 +249,7 @@ $("btn-create").addEventListener("click",function(){
     player_speed:cfg.player_speed,ball_bounce:cfg.ball_bounce,
     is_private:$("in-private").checked,
     left_name:ln,right_name:rn,left_color:teamColorL,right_color:teamColorR
-  }).then(function(res){if(res.ok)enterGame(res.code);else showToast("Не удалось создать игру");}).catch(function(){showToast("Ошибка сети");});
+  }).then(function(res){if(res.ok)enterGame(res.code);else showToast("Не удалось");}).catch(function(){showToast("Ошибка сети");});
 });
 $("btn-join").addEventListener("click",function(){
   var c=$("in-code").value.trim();if(!c){showToast("Введите код");return;}joinRoom(c);
@@ -263,10 +257,10 @@ $("btn-join").addEventListener("click",function(){
 function joinRoom(code){
   post("/api/haxball/join",{code:code,user_id:MY_UID,user_name:MY_NAME}).then(function(res){
     if(res.ok){enterGame(res.code);return;}
-    var m="Не удалось войти";
+    var m="Не удалось";
     if(res.error==="not_found")m="Комната не найдена";
-    else if(res.error==="room_full")m="Комната заполнена";
-    else if(res.error==="game_over")m="Игра уже завершена";
+    else if(res.error==="room_full")m="Комната полна";
+    else if(res.error==="game_over")m="Игра завершена";
     showToast(m);
   }).catch(function(){showToast("Ошибка сети");});
 }
@@ -276,7 +270,7 @@ function refreshList(){
   fetch("/api/haxball/list").then(function(r){return r.json();}).then(function(res){
     if(!res.ok)return;
     listEl.innerHTML="";
-    if(!res.items.length){var d=document.createElement("div");d.className="empty";d.textContent="Открытых игр пока нет";listEl.appendChild(d);return;}
+    if(!res.items.length){var d=document.createElement("div");d.className="empty";d.textContent="Игр пока нет";listEl.appendChild(d);return;}
     res.items.forEach(function(it){
       var row=document.createElement("div");row.className="li";
       var info=document.createElement("div");
@@ -298,7 +292,7 @@ var remoteRender={};
 var ballRender={x:FW/2,y:FH/2};
 var buf=[];
 var cdBase=0,cdT=0,prevPhase=null,goUntil=0;
-var goalFx=null,parts=[],prevGlow={};
+var goalFx=null,parts=[];
 var joyDX=0,joyDY=0,kickPressed=false,lastSend=0,fdt=0.016;
 var startBtn=$("start-btn"),rematchBtn=$("rematch-btn");
 
@@ -317,7 +311,7 @@ function clampPos(x,y){
 }
 function enterGame(code){
   roomCode=code;buf=[];remoteRender={};prevPhase=null;goUntil=0;cdBase=0;
-  goalFx=null;parts=[];prevGlow={};
+  goalFx=null;parts=[];
   startBtn.style.display="none";rematchBtn.style.display="none";
   elMenu.style.display="none";elProf.style.display="none";elGame.style.display="block";
   resizeGame();loadProfile(false);connectWs(code);
@@ -327,18 +321,18 @@ function leaveGame(silent,sendLeave){
   if(ws&&ws.readyState===1&&sendLeave){try{ws.send(JSON.stringify({action:"leave"}));}catch(e){}}
   if(ws){try{ws.close();}catch(e){}ws=null;}
   connected=false;roomCode=null;serverState=null;remoteRender={};buf=[];
-  prevPhase=null;goUntil=0;goalFx=null;parts=[];prevGlow={};
+  prevPhase=null;goUntil=0;goalFx=null;parts=[];
   startBtn.style.display="none";rematchBtn.style.display="none";
   elGame.style.display="none";elMenu.style.display="block";setTab("main");
-  if(!silent)showToast("Вы вышли из игры");
+  if(!silent)showToast("Вы вышли");
 }
 startBtn.addEventListener("click",function(){
   if(!roomCode)return;
   post("/api/haxball/start",{code:roomCode,user_id:MY_UID}).then(function(res){
     if(res.ok)return;
-    var m="Не удалось начать";
-    if(res.error==="not_enough_players")m="Нужно минимум 2 игрока";
-    else if(res.error==="not_host")m="Начать может только хост";
+    var m="Ошибка старта";
+    if(res.error==="not_enough_players")m="Нужно 2 игрока";
+    else if(res.error==="not_host")m="Только хост";
     showToast(m);
   }).catch(function(){showToast("Ошибка сети");});
 });
@@ -346,7 +340,7 @@ rematchBtn.addEventListener("click",function(){
   if(!roomCode)return;
   post("/api/haxball/restart",{code:roomCode,user_id:MY_UID}).then(function(res){
     if(res.ok)return;
-    showToast(res.error==="not_host"?"Реванш запускает только хост":"Не удалось запустить реванш");
+    showToast("Ошибка реванша");
   }).catch(function(){showToast("Ошибка сети");});
 });
 $("exit-btn").addEventListener("click",function(){leaveGame(false,true);});
@@ -362,7 +356,7 @@ function startGoal(team){
 function connectWs(code){
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var url=proto+"//"+location.host+"/ws/haxball/"+code+"?uid="+encodeURIComponent(MY_UID);
-  try{ws=new WebSocket(url);}catch(e){showToast("Не удалось подключиться");leaveGame(true,false);return;}
+  try{ws=new WebSocket(url);}catch(e){showToast("Нет связи");leaveGame(true,false);return;}
   ws.onopen=function(){connected=true;};
   ws.onmessage=function(ev){
     var data;
@@ -387,7 +381,7 @@ function connectWs(code){
       rematchBtn.style.display=host&&st.phase==="over"?"block":"none";
     }else if(data.type==="error"){showToast("Комната недоступна");leaveGame(true,false);}
   };
-  ws.onclose=function(){if(roomCode!==null){showToast("Соединение потеряно");leaveGame(true,false);}};
+  ws.onclose=function(){if(roomCode!==null){showToast("Связь потеряна");leaveGame(true,false);}};
   ws.onerror=function(){};
 }
 function findMe(st){if(!st)return null;for(var i=0;i<st.players.length;i++)if(st.players[i].user_id===MY_UID)return st.players[i];return null;}
@@ -471,7 +465,7 @@ function maybeSend(now){
 }
 
 function lerp(a,b,t){return a+(b-a)*t;}
-function rp(p,x,y,vx,vy){return {x:x,y:y,name:p.name,team:p.team,slot:p.slot,jersey:p.jersey||0};}
+function rp(p,x,y){return {x:x,y:y,name:p.name,team:p.team,slot:p.slot,jersey:p.jersey||0};}
 function renderInterp(now){
   var n=buf.length;if(!n)return;
   var rt=now-DELAY;
@@ -542,12 +536,13 @@ function drawField(cw,ch,m,key){
   circ(ox+770*s,oy+H/2,3*s);ctx.fill();
   ctx.restore();
   rr(ox,oy,W,H,CR*s);ctx.strokeStyle="#fff";ctx.lineWidth=Math.max(2,3*s);ctx.stroke();
-  [[0,GT],[0,GB],[FW,GT],[FW,GB]].forEach(function(p){
-    circ(ox+p[0]*s,oy+p[1]*s,Math.max(3,4.5*s));ctx.fillStyle="#fff";ctx.fill();
+  var pts=[[0,GT],[0,GB],[FW,GT],[FW,GB]];
+  for(var pi=0;pi<pts.length;pi++){
+    circ(ox+pts[pi][0]*s,oy+pts[pi][1]*s,Math.max(3,4.5*s));ctx.fillStyle="#fff";ctx.fill();
     ctx.lineWidth=1.5;ctx.strokeStyle="#000";ctx.stroke();
-  });
+  }
 }
-function drawPlayer(m,x,y,team,slot,name,jersey,isMe,teamColor){
+function drawPlayer(m,x,y,slot,name,jersey,isMe,teamColor){
   var sx=m.x+x*m.s,sy=m.y+y*m.s,r=PR*m.s;
   var num=jersey>0?jersey:slot;
   ctx.fillStyle="rgba(0,0,0,0.3)";
@@ -560,10 +555,11 @@ function drawPlayer(m,x,y,team,slot,name,jersey,isMe,teamColor){
   ctx.font="bold "+Math.max(11,Math.round(r*1.05))+"px sans-serif";
   ctx.fillStyle="#fff";ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=2;
   ctx.fillText(String(num),sx,sy+1);
-  ctx.font="bold "+Math.max(10,Math.round(12*m.s))+"px sans-serif";ctx.shadowBlur=4;
-  ctx.fillText(name,sx,sy+r+11*m.s);
+  ctx.font="bold "+Math.max(10,Math.round(12*mlist.length;i++){
+.s))+"px    sans-serif";ctx.shadowBlur=4;
+  ctx var.fillText(name,sx,s dxy+r+11*m.s=);
   ctx.shadowBlur=0;
-}
+ball}
 function drawBall(m,x,y){
   var sx=m.x+x*m.s,sy=m.y+y*m.s,r=BR*m.s;
   ctx.fillStyle="rgba(0,0,0,0.3)";
@@ -573,14 +569,11 @@ function drawBall(m,x,y){
   circ(sx,sy,r);ctx.fillStyle=g;ctx.fill();
   ctx.lineWidth=1.5;ctx.strokeStyle="#000";ctx.stroke();
 }
-
-// Визуальное выталкивание мяча из игроков (только рендер)
 function resolveBallVisual(){
   var minD=PR+BR;
   var list=[{x:localSelf.x,y:localSelf.y}];
   for(var uid in remoteRender)list.push(remoteRender[uid]);
-  for(var i=0;i<list.length;i++){
-    var dx=ballRender.x-list[i].x;
+  for(var i=0;i<Render.x-list[i].x;
     var dy=ballRender.y-list[i].y;
     var d=Math.hypot(dx,dy);
     if(d<minD&&d>0.001){
@@ -589,7 +582,6 @@ function resolveBallVisual(){
     }
   }
 }
-
 function fmtTime(t){t=Math.max(0,Math.round(t));var mm=Math.floor(t/60),ss=t%60;return (mm<10?"0":"")+mm+":"+(ss<10?"0":"")+ss;}
 function fmtGoalTime(sec){var mm=Math.floor(sec/60),ss=sec%60;return mm+":"+(ss<10?"0":"")+ss;}
 function phaseLabel(st){
@@ -602,12 +594,12 @@ function groupGoals(log,team){
   log.forEach(function(g){
     if(g.team!==team)return;
     var k=g.uid;
-    if(!map[k])map[k]={uid:k,name:g.name,jersey:g.jersey,times:[],last:0};
+    if(!map[k])map[k]={name:g.name,jersey:g.jersey,times:[],last:0};
     map[k].times.push(g.at_sec);
     if(g.at_sec>map[k].last)map[k].last=g.at_sec;
   });
   var arr=[];
-  for(var k in map)arr.push(map[k]);
+  for(var k2 in map)arr.push(map[k2]);
   arr.sort(function(a,b){return b.last-a.last;});
   return arr;
 }
@@ -624,7 +616,7 @@ function drawHud(cw,ch,m,st){
   ctx.font="bold 22px sans-serif";
   ctx.fillText(fmtTime(st.timer),cw/2,py+ph/2+1);
   ctx.fillStyle="#bbb";ctx.font="12px sans-serif";
-  var side=st.my_side==="left"?("ВЫ — "+st.left_name):(st.my_side==="right"?("ВЫ — "+st.right_name):"");
+  var side=st.my_side==="left"?("ВЫ - "+st.left_name):(st.my_side==="right"?("ВЫ - "+st.right_name):"");
   ctx.fillText("код "+(roomCode||"")+"  ·  "+side,cw/2,py+ph+12);
   var lGoals=groupGoals(st.goal_log||[],"left");
   var rGoals=groupGoals(st.goal_log||[],"right");
@@ -633,17 +625,17 @@ function drawHud(cw,ch,m,st){
   ctx.textAlign="right";ctx.fillStyle=TEAM_L_COLOR;ctx.fillText(st.left_name,lx,ly-2);
   ctx.textAlign="left";ctx.fillStyle=TEAM_R_COLOR;ctx.fillText(st.right_name,rx,ly-2);
   ctx.font="12px sans-serif";ctx.textBaseline="top";
-  var maxRows=6,lShow=lGoals.slice(0,maxRows),rShow=rGoals.slice(0,maxRows),rowH=30;
+  var maxRows=6,rowH=30;
   ctx.textAlign="right";
-  for(var i=0;i<lShow.length;i++){
-    var g=lShow[i],yy=ly+4+i*rowH;
+  for(var i=0;i<Math.min(lGoals.length,maxRows);i++){
+    var g=lGoals[i],yy=ly+4+i*rowH;
     ctx.fillStyle="#fff";ctx.font="bold 12px sans-serif";ctx.fillText("#"+g.jersey+" "+g.name,lx,yy);
     ctx.fillStyle="#bbb";ctx.font="11px sans-serif";
     ctx.fillText(g.times.map(fmtGoalTime).join(", "),lx,yy+14);
   }
   ctx.textAlign="left";
-  for(var j=0;j<rShow.length;j++){
-    var g2=rShow[j],yy2=ly+4+j*rowH;
+  for(var j=0;j<Math.min(rGoals.length,maxRows);j++){
+    var g2=rGoals[j],yy2=ly+4+j*rowH;
     ctx.fillStyle="#fff";ctx.font="bold 12px sans-serif";ctx.fillText("#"+g2.jersey+" "+g2.name,rx,yy2);
     ctx.fillStyle="#bbb";ctx.font="11px sans-serif";
     ctx.fillText(g2.times.map(fmtGoalTime).join(", "),rx,yy2+14);
@@ -659,7 +651,7 @@ function drawHud(cw,ch,m,st){
   if(st.is_private){
     ctx.textAlign="center";ctx.textBaseline="top";
     ctx.font="11px sans-serif";ctx.fillStyle="rgba(255,255,255,0.55)";
-    ctx.fillText("ПРИВАТНОЕ ЛОББИ · только по коду",cw/2,py+ph+30);
+    ctx.fillText("ПРИВАТНОЕ ЛОББИ",cw/2,py+ph+30);
   }
 }
 function drawCountdown(cw,ch,m,st,now){
@@ -722,7 +714,7 @@ function render(now){
   });
   list.forEach(function(o){
     var col=o.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
-    drawPlayer(m,o.x,o.y,o.team,o.slot,o.name,o.jersey,o.me,col);
+    drawPlayer(m,o.x,o.y,o.slot,o.name,o.jersey,o.me,col);
   });
   resolveBallVisual();
   drawBall(m,ballRender.x,ballRender.y);
