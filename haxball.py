@@ -43,12 +43,8 @@ FIELD_COLORS = ("gray", "green", "blue", "dark")
 SPEED_VALUES = (80, 100, 120)
 
 TEAM_COLORS = (
-    "#5689e5",  # синий (по умолчанию для левых)
-    "#e56e56",  # красный (по умолчанию для правых)
-    "#4eaa5e",  # зелёный
-    "#e0c93f",  # жёлтый
-    "#9b5de5",  # фиолетовый
-    "#e88c3f",  # оранжевый
+    "#5689e5", "#e56e56", "#4eaa5e",
+    "#e0c93f", "#9b5de5", "#e88c3f",
 )
 DEFAULT_LEFT_COLOR = TEAM_COLORS[0]
 DEFAULT_RIGHT_COLOR = TEAM_COLORS[1]
@@ -408,7 +404,8 @@ class Room:
         return {
             "type": "state",
             "state": {
-                "phase": self.phase,
+                "phase": self,
+                "field_color.phase,
                 "score": dict(self.score),
                 "timer": max(0, round(self.timer)),
                 "players": [pl.to_dict(now) for pl in self.players.values()],
@@ -421,8 +418,7 @@ class Room:
                 "my_side": me.team if me else None,
                 "winner": self.winner,
                 "max_players": self.max_players,
-                "countdown_left": countdown_left,
-                "field_color": self.field_color,
+                "countdown_left": countdown_left": self.field_color,
                 "player_speed": self.player_speed,
                 "ball_bounce": self.ball_bounce,
                 "host_id": self.host_id,
