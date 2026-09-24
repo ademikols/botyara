@@ -43,8 +43,12 @@ FIELD_COLORS = ("gray", "green", "blue", "dark")
 SPEED_VALUES = (80, 100, 120)
 
 TEAM_COLORS = (
-    "#5689e5", "#e56e56", "#4eaa5e",
-    "#e0c93f", "#9b5de5", "#e88c3f",
+    "#5689e5",
+    "#e56e56",
+    "#4eaa5e",
+    "#e0c93f",
+    "#9b5de5",
+    "#e88c3f",
 )
 DEFAULT_LEFT_COLOR = TEAM_COLORS[0]
 DEFAULT_RIGHT_COLOR = TEAM_COLORS[1]
@@ -116,8 +120,14 @@ DB = _init_db()
 
 def empty_profile(uid):
     return {
-        "user_id": uid, "name": "", "jersey": 0, "matches": 0,
-        "goals": 0, "wins": 0, "losses": 0, "draws": 0,
+        "user_id": uid,
+        "name": "",
+        "jersey": 0,
+        "matches": 0,
+        "goals": 0,
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
     }
 
 
@@ -125,7 +135,9 @@ def db_get_profile(uid):
     try:
         cur = DB.execute(
             "SELECT user_id, name, jersey, matches, goals, wins, losses, draws "
-            "FROM haxball_profiles WHERE user_id = ?", (uid,))
+            "FROM haxball_profiles WHERE user_id = ?",
+            (uid,),
+        )
         row = cur.fetchone()
     except sqlite3.Error:
         log.exception("db_get_profile failed")
@@ -163,7 +175,8 @@ def db_save_profile(uid, name, jersey):
         DB.execute(
             "INSERT INTO haxball_profiles (user_id, name, jersey) VALUES (?, ?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET name = excluded.name, jersey = excluded.jersey",
-            (uid, name, jersey))
+            (uid, name, jersey),
+        )
         DB.commit()
         return True
     except sqlite3.Error:
@@ -172,7 +185,10 @@ def db_save_profile(uid, name, jersey):
 
 
 def _ensure_row(uid):
-    DB.execute("INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')", (uid,))
+    DB.execute(
+        "INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')",
+        (uid,),
+    )
 
 
 def add_goal_for_player(uid):
@@ -192,7 +208,9 @@ def update_stats_for_player(uid, result):
         _ensure_row(uid)
         DB.execute(
             "UPDATE haxball_profiles SET matches = matches + 1, "
-            + col + " = " + col + " + 1 WHERE user_id = ?", (uid,))
+            + col + " = " + col + " + 1 WHERE user_id = ?",
+            (uid,),
+        )
         DB.commit()
     except sqlite3.Error:
         log.exception("update_stats_for_player failed")
@@ -268,7 +286,7 @@ class Player:
             "team": self.team,
             "slot": self.slot,
             "jersey": self.jersey,
-            "kick_glow": 1 if now < self.kick_glow_until else 0,
+            "kick_id].jersey =_glow": 1 if now < self.kick_glow_until else 0,
             "online": self.online,
         }
 
@@ -335,7 +353,7 @@ class Room:
             return False, "no_user_id"
         if user_id in self.players:
             self.players[user_id].online = True
-            self.players[user_id].jersey = db_get_jersey(user_id)
+            self.players[user db_get_jersey(user_id)
             return True, None
         if self.phase == "over":
             return False, "game_over"
@@ -404,8 +422,7 @@ class Room:
         return {
             "type": "state",
             "state": {
-                "phase": self,
-                "field_color.phase,
+                "phase": self.phase,
                 "score": dict(self.score),
                 "timer": max(0, round(self.timer)),
                 "players": [pl.to_dict(now) for pl in self.players.values()],
@@ -418,7 +435,8 @@ class Room:
                 "my_side": me.team if me else None,
                 "winner": self.winner,
                 "max_players": self.max_players,
-                "countdown_left": countdown_left": self.field_color,
+                "countdown_left": countdown_left,
+                "field_color": self.field_color,
                 "player_speed": self.player_speed,
                 "ball_bounce": self.ball_bounce,
                 "host_id": self.host_id,
@@ -873,5 +891,6 @@ async def haxball_watchdog():
         if sends:
             await asyncio.gather(
                 *[ws.send_json(snap) for ws, snap in sends],
-                return_exceptions=True)
+                return_exceptions=True,
+            )
         await asyncio.sleep(TICK_DT)
