@@ -1,11 +1,5 @@
-"""
-Haxball-клон для Telegram Mini App.
-Экспорт: register_haxball_routes(app), haxball_watchdog()
-"""
-
 import asyncio
 import json
-import logging
 import math
 import os
 import random
@@ -14,8 +8,6 @@ import string
 import time
 
 from aiohttp import web, WSMsgType
-
-log = logging.getLogger("haxball")
 
 FIELD_W = 840
 FIELD_H = 400
@@ -42,19 +34,11 @@ BOUNCE_VALUES = {"low": 0.70, "normal": 0.85, "high": 0.95}
 FIELD_COLORS = ("gray", "green", "blue", "dark")
 SPEED_VALUES = (80, 100, 120)
 
-TEAM_COLORS = (
-    "#5689e5",
-    "#e56e56",
-    "#4eaa5e",
-    "#e0c93f",
-    "#9b5de5",
-    "#e88c3f",
-)
+TEAM_COLORS = ("#5689e5", "#e56e56", "#4eaa5e", "#e0c93f", "#9b5de5", "#e88c3f")
 DEFAULT_LEFT_COLOR = TEAM_COLORS[0]
 DEFAULT_RIGHT_COLOR = TEAM_COLORS[1]
 
 TEAM_NAME_MAX = 12
-
 TELEPORT_GUARD = 200.0
 
 TICK_HZ = 60
@@ -93,7 +77,6 @@ CORNERS = (
 ROOMS = {}
 
 DB_PATH = "/app/data/haxball.db"
-
 PROFILE_COLS = ("user_id", "name", "jersey", "matches", "goals", "wins", "losses", "draws")
 
 
@@ -140,7 +123,6 @@ def db_get_profile(uid):
         )
         row = cur.fetchone()
     except sqlite3.Error:
-        log.exception("db_get_profile failed")
         return empty_profile(uid)
     if row is None:
         return empty_profile(uid)
@@ -160,7 +142,6 @@ def db_get_jersey(uid):
         cur = DB.execute("SELECT jersey FROM haxball_profiles WHERE user_id = ?", (uid,))
         row = cur.fetchone()
     except sqlite3.Error:
-        log.exception("db_get_jersey failed")
         return 0
     if row is None or row[0] is None:
         return 0
@@ -180,15 +161,11 @@ def db_save_profile(uid, name, jersey):
         DB.commit()
         return True
     except sqlite3.Error:
-        log.exception("db_save_profile failed")
         return False
 
 
 def _ensure_row(uid):
-    DB.execute(
-        "INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')",
-        (uid,),
-    )
+    DB.execute("INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')", (uid,))
 
 
 def add_goal_for_player(uid):
@@ -197,7 +174,7 @@ def add_goal_for_player(uid):
         DB.execute("UPDATE haxball_profiles SET goals = goals + 1 WHERE user_id = ?", (uid,))
         DB.commit()
     except sqlite3.Error:
-        log.exception("add_goal_for_player failed")
+        pass
 
 
 def update_stats_for_player(uid, result):
@@ -207,13 +184,12 @@ def update_stats_for_player(uid, result):
     try:
         _ensure_row(uid)
         DB.execute(
-            "UPDATE haxball_profiles SET matches = matches + 1, "
-            + col + " = " + col + " + 1 WHERE user_id = ?",
+            "UPDATE haxball_profiles SET matches = matches + 1, " + col + " = " + col + " + 1 WHERE user_id = ?",
             (uid,),
         )
         DB.commit()
     except sqlite3.Error:
-        log.exception("update_stats_for_player failed")
+        pass
 
 
 def gen_code():
@@ -286,7 +262,7 @@ class Player:
             "team": self.team,
             "slot": self.slot,
             "jersey": self.jersey,
-            "kick_id].jersey =_glow": 1 if now < self.kick_glow_until else 0,
+            "kick_glow": 1 if now < self.kick_glow_until else 0,
             "online": self.online,
         }
 
@@ -311,7 +287,6 @@ class Room:
         self.right_name = right_name
         self.left_color = left_color
         self.right_color = right_color
-
         self.phase = "waiting"
         self.score = {"left": 0, "right": 0}
         self.winner = None
@@ -353,7 +328,7 @@ class Room:
             return False, "no_user_id"
         if user_id in self.players:
             self.players[user_id].online = True
-            self.players[user db_get_jersey(user_id)
+            self.players[user_id].jersey = db_get_jersey(user_id)
             return True, None
         if self.phase == "over":
             return False, "game_over"
@@ -687,7 +662,6 @@ async def handle_create(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad_json"}, status=400)
-
     user_id = str(data.get("user_id", "")).strip()
     user_name = str(data.get("user_name", "Игрок")).strip() or "Игрок"
     game_name = str(data.get("game_name", "Игра")).strip() or "Игра"
@@ -703,7 +677,6 @@ async def handle_create(request):
     right_color = clean_team_color(data.get("right_color"), DEFAULT_RIGHT_COLOR)
     if left_color == right_color:
         right_color = DEFAULT_RIGHT_COLOR if left_color != DEFAULT_RIGHT_COLOR else DEFAULT_LEFT_COLOR
-
     if not user_id:
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
     if max_players not in (2, 4, 6):
@@ -720,7 +693,6 @@ async def handle_create(request):
         player_speed = 100
     if ball_bounce not in BOUNCE_VALUES:
         ball_bounce = "normal"
-
     code = gen_code()
     room = Room(code, game_name, user_id, max_players, match_time,
                 field_color, player_speed, ball_bounce,
