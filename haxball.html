@@ -24,13 +24,19 @@
   .box h2 { font-size: 14px; color: #aaa; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 1px; }
   .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
   .row label { flex: 1; min-width: 90px; }
-  input[type=text] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff; font-size: 16px; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444;
+    background: #111; color: #fff; font-size: 16px;
+    -webkit-user-select: text; user-select: text;
+  }
   .seg { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
   .seg button { flex: 1; padding: 10px 4px; background: #111; color: #ccc; border: none; font-size: 13px; border-right: 1px solid #333; }
   .seg button:last-child { border-right: none; }
   .seg button.active { background: #3a5fdc; color: #fff; }
   .big-btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 16px; font-weight: bold; color: #fff; margin-top: 6px; }
   .btn-green { background: #2fa84f; }
+  .btn-blue { background: #3a5fdc; }
+  .btn-gray { background: #555; }
   .join-row { display: flex; gap: 8px; }
   .join-row input { flex: 1; }
   .join-row button { padding: 10px 16px; border-radius: 8px; border: none; background: #3a5fdc; color: #fff; font-weight: bold; }
@@ -42,6 +48,20 @@
   .empty-hint { color: #666; font-size: 13px; text-align: center; padding: 10px; }
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 14px; z-index: 999; opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: 85%; text-align: center; }
   #toast.show { opacity: 1; }
+
+  /* Экран профиля */
+  #s-profile {
+    position: fixed; inset: 0; display: none;
+    background: linear-gradient(180deg, #2a2a2a, #151515);
+    color: #eee; overflow-y: auto; padding: 20px 16px 40px;
+    -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  }
+  #s-profile h1 { text-align: center; color: #e8e000; margin: 10px 0 20px; font-size: 28px; letter-spacing: 2px; }
+  .hint { color: #888; font-size: 12px; margin-top: 8px; }
+  .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #333; font-size: 15px; color: #ccc; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row b { color: #fff; font-size: 17px; }
+  #btn-prof-back { margin-top: 10px; }
 
   #s-game { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; display: none; overflow: hidden; transform-origin: center center; }
   #gcanvas { display: block; background: #111; touch-action: none; }
@@ -67,6 +87,10 @@
     <input type="text" id="in-name" maxlength="16" placeholder="Твоё имя">
   </div>
   <div class="box">
+    <h2>Профиль</h2>
+    <button class="big-btn btn-blue" id="btn-profile">МОЙ ПРОФИЛЬ</button>
+  </div>
+  <div class="box">
     <h2>Создать игру</h2>
     <div class="row"><input type="text" id="in-gamename" maxlength="24" placeholder="Название игры"></div>
     <div class="row"><label>Игроков</label></div>
@@ -74,13 +98,6 @@
       <button data-v="2">1v1</button>
       <button data-v="4" class="active">2v2</button>
       <button data-v="6">3v3</button>
-    </div>
-    <div class="row" style="margin-top:8px;"><label>Голов до победы</label></div>
-    <div class="seg" id="seg-score">
-      <button data-v="3">3</button>
-      <button data-v="5" class="active">5</button>
-      <button data-v="7">7</button>
-      <button data-v="10">10</button>
     </div>
     <div class="row" style="margin-top:8px;"><label>Время матча</label></div>
     <div class="seg" id="seg-time">
@@ -121,6 +138,29 @@
     <h2>Открытые игры</h2>
     <div id="list-items"></div>
   </div>
+</div>
+
+<div id="s-profile">
+  <h1>МОЙ ПРОФИЛЬ</h1>
+  <div class="box">
+    <h2>Имя игрока</h2>
+    <input type="text" id="in-prof-name" maxlength="16" placeholder="Твоё имя">
+  </div>
+  <div class="box">
+    <h2>Номер на футболке</h2>
+    <input type="number" id="in-prof-jersey" min="0" max="99" inputmode="numeric" placeholder="1-99">
+    <div class="hint">0 — без номера, номер по позиции</div>
+  </div>
+  <div class="box">
+    <h2>Статистика</h2>
+    <div class="stat-row"><span>Матчей</span><b id="st-matches">0</b></div>
+    <div class="stat-row"><span>Голов</span><b id="st-goals">0</b></div>
+    <div class="stat-row"><span>Побед</span><b id="st-wins">0</b></div>
+    <div class="stat-row"><span>Поражений</span><b id="st-losses">0</b></div>
+    <div class="stat-row"><span>Ничьих</span><b id="st-draws">0</b></div>
+  </div>
+  <button class="big-btn btn-green" id="btn-prof-save">СОХРАНИТЬ</button>
+  <button class="big-btn btn-gray" id="btn-prof-back">НАЗАД</button>
 </div>
 
 <div id="s-game">
@@ -189,6 +229,9 @@ try {
   if (savedName) MY_NAME = savedName;
 } catch (e) {}
 
+// Номер на футболке из профиля (0 — без номера)
+var MY_JERSEY = 0;
+
 var toastEl = document.getElementById("toast");
 var toastTimer = null;
 function showToast(msg) {
@@ -199,6 +242,7 @@ function showToast(msg) {
 }
 
 var elMenu = document.getElementById("s-menu");
+var elProfile = document.getElementById("s-profile");
 var elGame = document.getElementById("s-game");
 var inName = document.getElementById("in-name");
 var inGameName = document.getElementById("in-gamename");
@@ -213,7 +257,7 @@ inName.addEventListener("input", function () {
   try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
 });
 
-var cfgMaxPlayers = 4, cfgWinScore = 5, cfgMatchTime = 180;
+var cfgMaxPlayers = 4, cfgMatchTime = 180;
 var cfgFieldColor = "gray", cfgSpeed = 100, cfgBounce = "normal";
 
 function setupSeg(id, onPick, asString) {
@@ -229,7 +273,6 @@ function setupSeg(id, onPick, asString) {
   }
 }
 setupSeg("seg-players", function (v) { cfgMaxPlayers = v; });
-setupSeg("seg-score", function (v) { cfgWinScore = v; });
 setupSeg("seg-time", function (v) { cfgMatchTime = v; });
 setupSeg("seg-color", function (v) { cfgFieldColor = v; }, true);
 setupSeg("seg-speed", function (v) { cfgSpeed = v; });
@@ -243,11 +286,100 @@ function postJson(url, body) {
   }).then(function (r) { return r.json(); });
 }
 
+// ==================== ПРОФИЛЬ ====================
+
+var inProfName = document.getElementById("in-prof-name");
+var inProfJersey = document.getElementById("in-prof-jersey");
+var stMatches = document.getElementById("st-matches");
+var stGoals = document.getElementById("st-goals");
+var stWins = document.getElementById("st-wins");
+var stLosses = document.getElementById("st-losses");
+var stDraws = document.getElementById("st-draws");
+
+function hasLocalName() {
+  try { return !!localStorage.getItem("hax_name"); } catch (e) { return false; }
+}
+
+function fillStats(p) {
+  stMatches.textContent = String(p.matches || 0);
+  stGoals.textContent = String(p.goals || 0);
+  stWins.textContent = String(p.wins || 0);
+  stLosses.textContent = String(p.losses || 0);
+  stDraws.textContent = String(p.draws || 0);
+}
+
+// Загрузка профиля с сервера. Сохраняет MY_JERSEY (и MY_NAME, если своего имени ещё нет).
+function loadProfile(applyName) {
+  return fetch("/api/haxball/profile?uid=" + encodeURIComponent(MY_UID))
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (!res || !res.ok || !res.profile) return null;
+      var p = res.profile;
+      MY_JERSEY = parseInt(p.jersey, 10) || 0;
+      if (applyName && p.name && !hasLocalName()) {
+        MY_NAME = p.name;
+        inName.value = MY_NAME;
+        try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
+      }
+      return p;
+    })
+    .catch(function () { return null; });
+}
+
+function openProfile() {
+  inProfName.value = MY_NAME;
+  inProfJersey.value = MY_JERSEY > 0 ? String(MY_JERSEY) : "";
+  fillStats({});
+  elMenu.style.display = "none";
+  elProfile.style.display = "block";
+  elProfile.scrollTop = 0;
+  loadProfile(false).then(function (p) {
+    if (elProfile.style.display === "none") return;
+    if (!p) { showToast("Не удалось загрузить профиль"); return; }
+    inProfJersey.value = MY_JERSEY > 0 ? String(MY_JERSEY) : "";
+    fillStats(p);
+  });
+}
+
+function closeProfile() {
+  elProfile.style.display = "none";
+  elMenu.style.display = "block";
+  refreshList();
+}
+
+inProfJersey.addEventListener("input", function () {
+  var v = inProfJersey.value;
+  if (v.length > 2) inProfJersey.value = v.slice(0, 2);
+});
+
+document.getElementById("btn-profile").addEventListener("click", openProfile);
+document.getElementById("btn-prof-back").addEventListener("click", closeProfile);
+
+document.getElementById("btn-prof-save").addEventListener("click", function () {
+  var name = inProfName.value.trim().slice(0, 16) || "Игрок";
+  var j = parseInt(inProfJersey.value, 10);
+  if (isNaN(j) || j < 0) j = 0;
+  if (j > 99) j = 99;
+  postJson("/api/haxball/profile", { user_id: MY_UID, name: name, jersey: j })
+    .then(function (res) {
+      if (!res || !res.ok) { showToast("Не удалось сохранить профиль"); return; }
+      MY_NAME = name;
+      MY_JERSEY = j;
+      inName.value = name;
+      inProfName.value = name;
+      inProfJersey.value = j > 0 ? String(j) : "";
+      try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
+      showToast("Профиль сохранён");
+    }).catch(function () { showToast("Ошибка сети"); });
+});
+
+// ==================== ЛОББИ ====================
+
 document.getElementById("btn-create").addEventListener("click", function () {
   var gname = inGameName.value.trim() || (MY_NAME + " игра");
   postJson("/api/haxball/create", {
     user_id: MY_UID, user_name: MY_NAME, game_name: gname,
-    max_players: cfgMaxPlayers, win_score: cfgWinScore, match_time: cfgMatchTime,
+    max_players: cfgMaxPlayers, match_time: cfgMatchTime,
     field_color: cfgFieldColor, player_speed: cfgSpeed, ball_bounce: cfgBounce
   }).then(function (res) {
     if (res.ok) enterGame(res.code);
@@ -370,8 +502,10 @@ function enterGame(code) {
   cdBase = 0;
   hideActionButtons();
   elMenu.style.display = "none";
+  elProfile.style.display = "none";
   elGame.style.display = "block";
   resizeGame();
+  loadProfile(false);
   connectWs(code);
   requestAnimationFrame(gameLoop);
 }
@@ -685,7 +819,8 @@ function applySnapshot(s) {
     if (p.user_id === MY_UID) continue;
     out[p.user_id] = {
       x: p.x, y: p.y,
-      name: p.name, team: p.team, slot: p.slot, kick_glow: p.kick_glow
+      name: p.name, team: p.team, slot: p.slot, jersey: p.jersey || 0,
+      kick_glow: p.kick_glow
     };
   }
   remoteRender = out;
@@ -750,7 +885,8 @@ function renderInterpolated(now) {
     }
     out[pb.user_id] = {
       x: px, y: py,
-      name: pb.name, team: pb.team, slot: pb.slot, kick_glow: glow
+      name: pb.name, team: pb.team, slot: pb.slot, jersey: pb.jersey || 0,
+      kick_glow: glow
     };
   }
   remoteRender = out;
@@ -863,10 +999,13 @@ function drawField(cw, ch, state) {
   ctx.lineWidth = 2;
 }
 
-function drawPlayer(m, x, y, team, slot, name, glow) {
+function drawPlayer(m, x, y, team, slot, name, glow, jersey) {
   var sx = m.offX + x * m.scale;
   var sy = m.offY + y * m.scale;
   var r = PLAYER_R * m.scale;
+
+  // Номер на фигуре: свой номер из профиля, иначе номер по позиции
+  var displayNumber = (jersey > 0) ? jersey : slot;
 
   if (glow) {
     ctx.beginPath();
@@ -887,7 +1026,7 @@ function drawPlayer(m, x, y, team, slot, name, glow) {
   ctx.font = "bold " + Math.round(14 * m.scale) + "px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(String(slot), sx, sy);
+  ctx.fillText(String(displayNumber), sx, sy);
 
   ctx.font = "bold " + Math.round(12 * m.scale) + "px sans-serif";
   ctx.shadowColor = "#000";
@@ -911,6 +1050,31 @@ function drawBall(m, x, y) {
   ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.28, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(255,255,255,0.8)";
   ctx.fill();
+}
+
+// Визуальное выталкивание мяча из игроков (только рендер, не физика).
+// Устраняет визуальное "прохождение" мяча сквозь фигуры.
+function resolveBallVisual() {
+  var minD = PLAYER_R + BALL_R;
+  var list = [{ x: localSelf.x, y: localSelf.y }];
+  for (var uid in remoteRender) {
+    list.push(remoteRender[uid]);
+  }
+  for (var i = 0; i < list.length; i++) {
+    var dx = ballRender.x - list[i].x;
+    var dy = ballRender.y - list[i].y;
+    var d = Math.hypot(dx, dy);
+    if (d < minD) {
+      if (d < 0.001) {
+        ballRender.y -= minD;
+        continue;
+      }
+      var ux = dx / d, uy = dy / d;
+      var overlap = minD - d;
+      ballRender.x += ux * overlap;
+      ballRender.y += uy * overlap;
+    }
+  }
 }
 
 function fmtTime(t) {
@@ -1020,10 +1184,11 @@ function render() {
       if (p.user_id === MY_UID) continue;
       var r = remoteRender[p.user_id];
       if (!r) continue;
-      drawPlayer(m, r.x, r.y, r.team, r.slot, r.name, r.kick_glow);
+      drawPlayer(m, r.x, r.y, r.team, r.slot, r.name, r.kick_glow, r.jersey);
     }
     var me = findMe(serverState);
-    if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow);
+    if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow, me.jersey);
+    resolveBallVisual();
     drawBall(m, ballRender.x, ballRender.y);
     drawHud(cw, ch, serverState);
     drawCountdown(cw, ch, m, serverState);
@@ -1052,6 +1217,9 @@ function gameLoop(now) {
 }
 
 resizeGame();
+
+// При загрузке подтягиваем профиль (номер и, если своего имени ещё нет, имя)
+loadProfile(true);
 
 })();
 </script>
