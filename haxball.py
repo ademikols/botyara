@@ -5,12 +5,17 @@ Haxball-клон для Telegram Mini App.
 
 import asyncio
 import json
+import logging
 import math
+import os
 import random
+import sqlite3
 import string
 import time
 
 from aiohttp import web, WSMsgType
+
+log = logging.getLogger("haxball")
 
 FIELD_W = 840
 FIELD_H = 400
@@ -48,6 +53,9 @@ GOAL_PAUSE_TIME = 2.0
 COUNTDOWN_TIME = 5.0
 ROOM_TTL_EMPTY = 60.0
 
+PROFILE_NAME_MAX = 16
+JERSEY_MAX = 99
+
 SLOT_X = {
     "left": {1: 330.0, 2: 170.0, 3: 60.0},
     "right": {1: 510.0, 2: 670.0, 3: 780.0},
@@ -62,6 +70,139 @@ CORNERS = (
 
 ROOMS = {}
 
+
+# ==================== БАЗА ДАННЫХ (профили игроков) ====================
+
+DB_PATH = "/app/data/haxball.db"
+
+PROFILE_COLS = ("user_id", "name", "jersey", "matches", "goals", "wins", "losses", "draws")
+
+
+def _init_db():
+    # Создаём папку и таблицу при старте
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS haxball_profiles ("
+        "user_id TEXT PRIMARY KEY, "
+        "name TEXT, "
+        "jersey INTEGER DEFAULT 0, "
+        "matches INTEGER DEFAULT 0, "
+        "goals INTEGER DEFAULT 0, "
+        "wins INTEGER DEFAULT 0, "
+        "losses INTEGER DEFAULT 0, "
+        "draws INTEGER DEFAULT 0)"
+    )
+    conn.commit()
+    return conn
+
+
+DB = _init_db()
+
+
+def empty_profile(uid):
+    return {
+        "user_id": uid,
+        "name": "",
+        "jersey": 0,
+        "matches": 0,
+        "goals": 0,
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
+    }
+
+
+def db_get_profile(uid):
+    # Нет записи в БД -- возвращаем нули
+    try:
+        cur = DB.execute(
+            "SELECT user_id, name, jersey, matches, goals, wins, losses, draws "
+            "FROM haxball_profiles WHERE user_id = ?",
+            (uid,),
+        )
+        row = cur.fetchone()
+    except sqlite3.Error:
+        log.exception("db_get_profile failed")
+        return empty_profile(uid)
+    if row is None:
+        return empty_profile(uid)
+    prof = dict(zip(PROFILE_COLS, row))
+    if prof["name"] is None:
+        prof["name"] = ""
+    for key in ("jersey", "matches", "goals", "wins", "losses", "draws"):
+        if prof[key] is None:
+            prof[key] = 0
+    return prof
+
+
+def db_get_jersey(uid):
+    if not uid:
+        return 0
+    try:
+        cur = DB.execute("SELECT jersey FROM haxball_profiles WHERE user_id = ?", (uid,))
+        row = cur.fetchone()
+    except sqlite3.Error:
+        log.exception("db_get_jersey failed")
+        return 0
+    if row is None or row[0] is None:
+        return 0
+    try:
+        return int(clamp(int(row[0]), 0, JERSEY_MAX))
+    except (TypeError, ValueError):
+        return 0
+
+
+def db_save_profile(uid, name, jersey):
+    # UPSERT: обновляем только имя и номер, статистику не трогаем
+    try:
+        DB.execute(
+            "INSERT INTO haxball_profiles (user_id, name, jersey) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET name = excluded.name, jersey = excluded.jersey",
+            (uid, name, jersey),
+        )
+        DB.commit()
+        return True
+    except sqlite3.Error:
+        log.exception("db_save_profile failed")
+        return False
+
+
+def _ensure_row(uid):
+    # Пустая запись для игрока, у которого ещё нет профиля
+    DB.execute(
+        "INSERT OR IGNORE INTO haxball_profiles (user_id, name) VALUES (?, '')",
+        (uid,),
+    )
+
+
+def add_goal_for_player(uid):
+    try:
+        _ensure_row(uid)
+        DB.execute("UPDATE haxball_profiles SET goals = goals + 1 WHERE user_id = ?", (uid,))
+        DB.commit()
+    except sqlite3.Error:
+        log.exception("add_goal_for_player failed")
+
+
+def update_stats_for_player(uid, result):
+    # result: "win" / "loss" / "draw"
+    col = {"win": "wins", "loss": "losses", "draw": "draws"}.get(result)
+    if col is None:
+        return
+    try:
+        _ensure_row(uid)
+        DB.execute(
+            "UPDATE haxball_profiles SET matches = matches + 1, "
+            + col + " = " + col + " + 1 WHERE user_id = ?",
+            (uid,),
+        )
+        DB.commit()
+    except sqlite3.Error:
+        log.exception("update_stats_for_player failed")
+
+
+# ==================== ИГРА ====================
 
 def gen_code():
     while True:
@@ -79,11 +220,12 @@ def clamp(v, lo, hi):
 
 
 class Player:
-    def __init__(self, user_id, name, team, slot):
+    def __init__(self, user_id, name, team, slot, jersey=0):
         self.user_id = user_id
         self.name = (name or "Игрок")[:16]
         self.team = team
         self.slot = slot
+        self.jersey = jersey
         self.x = 0.0
         self.y = 0.0
         self.vx = 0.0
@@ -112,19 +254,19 @@ class Player:
             "vy": round(self.vy, 1),
             "team": self.team,
             "slot": self.slot,
+            "jersey": self.jersey,
             "kick_glow": 1 if now < self.kick_glow_until else 0,
             "online": self.online,
         }
 
 
 class Room:
-    def __init__(self, code, name, host_id, max_players, win_score, match_time,
+    def __init__(self, code, name, host_id, max_players, match_time,
                  field_color="gray", player_speed=100, ball_bounce="normal"):
         self.code = code
         self.name = (name or "Игра")[:24]
         self.host_id = host_id
         self.max_players = max_players
-        self.win_score = win_score
         self.match_time_total = match_time
         self.timer = float(match_time)
         self.field_color = field_color
@@ -134,9 +276,9 @@ class Room:
         self.phase = "waiting"
         self.score = {"left": 0, "right": 0}
         self.winner = None
-        self.phase_after_pause = "battle"
         self.players = {}
         self.ball = {"x": FIELD_W / 2.0, "y": FIELD_H / 2.0, "vx": 0.0, "vy": 0.0}
+        self.last_kicker_uid = None
         self.goal_pause_until = 0.0
         self.countdown_end = 0.0
         self.last_tick = time.monotonic()
@@ -168,6 +310,8 @@ class Room:
             return False, "no_user_id"
         if user_id in self.players:
             self.players[user_id].online = True
+            # Подтягиваем актуальный номер из БД
+            self.players[user_id].jersey = db_get_jersey(user_id)
             return True, None
         if self.phase == "over":
             return False, "game_over"
@@ -176,7 +320,8 @@ class Room:
         team, slot = self.next_team_slot()
         if team is None:
             return False, "room_full"
-        p = Player(user_id, name, team, slot)
+        # Номер на футболке берём из БД по uid
+        p = Player(user_id, name, team, slot, db_get_jersey(user_id))
         self.players[user_id] = p
         self.empty_since = None
         return True, None
@@ -193,7 +338,6 @@ class Room:
             return False, "not_enough_players"
         self.score = {"left": 0, "right": 0}
         self.winner = None
-        self.phase_after_pause = "battle"
         self.timer = float(self.match_time_total)
         self.begin_countdown(time.monotonic())
         return True, None
@@ -203,13 +347,13 @@ class Room:
             return False, "bad_phase"
         self.score = {"left": 0, "right": 0}
         self.winner = None
-        self.phase_after_pause = "battle"
         self.timer = float(self.match_time_total)
         self.begin_countdown(time.monotonic())
         return True, None
 
     def reset_positions(self):
         self.ball = {"x": FIELD_W / 2.0, "y": FIELD_H / 2.0, "vx": 0.0, "vy": 0.0}
+        self.last_kicker_uid = None
         for p in self.players.values():
             p.spawn()
 
@@ -245,7 +389,6 @@ class Room:
                 },
                 "my_side": me.team if me else None,
                 "winner": self.winner,
-                "win_score": self.win_score,
                 "max_players": self.max_players,
                 "countdown_left": countdown_left,
                 "field_color": self.field_color,
@@ -317,6 +460,8 @@ class Room:
                 self.ball["vy"] = uy * KICK_POWER + p.vy * KICK_VEL_BONUS
                 p.kick_cooldown_until = now + KICK_COOLDOWN
                 p.kick_glow_until = now + KICK_GLOW_TIME
+                # Запоминаем, кто последним ударил по мячу
+                self.last_kicker_uid = p.user_id
 
     def physics_step(self, dt):
         remaining = dt
@@ -416,6 +561,18 @@ class Room:
                     p1.x, p1.y = self.clamp_player_pos(p1.x, p1.y)
                     p2.x, p2.y = self.clamp_player_pos(p2.x, p2.y)
 
+    def credit_goal(self, scorer):
+        # Гол в статистику автора: последний, кто ударил по мячу.
+        # Автогол (удар игрока команды, которая пропустила) не засчитываем.
+        uid = self.last_kicker_uid
+        self.last_kicker_uid = None
+        if not uid:
+            return
+        p = self.players.get(uid)
+        if p is None or p.team != scorer:
+            return
+        add_goal_for_player(uid)
+
     def check_goal(self):
         # Гол засчитывается, когда ЦЕНТР мяча пересёк линию ворот.
         b = self.ball
@@ -428,11 +585,18 @@ class Room:
             self.score[scorer] += 1
             self.phase = "goal_pause"
             self.goal_pause_until = time.monotonic() + GOAL_PAUSE_TIME
-            if self.score[scorer] >= self.win_score:
-                self.winner = scorer
-                self.phase_after_pause = "over"
+            self.credit_goal(scorer)
+
+    def save_match_stats(self):
+        # Итоги матча -- в профили всех игроков комнаты
+        for p in self.players.values():
+            if self.winner == "draw":
+                result = "draw"
+            elif p.team == self.winner:
+                result = "win"
             else:
-                self.phase_after_pause = "battle"
+                result = "loss"
+            update_stats_for_player(p.user_id, result)
 
     def tick_timer(self, dt):
         if self.phase in ("battle", "goal_pause"):
@@ -444,6 +608,7 @@ class Room:
                 else:
                     self.winner = "left" if self.score["left"] > self.score["right"] else "right"
                 self.phase = "over"
+                self.save_match_stats()
 
     def update(self, now):
         dt = now - self.last_tick
@@ -454,10 +619,7 @@ class Room:
         self.last_tick = now
 
         if self.phase == "goal_pause" and now >= self.goal_pause_until:
-            if self.phase_after_pause == "over":
-                self.phase = "over"
-            else:
-                self.begin_countdown(now)
+            self.begin_countdown(now)
 
         if self.phase == "countdown" and now >= self.countdown_end:
             self.phase = "battle"
@@ -478,7 +640,6 @@ async def handle_create(request):
     user_name = str(data.get("user_name", "Игрок")).strip() or "Игрок"
     game_name = str(data.get("game_name", "Игра")).strip() or "Игра"
     max_players = data.get("max_players", 4)
-    win_score = data.get("win_score", 5)
     match_time = data.get("match_time", 180)
     field_color = data.get("field_color", "gray")
     player_speed = data.get("player_speed", 100)
@@ -488,8 +649,6 @@ async def handle_create(request):
         return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
     if max_players not in (2, 4, 6):
         max_players = 4
-    if win_score not in (3, 5, 7, 10):
-        win_score = 5
     if match_time not in (60, 120, 180, 300):
         match_time = 180
     if field_color not in FIELD_COLORS:
@@ -504,7 +663,7 @@ async def handle_create(request):
         ball_bounce = "normal"
 
     code = gen_code()
-    room = Room(code, game_name, user_id, max_players, win_score, match_time,
+    room = Room(code, game_name, user_id, max_players, match_time,
                 field_color, player_speed, ball_bounce)
     ROOMS[code] = room
     room.add_player(user_id, user_name)
@@ -579,6 +738,35 @@ async def handle_list(request):
     return web.json_response({"ok": True, "items": items})
 
 
+async def handle_profile_get(request):
+    uid = str(request.query.get("uid", "")).strip()
+    if not uid:
+        return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
+    return web.json_response({"ok": True, "profile": db_get_profile(uid)})
+
+
+async def handle_profile_post(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_json"}, status=400)
+
+    uid = str(data.get("user_id", "")).strip()
+    if not uid:
+        return web.json_response({"ok": False, "error": "no_user_id"}, status=400)
+
+    name = str(data.get("name", "")).strip()[:PROFILE_NAME_MAX]
+    try:
+        jersey = int(data.get("jersey", 0))
+    except (TypeError, ValueError):
+        jersey = 0
+    jersey = int(clamp(jersey, 0, JERSEY_MAX))
+
+    if not db_save_profile(uid, name, jersey):
+        return web.json_response({"ok": False, "error": "db_error"}, status=500)
+    return web.json_response({"ok": True})
+
+
 async def handle_ws(request):
     code = request.match_info.get("code", "")
     user_id = request.query.get("uid", "")
@@ -623,6 +811,8 @@ def register_haxball_routes(app):
     app.router.add_post("/api/haxball/start", handle_start)
     app.router.add_post("/api/haxball/restart", handle_restart)
     app.router.add_get("/api/haxball/list", handle_list)
+    app.router.add_get("/api/haxball/profile", handle_profile_get)
+    app.router.add_post("/api/haxball/profile", handle_profile_post)
     app.router.add_get("/ws/haxball/{code}", handle_ws)
 
 
