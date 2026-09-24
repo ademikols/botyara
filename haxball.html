@@ -5,1333 +5,897 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Haxball</title>
 <style>
-  html, body {
-    margin: 0; padding: 0; width: 100%; height: 100%;
-    background: #1c1c1c; overflow: hidden;
-    -webkit-user-select: none; user-select: none;
-    -webkit-touch-callout: none; touch-action: none;
-    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
-  }
-  * { box-sizing: border-box; }
-
-  #s-menu {
-    position: fixed; inset: 0;
-    background: linear-gradient(180deg, #2a2a2a, #151515);
-    color: #eee; overflow-y: auto; padding: 20px 16px 40px;
-  }
-  #s-menu h1 { text-align: center; color: #e8e000; margin: 10px 0 20px; font-size: 28px; letter-spacing: 2px; }
-  .box { background: #232323; border: 1px solid #3a3a3a; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
-  .box h2 { font-size: 14px; color: #aaa; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 1px; }
-  .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  .row label { flex: 1; min-width: 90px; }
-  input[type=text], input[type=number] {
-    width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444;
-    background: #111; color: #fff; font-size: 16px;
-    -webkit-user-select: text; user-select: text;
-  }
-  .seg { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
-  .seg button { flex: 1; padding: 10px 4px; background: #111; color: #ccc; border: none; font-size: 13px; border-right: 1px solid #333; }
-  .seg button:last-child { border-right: none; }
-  .seg button.active { background: #3a5fdc; color: #fff; }
-  .big-btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 16px; font-weight: bold; color: #fff; margin-top: 6px; }
-  .btn-green { background: #2fa84f; }
-  .btn-blue { background: #3a5fdc; }
-  .btn-gray { background: #555; }
-  .join-row { display: flex; gap: 8px; }
-  .join-row input { flex: 1; }
-  .join-row button { padding: 10px 16px; border-radius: 8px; border: none; background: #3a5fdc; color: #fff; font-weight: bold; }
-  #list-items { margin-top: 6px; }
-  .list-item { display: flex; justify-content: space-between; align-items: center; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 6px; }
-  .list-item .info { font-size: 13px; color: #bbb; }
-  .list-item .name { font-size: 15px; color: #fff; font-weight: bold; }
-  .list-item button { padding: 8px 14px; border-radius: 6px; border: none; background: #2fa84f; color: #fff; font-weight: bold; }
-  .empty-hint { color: #666; font-size: 13px; text-align: center; padding: 10px; }
-  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 14px; z-index: 999; opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: 85%; text-align: center; }
-  #toast.show { opacity: 1; }
-
-  #s-profile {
-    position: fixed; inset: 0; display: none;
-    background: linear-gradient(180deg, #2a2a2a, #151515);
-    color: #eee; overflow-y: auto; padding: 20px 16px 40px;
-    -webkit-overflow-scrolling: touch; touch-action: pan-y;
-  }
-  #s-profile h1 { text-align: center; color: #e8e000; margin: 10px 0 20px; font-size: 28px; letter-spacing: 2px; }
-  .hint { color: #888; font-size: 12px; margin-top: 8px; }
-  .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #333; font-size: 15px; color: #ccc; }
-  .stat-row:last-child { border-bottom: none; }
-  .stat-row b { color: #fff; font-size: 17px; }
-  #btn-prof-back { margin-top: 10px; }
-
-  #s-game { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; display: none; overflow: hidden; transform-origin: center center; }
-  #gcanvas { display: block; background: #111; touch-action: none; }
-
-  #joy-zone { position: absolute; left: 0; top: 0; width: 55%; height: 100%; z-index: 5; }
-  #joy-base, #joy-stick { position: absolute; border-radius: 50%; display: none; pointer-events: none; }
-  #joy-base { width: 100px; height: 100px; background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.3); }
-  #joy-stick { width: 46px; height: 46px; background: rgba(255,255,255,0.45); border: 2px solid rgba(255,255,255,0.6); }
-  #kick-btn { position: absolute; width: 110px; height: 110px; right: 18px; bottom: 18px; border-radius: 50%; background: #dc4040; opacity: 0.55; z-index: 6; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 16px; letter-spacing: 1px; border: 3px solid rgba(255,255,255,0.4); }
-  #kick-btn.active { opacity: 0.9; }
-  #exit-btn { position: absolute; top: 8px; right: 8px; padding: 6px 12px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 8px; font-size: 12px; z-index: 7; }
-
-  .act-btn { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 14px 34px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.5); background: #2fa84f; color: #fff; font-size: 18px; font-weight: bold; letter-spacing: 1px; z-index: 8; display: none; }
-  #rematch-btn { background: #3a5fdc; }
+html,body{margin:0;width:100%;height:100%;background:#1c1c1c;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;font-family:-apple-system,"Helvetica Neue",Arial,sans-serif}
+*{box-sizing:border-box}
+.scr{position:fixed;inset:0;background:linear-gradient(180deg,#2a2a2a,#151515);color:#eee;overflow-y:auto;padding:20px 16px 40px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+#s-profile{display:none}
+.scr h1{text-align:center;color:#e8e000;margin:10px 0 20px;font-size:28px;letter-spacing:2px}
+.box{background:#232323;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin-bottom:14px}
+.box h2{font-size:14px;color:#aaa;margin:0 0 10px;text-transform:uppercase;letter-spacing:1px}
+.lbl{font-size:13px;color:#bbb;margin:10px 0 6px}
+input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#111;color:#fff;font-size:16px;-webkit-user-select:text;user-select:text}
+.seg{display:flex;border-radius:8px;overflow:hidden;border:1px solid #444}
+.seg button{flex:1;padding:10px 4px;background:#111;color:#ccc;border:none;font-size:13px;border-right:1px solid #333}
+.seg button:last-child{border-right:none}
+.seg button.active{background:#3a5fdc;color:#fff}
+.big{width:100%;padding:14px;border-radius:10px;border:none;font-size:16px;font-weight:bold;color:#fff;margin-top:10px}
+.green{background:#2fa84f}.blue{background:#3a5fdc}.gray{background:#555}.red{background:#c0392b}
+.jr{display:flex;gap:8px}
+.jr button{padding:10px 16px;border-radius:8px;border:none;background:#3a5fdc;color:#fff;font-weight:bold}
+.li{display:flex;justify-content:space-between;align-items:center;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px;margin-bottom:6px}
+.li .n{font-size:15px;color:#fff;font-weight:bold}.li .i{font-size:13px;color:#bbb}
+.li button{padding:8px 14px;border-radius:6px;border:none;background:#2fa84f;color:#fff;font-weight:bold}
+.empty{color:#666;font-size:13px;text-align:center;padding:10px}
+.hint{color:#888;font-size:12px;margin-top:8px}
+.st{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #333;font-size:15px;color:#ccc}
+.st:last-child{border-bottom:none}.st b{color:#fff;font-size:17px}
+.chk{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;user-select:none}
+.chk input{width:20px;height:20px;accent-color:#3a5fdc}
+.pal{display:flex;gap:8px;margin-top:6px}
+.pal .sw{width:36px;height:36px;border-radius:8px;border:2px solid #333;cursor:pointer}
+.pal .sw.active{border-color:#fff;transform:scale(1.08)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:10px 18px;border-radius:10px;font-size:14px;z-index:999;opacity:0;transition:opacity .25s;pointer-events:none;max-width:85%;text-align:center}
+#toast.show{opacity:1}
+#s-game{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#111;display:none;overflow:hidden;transform-origin:center center}
+#gcanvas{display:block;background:#111;touch-action:none}
+#joy-zone{position:absolute;left:0;top:0;width:55%;height:100%;z-index:5}
+#joy-base,#joy-stick{position:absolute;border-radius:50%;display:none;pointer-events:none}
+#joy-base{width:100px;height:100px;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.3)}
+#joy-stick{width:46px;height:46px;background:rgba(255,255,255,.45);border:2px solid rgba(255,255,255,.6)}
+#kick-btn{position:absolute;width:110px;height:110px;right:18px;bottom:18px;border-radius:50%;background:#dc4040;opacity:.55;z-index:6;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:16px;letter-spacing:1px;border:3px solid rgba(255,255,255,.4)}
+#kick-btn.active{opacity:.9}
+#exit-btn{position:absolute;top:8px;right:8px;padding:6px 12px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;font-size:12px;z-index:7;border:1px solid rgba(255,255,255,.25)}
+.act{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);padding:14px 34px;border-radius:12px;border:2px solid rgba(255,255,255,.5);background:#2fa84f;color:#fff;font-size:18px;font-weight:bold;letter-spacing:1px;z-index:8;display:none}
+#rematch-btn{background:#3a5fdc}
 </style>
 </head>
 <body>
 
-<div id="s-menu">
+<div id="s-menu" class="scr">
   <h1>HAXBALL</h1>
-  <div class="box">
-    <h2>Имя игрока</h2>
-    <input type="text" id="in-name" maxlength="16" placeholder="Твоё имя">
-  </div>
-  <div class="box">
-    <h2>Профиль</h2>
-    <button class="big-btn btn-blue" id="btn-profile">МОЙ ПРОФИЛЬ</button>
-  </div>
+  <div class="box"><h2>Имя игрока</h2><input type="text" id="in-name" maxlength="16" placeholder="Твоё имя"></div>
+  <div class="box"><h2>Профиль</h2><button class="big blue" id="btn-profile" style="margin-top:0">МОЙ ПРОФИЛЬ</button></div>
   <div class="box">
     <h2>Создать игру</h2>
-    <div class="row"><input type="text" id="in-gamename" maxlength="24" placeholder="Название игры"></div>
-    <div class="row"><label>Игроков</label></div>
-    <div class="seg" id="seg-players">
-      <button data-v="2">1v1</button>
-      <button data-v="4" class="active">2v2</button>
-      <button data-v="6">3v3</button>
-    </div>
-    <div class="row" style="margin-top:8px;"><label>Время матча</label></div>
-    <div class="seg" id="seg-time">
-      <button data-v="60">1 мин</button>
-      <button data-v="120">2 мин</button>
-      <button data-v="180" class="active">3 мин</button>
-      <button data-v="300">5 мин</button>
-    </div>
-    <div class="row" style="margin-top:8px;"><label>Цвет поля</label></div>
-    <div class="seg" id="seg-color">
-      <button data-v="gray" class="active">Серый</button>
-      <button data-v="green">Зелёный</button>
-      <button data-v="blue">Синий</button>
-      <button data-v="dark">Тёмный</button>
-    </div>
-    <div class="row" style="margin-top:8px;"><label>Скорость игроков</label></div>
-    <div class="seg" id="seg-speed">
-      <button data-v="80">80%</button>
-      <button data-v="100" class="active">100%</button>
-      <button data-v="120">120%</button>
-    </div>
-    <div class="row" style="margin-top:8px;"><label>Отскок мяча</label></div>
-    <div class="seg" id="seg-bounce">
-      <button data-v="low">Низкий</button>
-      <button data-v="normal" class="active">Нормальный</button>
-      <button data-v="high">Высокий</button>
-    </div>
-    <button class="big-btn btn-green" id="btn-create">СОЗДАТЬ ИГРУ</button>
+    <input type="text" id="in-gamename" maxlength="24" placeholder="Название игры">
+
+    <div class="lbl">Название левой команды</div>
+    <input type="text" id="in-left-name" maxlength="12" placeholder="СИНИЕ">
+    <div class="lbl">Цвет формы левых</div>
+    <div class="pal" id="pal-left"></div>
+
+    <div class="lbl">Название правой команды</div>
+    <input type="text" id="in-right-name" maxlength="12" placeholder="КРАСНЫЕ">
+    <div class="lbl">Цвет формы правых</div>
+    <div class="pal" id="pal-right"></div>
+
+    <div class="lbl">Игроков</div><div class="seg" id="sg-players"></div>
+    <div class="lbl">Время матча</div><div class="seg" id="sg-time"></div>
+    <div class="lbl">Цвет поля</div><div class="seg" id="sg-color"></div>
+    <div class="lbl">Скорость игроков</div><div class="seg" id="sg-speed"></div>
+    <div class="lbl">Отскок мяча</div><div class="seg" id="sg-bounce"></div>
+
+    <label class="chk"><input type="checkbox" id="in-private"> Приватное лобби (только по коду)</label>
+
+    <button class="big green" id="btn-create">СОЗДАТЬ ИГРУ</button>
   </div>
   <div class="box">
     <h2>Войти по коду</h2>
-    <div class="join-row">
-      <input type="text" id="in-code" maxlength="6" inputmode="numeric" placeholder="Код комнаты">
-      <button id="btn-join">ВОЙТИ</button>
-    </div>
+    <div class="jr"><input type="text" id="in-code" maxlength="6" inputmode="numeric" placeholder="Код комнаты"><button id="btn-join">ВОЙТИ</button></div>
   </div>
-  <div class="box">
-    <h2>Открытые игры</h2>
-    <div id="list-items"></div>
-  </div>
+  <div class="box"><h2>Открытые игры</h2><div id="list-items"></div></div>
 </div>
 
-<div id="s-profile">
+<div id="s-profile" class="scr">
   <h1>МОЙ ПРОФИЛЬ</h1>
-  <div class="box">
-    <h2>Имя игрока</h2>
-    <input type="text" id="in-prof-name" maxlength="16" placeholder="Твоё имя">
-  </div>
-  <div class="box">
-    <h2>Номер на футболке</h2>
+  <div class="box"><h2>Имя игрока</h2><input type="text" id="in-prof-name" maxlength="16" placeholder="Твоё имя"></div>
+  <div class="box"><h2>Номер на футболке</h2>
     <input type="number" id="in-prof-jersey" min="0" max="99" inputmode="numeric" placeholder="1-99">
     <div class="hint">0 — без номера, номер по позиции</div>
   </div>
-  <div class="box">
-    <h2>Статистика</h2>
-    <div class="stat-row"><span>Матчей</span><b id="st-matches">0</b></div>
-    <div class="stat-row"><span>Голов</span><b id="st-goals">0</b></div>
-    <div class="stat-row"><span>Побед</span><b id="st-wins">0</b></div>
-    <div class="stat-row"><span>Поражений</span><b id="st-losses">0</b></div>
-    <div class="stat-row"><span>Ничьих</span><b id="st-draws">0</b></div>
+  <div class="box"><h2>Статистика</h2>
+    <div class="st"><span>Матчей</span><b id="st-matches">0</b></div>
+    <div class="st"><span>Голов</span><b id="st-goals">0</b></div>
+    <div class="st"><span>Побед</span><b id="st-wins">0</b></div>
+    <div class="st"><span>Поражений</span><b id="st-losses">0</b></div>
+    <div class="st"><span>Ничьих</span><b id="st-draws">0</b></div>
   </div>
-  <button class="big-btn btn-green" id="btn-prof-save">СОХРАНИТЬ</button>
-  <button class="big-btn btn-gray" id="btn-prof-back">НАЗАД</button>
+  <button class="big green" id="btn-prof-save">СОХРАНИТЬ</button>
+  <button class="big gray" id="btn-prof-back">НАЗАД</button>
 </div>
 
 <div id="s-game">
   <canvas id="gcanvas"></canvas>
-  <div id="joy-zone"></div>
-  <div id="joy-base"></div>
-  <div id="joy-stick"></div>
+  <div id="joy-zone"></div><div id="joy-base"></div><div id="joy-stick"></div>
   <div id="kick-btn">УДАР</div>
   <div id="exit-btn">ВЫЙТИ</div>
-  <div id="start-btn" class="act-btn">НАЧАТЬ</div>
-  <div id="rematch-btn" class="act-btn">РЕВАНШ</div>
+  <div id="start-btn" class="act">НАЧАТЬ</div>
+  <div id="rematch-btn" class="act">РЕВАНШ</div>
 </div>
-
 <div id="toast"></div>
 
 <script>
 (function () {
 "use strict";
+var $ = function (i) { return document.getElementById(i); };
 
-var FIELD_W = 840, FIELD_H = 400;
-var GOAL_TOP = 150, GOAL_BOTTOM = 250, GOAL_DEPTH = 18;
-var CORNER_R = 40;
-var PLAYER_R = 15, BALL_R = 8;
+var FW = 840, FH = 400, GT = 150, GB = 250, GD = 18, CR = 40, PR = 15, BR = 8;
+var SPEED = 220, ACCEL = 12, SEND_MS = 40, TELE = 100, SOFT = 0.08;
+var DELAY = 100, KEEP = 500, SNAP_P = 150, SNAP_B = 200, EXTRAP = 200;
+var GO_MS = 900, GOAL_MS = 1600, KICK_MS = 350;
+var DEF_L = "#5689e5", DEF_R = "#e56e56";
+var PALETTE = ["#5689e5","#e56e56","#4eaa5e","#e0c93f","#9b5de5","#e88c3f"];
+var FCOL = { gray:"#5a5a5a", green:"#36793b", blue:"#2c5b8f", dark:"#1f2226" };
 
-var PLAYER_SPEED = 220.0;
-var PLAYER_ACCEL = 12.0;
+var TEAM_L_COLOR = DEF_L, TEAM_R_COLOR = DEF_R;
 
-var SEND_HZ = 25;
-var SEND_INTERVAL = 1000 / SEND_HZ;
+function genUid(){var s="",c="abcdefghijklmnopqrstuvwxyz0123456789";for(var i=0;i<16;i++)s+=c[Math.floor(Math.random()*c.length)];return s;}
+var MY_UID=null;
+try{MY_UID=localStorage.getItem("hax_uid");if(!MY_UID){MY_UID=genUid();localStorage.setItem("hax_uid",MY_UID);}}catch(e){MY_UID=genUid();}
+var MY_NAME="Игрок";
+try{var sn=localStorage.getItem("hax_name");if(sn)MY_NAME=sn;}catch(e){}
+var MY_JERSEY=0;
 
-var SELF_CORRECT_TELEPORT = 100;
-var SELF_CORRECT_SOFT = 0.08;
+var toastEl=$("toast"),toastT=null;
+function showToast(m){toastEl.textContent=m;toastEl.classList.add("show");if(toastT)clearTimeout(toastT);toastT=setTimeout(function(){toastEl.classList.remove("show");},2600);}
+function post(url,body){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();});}
 
-var RENDER_DELAY_MS = 100;
-var BUFFER_KEEP_MS = 500;
-var SNAP_DIST_PLAYER = 150;
-var SNAP_DIST_BALL = 200;
-var EXTRAPOLATE_MAX_MS = 200;
+var elMenu=$("s-menu"),elProf=$("s-profile"),elGame=$("s-game");
+var inName=$("in-name");
+inName.value=MY_NAME;
+inName.addEventListener("input",function(){MY_NAME=inName.value.trim()||"Игрок";try{localStorage.setItem("hax_name",MY_NAME);}catch(e){}});
 
-var GO_SHOW_MS = 900;
-
-// Offscreen canvas с запасом для ворот
-var OFFSCREEN_W = FIELD_W + 2 * GOAL_DEPTH;
-var OFFSCREEN_H = FIELD_H;
-
-var FIELD_COLORS = {
-  gray: "#5a5a5a",
-  green: "#36793b",
-  blue: "#2c5b8f",
-  dark: "#1f2226"
-};
-
-function genUid() {
-  var s = "";
-  var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  for (var i = 0; i < 16; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
-}
-
-var MY_UID = null;
-try {
-  MY_UID = localStorage.getItem("hax_uid");
-  if (!MY_UID) { MY_UID = genUid(); localStorage.setItem("hax_uid", MY_UID); }
-} catch (e) { MY_UID = genUid(); }
-
-var MY_NAME = "Игрок";
-try {
-  var savedName = localStorage.getItem("hax_name");
-  if (savedName) MY_NAME = savedName;
-} catch (e) {}
-
-var MY_JERSEY = 0;
-
-var toastEl = document.getElementById("toast");
-var toastTimer = null;
-function showToast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.add("show");
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2600);
-}
-
-var elMenu = document.getElementById("s-menu");
-var elProfile = document.getElementById("s-profile");
-var elGame = document.getElementById("s-game");
-var inName = document.getElementById("in-name");
-var inGameName = document.getElementById("in-gamename");
-var inCode = document.getElementById("in-code");
-var listItemsEl = document.getElementById("list-items");
-var startBtn = document.getElementById("start-btn");
-var rematchBtn = document.getElementById("rematch-btn");
-
-inName.value = MY_NAME;
-inName.addEventListener("input", function () {
-  MY_NAME = inName.value.trim() || "Игрок";
-  try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
-});
-
-var cfgMaxPlayers = 4, cfgMatchTime = 180;
-var cfgFieldColor = "gray", cfgSpeed = 100, cfgBounce = "normal";
-
-function setupSeg(id, onPick, asString) {
-  var el = document.getElementById(id);
-  var btns = el.querySelectorAll("button");
-  for (var i = 0; i < btns.length; i++) {
-    btns[i].addEventListener("click", function (ev) {
-      for (var j = 0; j < btns.length; j++) btns[j].classList.remove("active");
-      ev.target.classList.add("active");
-      var raw = ev.target.getAttribute("data-v");
-      onPick(asString ? raw : parseInt(raw, 10));
-    });
-  }
-}
-setupSeg("seg-players", function (v) { cfgMaxPlayers = v; });
-setupSeg("seg-time", function (v) { cfgMatchTime = v; });
-setupSeg("seg-color", function (v) { cfgFieldColor = v; }, true);
-setupSeg("seg-speed", function (v) { cfgSpeed = v; });
-setupSeg("seg-bounce", function (v) { cfgBounce = v; }, true);
-
-function postJson(url, body) {
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  }).then(function (r) { return r.json(); });
-}
-
-var inProfName = document.getElementById("in-prof-name");
-var inProfJersey = document.getElementById("in-prof-jersey");
-var stMatches = document.getElementById("st-matches");
-var stGoals = document.getElementById("st-goals");
-var stWins = document.getElementById("st-wins");
-var stLosses = document.getElementById("st-losses");
-var stDraws = document.getElementById("st-draws");
-
-function hasLocalName() {
-  try { return !!localStorage.getItem("hax_name"); } catch (e) { return false; }
-}
-
-function fillStats(p) {
-  stMatches.textContent = String(p.matches || 0);
-  stGoals.textContent = String(p.goals || 0);
-  stWins.textContent = String(p.wins || 0);
-  stLosses.textContent = String(p.losses || 0);
-  stDraws.textContent = String(p.draws || 0);
-}
-
-function loadProfile(applyName) {
-  return fetch("/api/haxball/profile?uid=" + encodeURIComponent(MY_UID))
-    .then(function (r) { return r.json(); })
-    .then(function (res) {
-      if (!res || !res.ok || !res.profile) return null;
-      var p = res.profile;
-      MY_JERSEY = parseInt(p.jersey, 10) || 0;
-      if (applyName && p.name && !hasLocalName()) {
-        MY_NAME = p.name;
-        inName.value = MY_NAME;
-        try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
-      }
-      return p;
-    })
-    .catch(function () { return null; });
-}
-
-function openProfile() {
-  inProfName.value = MY_NAME;
-  inProfJersey.value = MY_JERSEY > 0 ? String(MY_JERSEY) : "";
-  fillStats({});
-  elMenu.style.display = "none";
-  elProfile.style.display = "block";
-  elProfile.scrollTop = 0;
-  loadProfile(false).then(function (p) {
-    if (elProfile.style.display === "none") return;
-    if (!p) { showToast("Не удалось загрузить профиль"); return; }
-    inProfJersey.value = MY_JERSEY > 0 ? String(MY_JERSEY) : "";
-    fillStats(p);
+var cfg={max_players:4,match_time:180,field_color:"gray",player_speed:100,ball_bounce:"normal"};
+function seg(id,key,items,def){
+  var el=$(id);
+  items.forEach(function(it){
+    var b=document.createElement("button");b.textContent=it[1];if(it[0]===def)b.className="active";
+    b.addEventListener("click",function(){for(var i=0;i<el.children.length;i++)el.children[i].className="";b.className="active";cfg[key]=it[0];});
+    el.appendChild(b);
   });
 }
+seg("sg-players","max_players",[[2,"1v1"],[4,"2v2"],[6,"3v3"]],4);
+seg("sg-time","match_time",[[60,"1 мин"],[120,"2 мин"],[180,"3 мин"],[300,"5 мин"]],180);
+seg("sg-color","field_color",[["gray","Серый"],["green","Зелёный"],["blue","Синий"],["dark","Тёмный"]],"gray");
+seg("sg-speed","player_speed",[[80,"80%"],[100,"100%"],[120,"120%"]],100);
+seg("sg-bounce","ball_bounce",[["low","Низкий"],["normal","Нормальный"],["high","Высокий"]],"normal");
 
-function closeProfile() {
-  elProfile.style.display = "none";
-  elMenu.style.display = "block";
-  refreshList();
-}
+// Палитра цветов формы
+var inLeftName=$("in-left-name"), inRightName=$("in-right-name");
+inLeftName.value="СИНИЕ"; inRightName.value="КРАСНЫЕ";
+var teamColorL=DEF_L, teamColorR=DEF_R;
 
-inProfJersey.addEventListener("input", function () {
-  var v = inProfJersey.value;
-  if (v.length > 2) inProfJersey.value = v.slice(0, 2);
-});
-
-document.getElementById("btn-profile").addEventListener("click", openProfile);
-document.getElementById("btn-prof-back").addEventListener("click", closeProfile);
-
-document.getElementById("btn-prof-save").addEventListener("click", function () {
-  var name = inProfName.value.trim().slice(0, 16) || "Игрок";
-  var j = parseInt(inProfJersey.value, 10);
-  if (isNaN(j) || j < 0) j = 0;
-  if (j > 99) j = 99;
-  postJson("/api/haxball/profile", { user_id: MY_UID, name: name, jersey: j })
-    .then(function (res) {
-      if (!res || !res.ok) { showToast("Не удалось сохранить профиль"); return; }
-      MY_NAME = name;
-      MY_JERSEY = j;
-      inName.value = name;
-      inProfName.value = name;
-      inProfJersey.value = j > 0 ? String(j) : "";
-      try { localStorage.setItem("hax_name", MY_NAME); } catch (e) {}
-      showToast("Профиль сохранён");
-    }).catch(function () { showToast("Ошибка сети"); });
-});
-
-document.getElementById("btn-create").addEventListener("click", function () {
-  var gname = inGameName.value.trim() || (MY_NAME + " игра");
-  postJson("/api/haxball/create", {
-    user_id: MY_UID, user_name: MY_NAME, game_name: gname,
-    max_players: cfgMaxPlayers, match_time: cfgMatchTime,
-    field_color: cfgFieldColor, player_speed: cfgSpeed, ball_bounce: cfgBounce
-  }).then(function (res) {
-    if (res.ok) enterGame(res.code);
-    else showToast("Не удалось создать игру");
-  }).catch(function () { showToast("Ошибка сети"); });
-});
-
-document.getElementById("btn-join").addEventListener("click", function () {
-  var code = inCode.value.trim();
-  if (!code) { showToast("Введите код"); return; }
-  joinRoom(code);
-});
-
-function joinRoom(code) {
-  postJson("/api/haxball/join", { code: code, user_id: MY_UID, user_name: MY_NAME })
-    .then(function (res) {
-      if (res.ok) enterGame(res.code);
-      else {
-        var msg = "Не удалось войти";
-        if (res.error === "not_found") msg = "Комната не найдена";
-        else if (res.error === "room_full") msg = "Комната заполнена";
-        else if (res.error === "game_over") msg = "Игра уже завершена";
-        showToast(msg);
+function buildPal(containerId, side){
+  var c=$(containerId);
+  PALETTE.forEach(function(col){
+    var sw=document.createElement("div");
+    sw.className="sw";
+    sw.style.background=col;
+    if(side==="left"&&col===teamColorL)sw.classList.add("active");
+    if(side==="right"&&col===teamColorR)sw.classList.add("active");
+    sw.addEventListener("click",function(){
+      if(side==="left"){
+        if(col===teamColorR){showToast("Цвет совпадает с правой командой");return;}
+        teamColorL=col;
+      }else{
+        if(col===teamColorL){showToast("Цвет совпадает с левой командой");return;}
+        teamColorR=col;
       }
-    }).catch(function () { showToast("Ошибка сети"); });
-}
-
-function refreshList() {
-  if (elMenu.style.display === "none") return;
-  fetch("/api/haxball/list").then(function (r) { return r.json(); }).then(function (res) {
-    if (!res.ok) return;
-    listItemsEl.innerHTML = "";
-    if (res.items.length === 0) {
-      var d = document.createElement("div");
-      d.className = "empty-hint";
-      d.textContent = "Нет открытых игр";
-      listItemsEl.appendChild(d);
-      return;
-    }
-    res.items.forEach(function (it) {
-      var row = document.createElement("div");
-      row.className = "list-item";
-      var info = document.createElement("div");
-      var nameEl = document.createElement("div");
-      nameEl.className = "name";
-      nameEl.textContent = it.name + " [" + it.code + "]";
-      var sub = document.createElement("div");
-      sub.className = "info";
-      sub.textContent = "Хост: " + it.host + " · " + it.players + "/" + it.max;
-      info.appendChild(nameEl);
-      info.appendChild(sub);
-      var btn = document.createElement("button");
-      btn.textContent = "ВОЙТИ";
-      btn.addEventListener("click", function () { joinRoom(it.code); });
-      row.appendChild(info);
-      row.appendChild(btn);
-      listItemsEl.appendChild(row);
+      var kids=c.children;
+      for(var i=0;i<kids.length;i++)kids[i].classList.remove("active");
+      sw.classList.add("active");
     });
-  }).catch(function () {});
+    c.appendChild(sw);
+  });
 }
-setInterval(refreshList, 3000);
+buildPal("pal-left","left");
+buildPal("pal-right","right");
+
+// ==================== ПРОФИЛЬ ====================
+var inPN=$("in-prof-name"),inPJ=$("in-prof-jersey");
+function hasLocalName(){try{return!!localStorage.getItem("hax_name");}catch(e){return false;}}
+function fillStats(p){
+  $("st-matches").textContent=String(p.matches||0);
+  $("st-goals").textContent=String(p.goals||0);
+  $("st-wins").textContent=String(p.wins||0);
+  $("st-losses").textContent=String(p.losses||0);
+  $("st-draws").textContent=String(p.draws||0);
+}
+function loadProfile(applyName){
+  return fetch("/api/haxball/profile?uid="+encodeURIComponent(MY_UID))
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(!res||!res.ok||!res.profile)return null;
+      var p=res.profile;
+      MY_JERSEY=parseInt(p.jersey,10)||0;
+      if(applyName&&p.name&&!hasLocalName()){MY_NAME=p.name;inName.value=MY_NAME;try{localStorage.setItem("hax_name",MY_NAME);}catch(e){}}
+      return p;
+    }).catch(function(){return null;});
+}
+$("btn-profile").addEventListener("click",function(){
+  inPN.value=MY_NAME;inPJ.value=MY_JERSEY>0?String(MY_JERSEY):"";
+  fillStats({});
+  elMenu.style.display="none";elProf.style.display="block";elProf.scrollTop=0;
+  loadProfile(false).then(function(p){
+    if(elProf.style.display==="none")return;
+    if(!p){showToast("Не удалось загрузить профиль");return;}
+    inPJ.value=MY_JERSEY>0?String(MY_JERSEY):"";
+    fillStats(p);
+  });
+});
+$("btn-prof-back").addEventListener("click",function(){elProf.style.display="none";elMenu.style.display="block";refreshList();});
+inPJ.addEventListener("input",function(){if(inPJ.value.length>2)inPJ.value=inPJ.value.slice(0,2);});
+$("btn-prof-save").addEventListener("click",function(){
+  var name=inPN.value.trim().slice(0,16)||"Игрок";
+  var j=parseInt(inPJ.value,10);
+  if(isNaN(j)||j<0)j=0;if(j>99)j=99;
+  post("/api/haxball/profile",{user_id:MY_UID,name:name,jersey:j}).then(function(res){
+    if(!res||!res.ok){showToast("Не удалось сохранить профиль");return;}
+    MY_NAME=name;MY_JERSEY=j;inName.value=name;inPN.value=name;
+    inPJ.value=j>0?String(j):"";
+    try{localStorage.setItem("hax_name",MY_NAME);}catch(e){}
+    showToast("Профиль сохранён");
+  }).catch(function(){showToast("Ошибка сети");});
+});
+
+// ==================== ЛОББИ ====================
+$("btn-create").addEventListener("click",function(){
+  var ln=inLeftName.value.trim()||"СИНИЕ";
+  var rn=inRightName.value.trim()||"КРАСНЫЕ";
+  post("/api/haxball/create",{
+    user_id:MY_UID,user_name:MY_NAME,
+    game_name:$("in-gamename").value.trim()||(MY_NAME+" игра"),
+    max_players:cfg.max_players,match_time:cfg.match_time,field_color:cfg.field_color,
+    player_speed:cfg.player_speed,ball_bounce:cfg.ball_bounce,
+    is_private:$("in-private").checked,
+    left_name:ln,right_name:rn,left_color:teamColorL,right_color:teamColorR
+  }).then(function(res){
+    if(res.ok)enterGame(res.code);else showToast("Не удалось создать игру");
+  }).catch(function(){showToast("Ошибка сети");});
+});
+$("btn-join").addEventListener("click",function(){
+  var c=$("in-code").value.trim();
+  if(!c){showToast("Введите код");return;}
+  joinRoom(c);
+});
+function joinRoom(code){
+  post("/api/haxball/join",{code:code,user_id:MY_UID,user_name:MY_NAME}).then(function(res){
+    if(res.ok){enterGame(res.code);return;}
+    var m="Не удалось войти";
+    if(res.error==="not_found")m="Ком s=document.createElement("divната не найдена";
+    else if(res.error==="room_full")m="Комната заполнена";
+    else if(res.error==="game_over")m="Игра уже завершена";
+    showToast(m);
+  }).catch(function(){showToast("Ошибка сети");});
+}
+var listEl=$("list-items");
+function refreshList(){
+  if(elMenu.style.display==="none")return;
+  fetch("/api/haxball/list").then(function(r){return r.json();}).then(function(res){
+    if(!res.ok)return;
+    listEl.innerHTML="";
+    if(!res.items.length){var d=document.createElement("div");d.className="empty";d.textContent="Нет открытых игр";listEl.appendChild(d);return;}
+    res.items.forEach(function(it){
+      var row=document.createElement("div");row.className="li";
+      var info=document.createElement("div");
+      var n=document.createElement("div");n.className="n";n.textContent=it.name+" ["+it.code+"]";
+      var");s.className="i";s.textContent="Хост: "+it.host+" · "+it.players+"/"+it.max;
+      info.appendChild(n);info.appendChild(s);
+      var b=document.createElement("button");b.textContent="ВОЙТИ";
+      b.addEventListener("click",function(){joinRoom(it.code);});
+      row.appendChild(info);row.appendChild(b);listEl.appendChild(row);
+    });
+  }).catch(function(){});
+}
+setInterval(refreshList,3000);
 refreshList();
 
-var ws = null;
-var roomCode = null;
-var connected = false;
+// ==================== СОСТОЯНИЕ ИГРЫ ====================
+var ws=null,roomCode=null,connected=false,looping=false;
+var serverState=null,myTeam=null;
+var localSelf={x:FW/2,y:FH/2,vx:0,vy:0};
+var remoteRender={};
+var ballRender={x:FW/2,y:FH/2};
+var buf=[];
+var cdBase=0,cdT=0,prevPhase=null,goUntil=0;
+var goalFx=null,rings=[],parts=[],trails={},prevGlow={};
+var joyDX=0,joyDY=0,kickPressed=false,lastSend=0,fdt=0.016;
 
-var serverState = null;
-var localSelf = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
-var myTeam = null;
+var startBtn=$("start-btn"),rematchBtn=$("rematch-btn");
 
-var remoteRender = {};
-var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2 };
+function clamp(v,lo,hi){return v<lo?lo:(v>hi?hi:v);}
 
-var snapshotBuffer = [];
-
-var cdBase = 0, cdBaseT = 0;
-var prevPhase = null;
-var goUntil = 0;
-
-var joyActive = false;
-var joyDX = 0, joyDY = 0;
-var kickPressed = false;
-var lastSendTime = 0;
-
-function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
-
-function clampPlayerPos(x, y) {
-  y = clamp(y, PLAYER_R, FIELD_H - PLAYER_R);
-  var inMouth = y >= (GOAL_TOP + 2) && y <= (GOAL_BOTTOM - 2);
-  if (inMouth) x = clamp(x, -GOAL_DEPTH + 2, FIELD_W + GOAL_DEPTH - 2);
-  else x = clamp(x, PLAYER_R, FIELD_W - PLAYER_R);
-
-  var cx = null, cy = null;
-  if (x < CORNER_R) cx = CORNER_R;
-  else if (x > FIELD_W - CORNER_R) cx = FIELD_W - CORNER_R;
-  if (y < CORNER_R) cy = CORNER_R;
-  else if (y > FIELD_H - CORNER_R) cy = FIELD_H - CORNER_R;
-  if (cx !== null && cy !== null) {
-    var dx = x - cx, dy = y - cy;
-    var d = Math.hypot(dx, dy);
-    var lim = CORNER_R - PLAYER_R;
-    if (d > lim && d > 0) {
-      x = cx + dx / d * lim;
-      y = cy + dy / d * lim;
-    }
+function clampPos(x,y){
+  y=clamp(y,PR,FH-PR);
+  if(y>=GT+2&&y<=GB-2)x=clamp(x,-GD+2,FW+GD-2);
+  else x=clamp(x,PR,FW-PR);
+  var cx=null,cy=null;
+  if(x<CR)cx=CR;else if(x>FW-CR)cx=FW-CR;
+  if(y<CR)cy=CR;else if(y>FH-CR)cy=FH-CR;
+  if(cx!==null&&cy!==null){
+    var dx=x-cx,dy=y-cy,d=Math.hypot(dx,dy),lim=CR-PR;
+    if(d>lim&&d>0){x=cx+dx/d*lim;y=cy+dy/d*lim;}
   }
-  return [x, y];
+  return [x,y];
 }
 
-function enterGame(code) {
-  roomCode = code;
-  snapshotBuffer = [];
-  remoteRender = {};
-  prevPhase = null;
-  goUntil = 0;
-  cdBase = 0;
-  hideActionButtons();
-  elMenu.style.display = "none";
-  elProfile.style.display = "none";
-  elGame.style.display = "block";
+function enterGame(code){
+  roomCode=code;buf=[];remoteRender={};prevPhase=null;goUntil=0;cdBase=0;
+  goalFx=null;rings=[];parts=[];trails={};prevGlow={};
+  startBtn.style.display="none";rematchBtn.style.display="none";
+  elMenu.style.display="none";elProf.style.display="none";elGame.style.display="block";
   resizeGame();
   loadProfile(false);
   connectWs(code);
-  requestAnimationFrame(gameLoop);
+  if(!looping){looping=true;lastFrame=performance.now();requestAnimationFrame(loop);}
 }
 
-function leaveGame(silent) {
-  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
-  connected = false;
-  roomCode = null;
-  serverState = null;
-  remoteRender = {};
-  snapshotBuffer = [];
-  prevPhase = null;
-  goUntil = 0;
-  hideActionButtons();
-  elGame.style.display = "none";
-  elMenu.style.display = "block";
+function leaveGame(silent, sendLeave){
+  if(ws && ws.readyState===1 && sendLeave){
+    try{ws.send(JSON.stringify({action:"leave"}));}catch(e){}
+  }
+  if(ws){try{ws.close();}catch(e){}ws=null;}
+  connected=false;roomCode=null;serverState=null;remoteRender={};buf=[];
+  prevPhase=null;goUntil=0;goalFx=null;rings=[];parts=[];trails={};prevGlow={};
+  startBtn.style.display="none";rematchBtn.style.display="none";
+  elGame.style.display="none";elMenu.style.display="block";
   refreshList();
-  if (!silent) showToast("Вы вышли из игры");
+  if(!silent)showToast("Вы вышли из игры");
 }
 
-function pushSnapshot(state) {
-  var now = performance.now();
-  snapshotBuffer.push({ t: now, players: state.players, ball: state.ball });
-  while (snapshotBuffer.length > 0 && now - snapshotBuffer[0].t > BUFFER_KEEP_MS) {
-    snapshotBuffer.shift();
+startBtn.addEventListener("click",function(){
+  if(!roomCode)return;
+  post("/api/haxball/start",{code:roomCode,user_id:MY_UID}).then(function(res){
+    if(res.ok)return;
+    var m="Не удалось начать";
+    if(res.error==="not_enough_players")m="Нужно минимум 2 игрока";
+    else if(res.error==="not_host")m="Начать может только хост";
+    showToast(m);
+  }).catch(function(){showToast("Ошибка сети");});
+});
+rematchBtn.addEventListener("click",function(){
+  if(!roomCode)return;
+  post("/api/haxball/restart",{code:roomCode,user_id:MY_UID}).then(function(res){
+    if(res.ok)return;
+    showToast(res.error==="not_host"?"Реванш запускает только хост":"Не удалось запустить реванш");
+  }).catch(function(){showToast("Ошибка сети");});
+});
+$("exit-btn").addEventListener("click",function(){leaveGame(false,true);});
+
+function startGoal(team){
+  var now=performance.now();
+  goalFx={t:now,team:team};
+  var col=team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
+  for(var i=0;i<36;i++){
+    var a=Math.random()*Math.PI*2,sp=80+Math.random()*260;
+    parts.push({x:ballRender.x,y:ballRender.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      t:now,life:700+Math.random()*500,c:i%3===0?"#fff":col});
   }
 }
 
-function hideActionButtons() {
-  startBtn.style.display = "none";
-  rematchBtn.style.display = "none";
-}
-
-function updateButtons(st) {
-  var isHost = !!st && st.host_id === MY_UID;
-  var canStart = isHost && st.phase === "waiting" && st.players.length >= 2;
-  var canRematch = isHost && st.phase === "over";
-  startBtn.style.display = canStart ? "block" : "none";
-  rematchBtn.style.display = canRematch ? "block" : "none";
-}
-
-startBtn.addEventListener("click", function () {
-  if (!roomCode) return;
-  postJson("/api/haxball/start", { code: roomCode, user_id: MY_UID })
-    .then(function (res) {
-      if (res.ok) return;
-      var msg = "Не удалось начать";
-      if (res.error === "not_enough_players") msg = "Нужно минимум 2 игрока";
-      else if (res.error === "not_host") msg = "Начать может только хост";
-      showToast(msg);
-    }).catch(function () { showToast("Ошибка сети"); });
-});
-
-rematchBtn.addEventListener("click", function () {
-  if (!roomCode) return;
-  postJson("/api/haxball/restart", { code: roomCode, user_id: MY_UID })
-    .then(function (res) {
-      if (res.ok) return;
-      var msg = "Не удалось запустить реванш";
-      if (res.error === "not_host") msg = "Реванш запускает только хост";
-      showToast(msg);
-    }).catch(function () { showToast("Ошибка сети"); });
-});
-
-function connectWs(code) {
-  var proto = location.protocol === "https:" ? "wss:" : "ws:";
-  var url = proto + "//" + location.host + "/ws/haxball/" + code + "?uid=" + encodeURIComponent(MY_UID);
-  try { ws = new WebSocket(url); }
-  catch (e) { showToast("Не удалось подключиться"); leaveGame(true); return; }
-  ws.onopen = function () { connected = true; };
-  ws.onmessage = function (ev) {
+function connectWs(code){
+  var proto=location.protocol==="https:"?"wss:":"ws:";
+  var url=proto+"//"+location.host+"/ws/haxball/"+code+"?uid="+encodeURIComponent(MY_UID);
+  try{ws=new WebSocket(url);}
+  catch(e){showToast("Не удалось подключиться");leaveGame(true,false);return;}
+  ws.onopen=function(){connected=true;};
+  ws.onmessage=function(ev){
     var data;
-    try { data = JSON.parse(ev.data); } catch (e) { return; }
-    if (data.type === "state") {
-      var st = data.state;
-      if (st.phase === "countdown") {
-        cdBase = st.countdown_left || 0;
-        cdBaseT = performance.now();
+    try{data=JSON.parse(ev.data);}catch(e){return;}
+    if(data.type==="state"){
+      var st=data.state,now=performance.now();
+      if(st.phase==="countdown"){cdBase=st.countdown_left||0;cdT=now;}
+      if(prevPhase==="countdown"&&st.phase==="battle")goUntil=now+GO_MS;
+      prevPhase=st.phase;
+      if(serverState){
+        if(st.score.left>serverState.score.left)startGoal("left");
+        else if(st.score.right>serverState.score.right)startGoal("right");
       }
-      if (prevPhase === "countdown" && st.phase === "battle") {
-        goUntil = performance.now() + GO_SHOW_MS;
-      }
-      prevPhase = st.phase;
-      serverState = st;
-      myTeam = st.my_side;
-      syncSelfFromServer();
-      pushSnapshot(st);
-      updateButtons(st);
-    } else if (data.type === "error") {
-      showToast("Комната недоступна");
-      leaveGame(true);
+      st.players.forEach(function(p){
+        if(p.kick_glow&&!prevGlow[p.user_id])rings.push({uid:p.user_id,t:now,team:p.team});
+        prevGlow[p.user_id]=p.kick_glow;
+      });
+      serverState=st;
+      myTeam=st.my_side;
+      if(st.left_color)TEAM_L_COLOR=st.left_color;
+      if(st.right_color)TEAM_R_COLOR=st.right_color;
+      syncSelf();
+      buf.push({t:now,players:st.players,ball:st.ball});
+      while(buf.length&&now-buf[0].t>KEEP)buf.shift();
+      var host=st.host_id===MY_UID;
+      startBtn.style.display=host&&st.phase==="waiting"&&st.players.length>=2?"block":"none";
+      rematchBtn.style.display=host&&st.phase==="over"?"block":"none";
+    }else if(data.type==="error"){
+      showToast("Комната недоступна");leaveGame(true,false);
     }
   };
-  ws.onclose = function () {
-    if (roomCode !== null) { showToast("Соединение потеряно"); leaveGame(true); }
-  };
-  ws.onerror = function () {};
+  ws.onclose=function(){if(roomCode!==null){showToast("Соединение потеряно");leaveGame(true,false);}};
+  ws.onerror=function(){};
 }
 
-function findMe(state) {
-  if (!state) return null;
-  for (var i = 0; i < state.players.length; i++) {
-    if (state.players[i].user_id === MY_UID) return state.players[i];
-  }
+function findMe(st){
+  if(!st)return null;
+  for(var i=0;i<st.players.length;i++)if(st.players[i].user_id===MY_UID)return st.players[i];
   return null;
 }
 
-function syncSelfFromServer() {
-  var me = findMe(serverState);
-  if (!me) return;
-  if (serverState.phase !== "battle") {
-    localSelf.x = me.x; localSelf.y = me.y;
-    localSelf.vx = 0; localSelf.vy = 0;
-    return;
+function syncSelf(){
+  var me=findMe(serverState);
+  if(!me)return;
+  if(serverState.phase!=="battle"){localSelf.x=me.x;localSelf.y=me.y;localSelf.vx=0;localSelf.vy=0;return;}
+  if(Math.hypot(me.x-localSelf.x,me.y-localSelf.y)>TELE){localSelf.x=me.x;localSelf.y=me.y;}
+  else{localSelf.x+=(me.x-localSelf.x)*SOFT;localSelf.y+=(me.y-localSelf.y)*SOFT;}
+}
+
+// ==================== ЭКРАН, ДЖОЙСТИК ====================
+var isRot=false,vw=window.innerWidth,vh=window.innerHeight;
+var canvas=$("gcanvas"),ctx=canvas.getContext("2d");
+
+function resizeGame(){
+  vw=window.innerWidth;vh=window.innerHeight;isRot=vw<vh;
+  if(isRot){
+    elGame.style.width=vh+"px";elGame.style.height=vw+"px";
+    elGame.style.transform="translate("+((vw-vh)/2)+"px,"+((vh-vw)/2)+"px) rotate(90deg)";
+  }else{
+    elGame.style.width=vw+"px";elGame.style.height=vh+"px";elGame.style.transform="none";
   }
-  var dist = Math.hypot(me.x - localSelf.x, me.y - localSelf.y);
-  if (dist > SELF_CORRECT_TELEPORT) {
-    localSelf.x = me.x; localSelf.y = me.y;
-  } else {
-    localSelf.x += (me.x - localSelf.x) * SELF_CORRECT_SOFT;
-    localSelf.y += (me.y - localSelf.y) * SELF_CORRECT_SOFT;
-  }
+  var cw=isRot?vh:vw,ch=isRot?vw:vh,dpr=window.devicePixelRatio||1;
+  canvas.width=cw*dpr;canvas.height=ch*dpr;
+  canvas.style.width=cw+"px";canvas.style.height=ch+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener("resize",resizeGame);
+window.addEventListener("orientationchange",function(){setTimeout(resizeGame,200);});
+
+function localPoint(x,y){
+  var r=elGame.getBoundingClientRect();
+  return isRot?{x:y-r.top,y:r.right-x}:{x:x-r.left,y:y-r.top};
 }
 
-document.getElementById("exit-btn").addEventListener("click", function () { leaveGame(false); });
+var joyZone=$("joy-zone"),joyBase=$("joy-base"),joyStick=$("joy-stick"),kickBtn=$("kick-btn");
+var joyId=null,jbx=0,jby=0,JMAX=45,JDEAD=0.06;
 
-var isRotated = false;
-var vw = window.innerWidth, vh = window.innerHeight;
-
-function resizeGame() {
-  vw = window.innerWidth; vh = window.innerHeight;
-  isRotated = vw < vh;
-  var container = elGame;
-  if (isRotated) {
-    container.style.width = vh + "px";
-    container.style.height = vw + "px";
-    var tx = (vw - vh) / 2, ty = (vh - vw) / 2;
-    container.style.transform = "translate(" + tx + "px," + ty + "px) rotate(90deg)";
-  } else {
-    container.style.width = vw + "px";
-    container.style.height = vh + "px";
-    container.style.transform = "none";
-  }
-  var canvas = document.getElementById("gcanvas");
-  var cw = isRotated ? vh : vw;
-  var ch = isRotated ? vw : vh;
-  var dpr = window.devicePixelRatio || 1;
-  canvas.width = cw * dpr;
-  canvas.height = ch * dpr;
-  canvas.style.width = cw + "px";
-  canvas.style.height = ch + "px";
-  var ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-window.addEventListener("resize", resizeGame);
-window.addEventListener("orientationchange", function () { setTimeout(resizeGame, 200); });
-
-function localPointFromTouch(clientX, clientY) {
-  var rect = elGame.getBoundingClientRect();
-  if (isRotated) return { x: clientY - rect.top, y: rect.right - clientX };
-  return { x: clientX - rect.left, y: clientY - rect.top };
-}
-
-var joyZone = document.getElementById("joy-zone");
-var joyBase = document.getElementById("joy-base");
-var joyStick = document.getElementById("joy-stick");
-var kickBtn = document.getElementById("kick-btn");
-
-var joyTouchId = null;
-var joyBaseX = 0, joyBaseY = 0;
-var JOY_MAX_R = 45;
-var JOY_DEAD = 0.06;
-
-function joyShow(x, y) {
-  joyBase.style.display = "block";
-  joyStick.style.display = "block";
-  joyBase.style.left = (x - 50) + "px";
-  joyBase.style.top = (y - 50) + "px";
-  joyStick.style.left = (x - 23) + "px";
-  joyStick.style.top = (y - 23) + "px";
-}
-function joyHide() {
-  joyBase.style.display = "none";
-  joyStick.style.display = "none";
-  joyDX = 0; joyDY = 0;
-  joyActive = false;
-  joyTouchId = null;
-}
-function joyUpdateStick(dx, dy) {
-  var d = Math.hypot(dx, dy);
-  var maxD = JOY_MAX_R;
-  if (d > maxD) { dx = dx / d * maxD; dy = dy / d * maxD; }
-  joyStick.style.left = (joyBaseX + dx - 23) + "px";
-  joyStick.style.top = (joyBaseY + dy - 23) + "px";
-  var mag = Math.min(1, d / maxD);
-  if (mag < JOY_DEAD) { joyDX = 0; joyDY = 0; }
-  else { joyDX = dx / maxD; joyDY = dy / maxD; }
-}
-
-joyZone.addEventListener("touchstart", function (ev) {
+function joyHide(){joyBase.style.display="none";joyStick.style.display="none";joyDX=0;joyDY=0;joyId=null;}
+joyZone.addEventListener("touchstart",function(ev){
   ev.preventDefault();
-  if (joyTouchId !== null) return;
-  var t = ev.changedTouches[0];
-  var p = localPointFromTouch(t.clientX, t.clientY);
-  joyTouchId = t.identifier;
-  joyBaseX = p.x; joyBaseY = p.y;
-  joyActive = true;
-  joyShow(p.x, p.y);
-  joyDX = 0; joyDY = 0;
-}, { passive: false });
-
-window.addEventListener("touchmove", function (ev) {
-  if (joyTouchId === null) return;
-  for (var i = 0; i < ev.changedTouches.length; i++) {
-    var t = ev.changedTouches[i];
-    if (t.identifier === joyTouchId) {
-      ev.preventDefault();
-      var p = localPointFromTouch(t.clientX, t.clientY);
-      joyUpdateStick(p.x - joyBaseX, p.y - joyBaseY);
-    }
+  if(joyId!==null)return;
+  var t=ev.changedTouches[0],p=localPoint(t.clientX,t.clientY);
+  joyId=t.identifier;jbx=p.x;jby=p.y;
+  joyBase.style.display="block";joyStick.style.display="block";
+  joyBase.style.left=(p.x-50)+"px";joyBase.style.top=(p.y-50)+"px";
+  joyStick.style.left=(p.x-23)+"px";joyStick.style.top=(p.y-23)+"px";
+  joyDX=0;joyDY=0;
+},{passive:false});
+window.addEventListener("touchmove",function(ev){
+  if(joyId===null)return;
+  for(var i=0;i<ev.changedTouches.length;i++){
+    var t=ev.changedTouches[i];
+    if(t.identifier!==joyId)continue;
+    ev.preventDefault();
+    var p=localPoint(t.clientX,t.clientY),dx=p.x-jbx,dy=p.y-jby,d=Math.hypot(dx,dy);
+    if(d>JMAX){dx=dx/d*JMAX;dy=dy/d*JMAX;}
+    joyStick.style.left=(jbx+dx-23)+"px";joyStick.style.top=(jby+dy-23)+"px";
+    if(Math.min(1,d/JMAX)<JDEAD){joyDX=0;joyDY=0;}else{joyDX=dx/JMAX;joyDY=dy/JMAX;}
   }
-}, { passive: false });
-
-function joyEndHandler(ev) {
-  if (joyTouchId === null) return;
-  for (var i = 0; i < ev.changedTouches.length; i++) {
-    if (ev.changedTouches[i].identifier === joyTouchId) joyHide();
-  }
-}
-window.addEventListener("touchend", joyEndHandler, { passive: false });
-window.addEventListener("touchcancel", joyEndHandler, { passive: false });
-
-var kickTouchId = null;
-kickBtn.addEventListener("touchstart", function (ev) {
+},{passive:false});
+var kickId=null;
+kickBtn.addEventListener("touchstart",function(ev){
   ev.preventDefault();
-  kickTouchId = ev.changedTouches[0].identifier;
-  kickPressed = true;
-  kickBtn.classList.add("active");
-}, { passive: false });
+  kickId=ev.changedTouches[0].identifier;kickPressed=true;kickBtn.classList.add("active");
+},{passive:false});
+function touchEnd(ev){
+  for(var i=0;i<ev.changedTouches.length;i++){
+    var id=ev.changedTouches[i].identifier;
+    if(id===joyId)joyHide();
+    if(id===kickId){kickId=null;kickPressed=false;kickBtn.classList.remove("active");}
+  }
+}
+window.addEventListener("touchend",touchEnd,{passive:false});
+window.addEventListener("touchcancel",touchEnd,{passive:false});
 
-function kickEndHandler(ev) {
-  if (kickTouchId === null) return;
-  for (var i = 0; i < ev.changedTouches.length; i++) {
-    if (ev.changedTouches[i].identifier === kickTouchId) {
-      kickTouchId = null; kickPressed = false; kickBtn.classList.remove("active");
+// ==================== ФИЗИКА СВОЕЙ ФИГУРЫ ====================
+function stepSelf(dt){
+  if(!serverState||serverState.phase!=="battle")return;
+  var k=(serverState.player_speed||100)/100;
+  var a=1-Math.exp(-ACCEL*dt);
+  localSelf.vx+=(joyDX*SPEED*k-localSelf.vx)*a;
+  localSelf.vy+=(joyDY*SPEED*k-localSelf.vy)*a;
+  localSelf.x+=localSelf.vx*dt;localSelf.y+=localSelf.vy*dt;
+  var c=clampPos(localSelf.x,localSelf.y);localSelf.x=c[0];localSelf.y=c[1];
+
+  serverState.players.forEach(function(p){
+    if(p.user_id===MY_UID||p.team===myTeam)return;
+    var rp=remoteRender[p.user_id];
+    if(!rp)return;
+    var dx=localSelf.x-rp.x,dy=localSelf.y-rp.y,d=Math.hypot(dx,dy),md=PR*2;
+    if(d>0&&d<md){
+      localSelf.x+=dx/d*(md-d)*0.5;localSelf.y+=dy/d*(md-d)*0.5;
+      var cc=clampPos(localSelf.x,localSelf.y);localSelf.x=cc[0];localSelf.y=cc[1];
     }
+  });
+
+  var bx=localSelf.x-ballRender.x,by=localSelf.y-ballRender.y,bd=Math.hypot(bx,by),bm=PR+BR;
+  if(bd<bm&&bd>0.001){
+    localSelf.x+=bx/bd*(bm-bd);localSelf.y+=by/bd*(bm-bd);
+    var bc=clampPos(localSelf.x,localSelf.y);localSelf.x=bc[0];localSelf.y=bc[1];
   }
 }
-window.addEventListener("touchend", kickEndHandler, { passive: false });
-window.addEventListener("touchcancel", kickEndHandler, { passive: false });
 
-function stepLocalSelf(dt) {
-  if (!serverState || serverState.phase !== "battle") return;
-  var speedK = (serverState.player_speed || 100) / 100;
-  var desiredVx = joyDX * PLAYER_SPEED * speedK;
-  var desiredVy = joyDY * PLAYER_SPEED * speedK;
-  var accel = 1 - Math.exp(-PLAYER_ACCEL * dt);
-  localSelf.vx += (desiredVx - localSelf.vx) * accel;
-  localSelf.vy += (desiredVy - localSelf.vy) * accel;
-  localSelf.x += localSelf.vx * dt;
-  localSelf.y += localSelf.vy * dt;
-  var c = clampPlayerPos(localSelf.x, localSelf.y);
-  localSelf.x = c[0]; localSelf.y = c[1];
+function maybeSend(now){
+  if(!connected||!ws||ws.readyState!==1||now-lastSend<SEND_MS)return;
+  lastSend=now;
+  try{
+    ws.send(JSON.stringify({action:"move",x:localSelf.x,y:localSelf.y,
+      vx:localSelf.vx,vy:localSelf.vy,kick:kickPressed}));
+  }catch(e){}
+}
 
-  for (var i = 0; i < serverState.players.length; i++) {
-    var p = serverState.players[i];
-    if (p.user_id === MY_UID) continue;
-    if (p.team === myTeam) continue;
-    var rp = remoteRender[p.user_id];
-    if (!rp) continue;
-    var dx = localSelf.x - rp.x, dy = localSelf.y - rp.y;
-    var d = Math.hypot(dx, dy);
-    var minD = PLAYER_R * 2;
-    if (d > 0 && d < minD) {
-      var ux = dx / d, uy = dy / d;
-      var overlap = (minD - d) * 0.5;
-      localSelf.x += ux * overlap; localSelf.y += uy * overlap;
-      var cc = clampPlayerPos(localSelf.x, localSelf.y);
-      localSelf.x = cc[0]; localSelf.y = cc[1];
+// ==================== ИНТЕРПОЛЯЦИЯ ====================
+function lerp(a,b,t){return a+(b-a)*t;}
+function rp(p,x,y,vx,vy,g){
+  return {x:x,y:y,vx:vx||0,vy:vy||0,name:p.name,team:p.team,slot:p.slot,jersey:p.jersey||0,glow:g};
+}
+function fromSnap(s,dt){
+  var o={};
+  s.players.forEach(function(p){
+    if(p.user_id===MY_UID)return;
+    o[p.user_id]=rp(p,p.x+(p.vx||0)*dt,p.y+(p.vy||0)*dt,p.vx,p.vy,p.kick_glow);
+  });
+  remoteRender=o;
+  ballRender.x=s.ball.x+(s.ball.vx||0)*dt;
+  ballRender.y=s.ball.y+(s.ball.vy||0)*dt;
+}
+function renderInterp(now){
+  var n=buf.length;
+  if(!n)return;
+  var rt=now-DELAY,last=buf[n-1];
+  if(n===1||rt<=buf[0].t){fromSnap(buf[0],0);return;}
+  if(rt>last.t){fromSnap(last,Math.min(rt-last.t,EXTRAP)/1000);return;}
+  var i=0;
+  while(i<n-2&&buf[i+1].t<rt)i++;
+  var A=buf[i],B=buf[i+1],span=B.t-A.t;
+  var al=span>0?clamp((rt-A.t)/span,0,1):1;
+  var am={};
+  A.players.forEach(function(p){am[p.user_id]=p;});
+  var o={};
+  B.players.forEach(function(pb){
+    if(pb.user_id===MY_UID)return;
+    var pa=am[pb.user_id],x=pb.x,y=pb.y,g=pb.kick_glow,vx=pb.vx,vy=pb.vy;
+    if(pa){
+      if(Math.hypot(pb.x-pa.x,pb.y-pa.y)<=SNAP_P){x=lerp(pa.x,pb.x,al);y=lerp(pa.y,pb.y,al);}
+      vx=lerp(pa.vx||0,pb.vx||0,al);vy=lerp(pa.vy||0,pb.vy||0,al);
+      if(al<0.5)g=pa.kick_glow;
     }
-  }
-
-  var bdx = localSelf.x - ballRender.x;
-  var bdy = localSelf.y - ballRender.y;
-  var bd = Math.hypot(bdx, bdy);
-  var bmin = PLAYER_R + BALL_R;
-  if (bd < bmin && bd > 0.001) {
-    var bux = bdx / bd, buy = bdy / bd;
-    var boverlap = bmin - bd;
-    localSelf.x += bux * boverlap;
-    localSelf.y += buy * boverlap;
-    var bc = clampPlayerPos(localSelf.x, localSelf.y);
-    localSelf.x = bc[0];
-    localSelf.y = bc[1];
-  }
+    o[pb.user_id]=rp(pb,x,y,vx,vy,g);
+  });
+  remoteRender=o;
+  if(Math.hypot(B.ball.x-A.ball.x,B.ball.y-A.ball.y)>SNAP_B){ballRender.x=B.ball.x;ballRender.y=B.ball.y;}
+  else{ballRender.x=lerp(A.ball.x,B.ball.x,al);ballRender.y=lerp(A.ball.y,B.ball.y,al);}
 }
 
-function maybeSendState(now) {
-  if (!connected || !ws || ws.readyState !== 1) return;
-  if (now - lastSendTime < SEND_INTERVAL) return;
-  lastSendTime = now;
-  try {
-    ws.send(JSON.stringify({
-      action: "move",
-      x: localSelf.x, y: localSelf.y,
-      vx: localSelf.vx, vy: localSelf.vy,
-      kick: kickPressed
-    }));
-  } catch (e) {}
+// ==================== РЕНДЕР ====================
+function fieldMap(cw,ch){
+  var top=66,bottom=18,side=22+GD;
+  var s=Math.min((cw-side*2)/FW,(ch-top-bottom)/FH);
+  return {s:s,x:(cw-FW*s)/2,y:top+(ch-top-bottom-FH*s)/2};
 }
-
-function lerp(a, b, t) { return a + (b - a) * t; }
-
-function lerpPos(ax, ay, bx, by, alpha, snapDist) {
-  if (Math.hypot(bx - ax, by - ay) > snapDist) return [bx, by];
-  return [lerp(ax, bx, alpha), lerp(ay, by, alpha)];
-}
-
-function applySnapshot(s) {
-  var out = {};
-  for (var i = 0; i < s.players.length; i++) {
-    var p = s.players[i];
-    if (p.user_id === MY_UID) continue;
-    out[p.user_id] = {
-      x: p.x, y: p.y, vx: p.vx || 0, vy: p.vy || 0,
-      name: p.name, team: p.team, slot: p.slot, jersey: p.jersey || 0,
-      kick_glow: p.kick_glow
-    };
-  }
-  remoteRender = out;
-  ballRender.x = s.ball.x;
-  ballRender.y = s.ball.y;
-}
-
-function extrapolateFrom(s, dtSec) {
-  var out = {};
-  for (var i = 0; i < s.players.length; i++) {
-    var p = s.players[i];
-    if (p.user_id === MY_UID) continue;
-    out[p.user_id] = {
-      x: p.x + (p.vx || 0) * dtSec,
-      y: p.y + (p.vy || 0) * dtSec,
-      vx: p.vx || 0, vy: p.vy || 0,
-      name: p.name, team: p.team, slot: p.slot, jersey: p.jersey || 0,
-      kick_glow: p.kick_glow
-    };
-  }
-  remoteRender = out;
-  ballRender.x = s.ball.x + (s.ball.vx || 0) * dtSec;
-  ballRender.y = s.ball.y + (s.ball.vy || 0) * dtSec;
-}
-
-function renderInterpolated(now) {
-  var n = snapshotBuffer.length;
-  if (n === 0) return;
-  if (n === 1) {
-    applySnapshot(snapshotBuffer[0]);
-    return;
-  }
-
-  var rt = now - RENDER_DELAY_MS;
-
-  if (rt <= snapshotBuffer[0].t) {
-    applySnapshot(snapshotBuffer[0]);
-    return;
-  }
-
-  var lastSnap = snapshotBuffer[n - 1];
-  if (rt > lastSnap.t) {
-    var dtMs = rt - lastSnap.t;
-    if (dtMs > EXTRAPOLATE_MAX_MS) dtMs = EXTRAPOLATE_MAX_MS;
-    extrapolateFrom(lastSnap, dtMs / 1000);
-    return;
-  }
-
-  var A = null, B = null;
-  for (var i = 0; i < n - 1; i++) {
-    if (snapshotBuffer[i].t <= rt && rt <= snapshotBuffer[i + 1].t) {
-      A = snapshotBuffer[i];
-      B = snapshotBuffer[i + 1];
-      break;
-    }
-  }
-  if (!A) {
-    applySnapshot(snapshotBuffer[n - 1]);
-    return;
-  }
-
-  var span = B.t - A.t;
-  var alpha = span > 0 ? (rt - A.t) / span : 1;
-  if (alpha < 0) alpha = 0;
-  if (alpha > 1) alpha = 1;
-
-  var aById = {};
-  for (var ai = 0; ai < A.players.length; ai++) aById[A.players[ai].user_id] = A.players[ai];
-
-  var out = {};
-  for (var bi = 0; bi < B.players.length; bi++) {
-    var pb = B.players[bi];
-    if (pb.user_id === MY_UID) continue;
-    var pa = aById[pb.user_id];
-    var px, py, glow;
-    if (pa) {
-      var pos = lerpPos(pa.x, pa.y, pb.x, pb.y, alpha, SNAP_DIST_PLAYER);
-      px = pos[0]; py = pos[1];
-      glow = alpha < 0.5 ? pa.kick_glow : pb.kick_glow;
-    } else {
-      px = pb.x; py = pb.y;
-      glow = pb.kick_glow;
-    }
-    out[pb.user_id] = {
-      x: px, y: py,
-      vx: lerp(pa ? (pa.vx || 0) : 0, pb.vx || 0, alpha),
-      vy: lerp(pa ? (pa.vy || 0) : 0, pb.vy || 0, alpha),
-      name: pb.name, team: pb.team, slot: pb.slot, jersey: pb.jersey || 0,
-      kick_glow: glow
-    };
-  }
-  remoteRender = out;
-
-  var bp = lerpPos(A.ball.x, A.ball.y, B.ball.x, B.ball.y, alpha, SNAP_DIST_BALL);
-  ballRender.x = bp[0];
-  ballRender.y = bp[1];
-}
-
-var canvas = document.getElementById("gcanvas");
-var ctx = canvas.getContext("2d");
-
-var fieldCanvas = document.createElement("canvas");
-fieldCanvas.width = OFFSCREEN_W;
-fieldCanvas.height = OFFSCREEN_H;
-var fieldCtx = fieldCanvas.getContext("2d");
-var fieldColorDrawn = null;
-
-function fieldToScreen(cw, ch) {
-  var margin = 40;
-  var scale = Math.min((cw - margin * 2 - 2 * GOAL_DEPTH) / FIELD_W,
-                       (ch - margin * 2 - 60) / FIELD_H);
-  var offX = (cw - FIELD_W * scale) / 2;
-  var offY = (ch - FIELD_H * scale) / 2 + 30;
-  return { scale: scale, offX: offX, offY: offY };
-}
-
-function roundRectPathTo(c, x, y, w, h, r) {
-  c.beginPath();
-  c.moveTo(x + r, y);
-  c.lineTo(x + w - r, y);
-  c.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
-  c.lineTo(x + w, y + h - r);
-  c.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
-  c.lineTo(x + r, y + h);
-  c.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
-  c.lineTo(x, y + r);
-  c.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
-  c.closePath();
-}
-
-// Рисует статику в offscreen canvas с запасом под ворота.
-// Внутри offscreen поле смещено на GOAL_DEPTH вправо.
-function redrawFieldStatic(colorKey) {
-  var c = fieldCtx;
-  var baseColor = FIELD_COLORS[colorKey] || FIELD_COLORS.gray;
-  var offX = GOAL_DEPTH; // сдвиг поля внутри offscreen
-
-  c.clearRect(0, 0, OFFSCREEN_W, OFFSCREEN_H);
-  c.fillStyle = "#111";
-  c.fillRect(0, 0, OFFSCREEN_W, OFFSCREEN_H);
-
-  // Заливка поля
-  roundRectPathTo(c, offX, 0, FIELD_W, FIELD_H, CORNER_R);
-  c.fillStyle = baseColor;
-  c.fill();
-
-  c.save();
-  roundRectPathTo(c, offX, 0, FIELD_W, FIELD_H, CORNER_R);
-  c.clip();
-
-  // Полосы
-  c.fillStyle = "rgba(0,0,0,0.06)";
-  var sections = 8;
-  for (var i = 0; i < sections; i += 2) {
-    c.fillRect(offX + i * (FIELD_W / sections), 0, (FIELD_W / sections), FIELD_H);
-  }
-
-  c.strokeStyle = "#ffffff";
-  c.lineWidth = 2;
-
-  // Центральная линия
-  c.beginPath();
-  c.moveTo(offX + FIELD_W / 2, 0);
-  c.lineTo(offX + FIELD_W / 2, FIELD_H);
-  c.stroke();
-
-  // Центральный круг
-  c.beginPath();
-  c.arc(offX + FIELD_W / 2, FIELD_H / 2, 65, 0, Math.PI * 2);
-  c.stroke();
-
-  c.fillStyle = "#fff";
-  c.beginPath();
-  c.arc(offX + FIELD_W / 2, FIELD_H / 2, 3, 0, Math.PI * 2);
-  c.fill();
-
-  // Точки пенальти
-  c.beginPath(); c.arc(offX + 70, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
-  c.beginPath(); c.arc(offX + 770, FIELD_H / 2, 3, 0, Math.PI * 2); c.fill();
-
-  // Дуги
-  c.beginPath();
-  c.arc(offX + 70, FIELD_H / 2, 90, -Math.PI * 0.32, Math.PI * 0.32);
-  c.stroke();
-  c.beginPath();
-  c.arc(offX + 770, FIELD_H / 2, 90, Math.PI - Math.PI * 0.32, Math.PI + Math.PI * 0.32);
-  c.stroke();
-
-  c.restore();
-
-  // Контур поля
-  c.strokeStyle = "#ffffff";
-  c.lineWidth = 2;
-  roundRectPathTo(c, offX, 0, FIELD_W, FIELD_H, CORNER_R);
-  c.stroke();
-
-  // ===== ВОРОТА (теперь внутри offscreen) =====
-
-  // Заливка ворот (светлая)
-  c.fillStyle = "#e8e8e8";
-  c.fillRect(0, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP); // левые
-  c.fillRect(offX + FIELD_W, GOAL_TOP, GOAL_DEPTH, GOAL_BOTTOM - GOAL_TOP); // правые
-
-  // Обводка ворот
-  c.strokeStyle = "#000";
-  c.lineWidth = 2;
-  c.strokeRect(0.5, GOAL_TOP, GOAL_DEPTH - 1, GOAL_BOTTOM - GOAL_TOP);
-  c.strokeRect(offX + FIELD_W + 0.5, GOAL_TOP, GOAL_DEPTH - 1, GOAL_BOTTOM - GOAL_TOP);
-
-  // Сетка внутри ворот
-  c.strokeStyle = "rgba(0,0,0,0.25)";
-  c.lineWidth = 1;
-  for (var gx = 4; gx < GOAL_DEPTH; gx += 5) {
-    c.beginPath();
-    c.moveTo(gx, GOAL_TOP);
-    c.lineTo(gx, GOAL_BOTTOM);
-    c.stroke();
-  }
-  for (var gx2 = offX + FIELD_W + 4; gx2 < offX + FIELD_W + GOAL_DEPTH; gx2 += 5) {
-    c.beginPath();
-    c.moveTo(gx2, GOAL_TOP);
-    c.lineTo(gx2, GOAL_BOTTOM);
-    c.stroke();
-  }
-  // Горизонтальные линии сетки
-  for (var gy = GOAL_TOP + 12; gy < GOAL_BOTTOM; gy += 12) {
-    c.beginPath();
-    c.moveTo(0, gy);
-    c.lineTo(GOAL_DEPTH, gy);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(offX + FIELD_W, gy);
-    c.lineTo(offX + FIELD_W + GOAL_DEPTH, gy);
-    c.stroke();
-  }
-
-  // Верхняя и нижняя толстые линии ворот
-  c.strokeStyle = "#ffffff";
-  c.lineWidth = 3;
-  c.beginPath();
-  c.moveTo(0, GOAL_TOP); c.lineTo(GOAL_DEPTH, GOAL_TOP);
-  c.moveTo(0, GOAL_BOTTOM); c.lineTo(GOAL_DEPTH, GOAL_BOTTOM);
-  c.moveTo(offX + FIELD_W, GOAL_TOP); c.lineTo(offX + FIELD_W + GOAL_DEPTH, GOAL_TOP);
-  c.moveTo(offX + FIELD_W, GOAL_BOTTOM); c.lineTo(offX + FIELD_W + GOAL_DEPTH, GOAL_BOTTOM);
-  c.stroke();
-
-  fieldColorDrawn = colorKey;
-}
-
-function drawField(cw, ch, state) {
-  var colorKey = state && state.field_color ? state.field_color : "gray";
-  if (fieldColorDrawn !== colorKey) {
-    redrawFieldStatic(colorKey);
-  }
-
-  ctx.fillStyle = "#111";
-  ctx.fillRect(0, 0, cw, ch);
-
-  var m = fieldToScreen(cw, ch);
-  var drawX = m.offX - GOAL_DEPTH * m.scale;
-  var drawY = m.offY;
-  var drawW = OFFSCREEN_W * m.scale;
-  var drawH = OFFSCREEN_H * m.scale;
-  ctx.drawImage(fieldCanvas, drawX, drawY, drawW, drawH);
-}
-
-function drawPlayer(m, x, y, team, slot, name, glow, jersey, vx, vy) {
-  var sx = m.offX + x * m.scale;
-  var sy = m.offY + y * m.scale;
-  var r = PLAYER_R * m.scale;
-
-  var displayNumber = (jersey > 0) ? jersey : slot;
-
-  // Тень
+function rr(x,y,w,h,r){
   ctx.beginPath();
-  ctx.ellipse(sx, sy + r * 0.5, r * 0.9, r * 0.3, 0, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,0.35)";
-  ctx.fill();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arc(x+w-r,y+r,r,-Math.PI/2,0);
+  ctx.lineTo(x+w,y+h-r);ctx.arc(x+w-r,y+h-r,r,0,Math.PI/2);
+  ctx.lineTo(x+r,y+h);ctx.arc(x+r,y+h-r,r,Math.PI/2,Math.PI);
+  ctx.lineTo(x,y+r);ctx.arc(x+r,y+r,r,Math.PI,Math.PI*1.5);ctx.closePath();
+}
+function circ(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);}
 
-  // Градиентная заливка
-  var grad = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
-  if (team === "left") {
-    grad.addColorStop(0, "#6a8fec");
-    grad.addColorStop(1, "#2a4a9c");
-  } else {
-    grad.addColorStop(0, "#ec7070");
-    grad.addColorStop(1, "#9c3030");
+function drawField(cw,ch,m,key){
+  var s=m.s,ox=m.x,oy=m.y,W=FW*s,H=FH*s,d=GD*s,gt=oy+GT*s,gh=(GB-GT)*s,i,y;
+  ctx.fillStyle="#111";ctx.fillRect(0,0,cw,ch);
+
+  ctx.fillStyle="#262626";
+  ctx.fillRect(ox-d,gt,d,gh);ctx.fillRect(ox+W,gt,d,gh);
+  ctx.strokeStyle="rgba(255,255,255,0.2)";ctx.lineWidth=1;ctx.beginPath();
+  for(i=1;i<3;i++){
+    ctx.moveTo(ox-i*6*s,gt);ctx.lineTo(ox-i*6*s,gt+gh);
+    ctx.moveTo(ox+W+i*6*s,gt);ctx.lineTo(ox+W+i*6*s,gt+gh);
   }
-  ctx.beginPath();
-  ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "#000";
+  for(y=gt+10*s;y<gt+gh;y+=10*s){
+    ctx.moveTo(ox-d,y);ctx.lineTo(ox,y);ctx.moveTo(ox+W,y);ctx.lineTo(ox+W+d,y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle="#fff";ctx.lineWidth=3;ctx.beginPath();
+  ctx.moveTo(ox,gt);ctx.lineTo(ox-d,gt);ctx.lineTo(ox-d,gt+gh);ctx.lineTo(ox,gt+gh);
+  ctx.moveTo(ox+W,gt);ctx.lineTo(ox+W+d,gt);ctx.lineTo(ox+W+d,gt+gh);ctx.lineTo(ox+W,gt+gh);
   ctx.stroke();
 
-  // Стрелка в сторону движения
-  var speed = Math.hypot(vx || 0, vy || 0);
-  if (speed > 15) {
-    var angle = Math.atan2(vy || 0, vx || 0);
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(angle);
-    ctx.beginPath();
-    ctx.moveTo(r * 0.65, 0);
-    ctx.lineTo(-r * 0.15, -r * 0.45);
-    ctx.lineTo(-r * 0.15, r * 0.45);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.fill();
-    ctx.restore();
-  }
+  rr(ox,oy,W,H,CR*s);ctx.fillStyle=FCOL[key]||FCOL.gray;ctx.fill();
+  ctx.save();rr(ox,oy,W,H,CR*s);ctx.clip();
+  ctx.fillStyle="rgba(0,0,0,0.07)";
+  for(i=0;i<8;i+=2)ctx.fillRect(ox+i*W/8,oy,W/8,H);
+  ctx.strokeStyle="rgba(255,255,255,0.85)";ctx.lineWidth=Math.max(2,2.5*s);
+  ctx.beginPath();ctx.moveTo(ox+W/2,oy);ctx.lineTo(ox+W/2,oy+H);ctx.stroke();
+  circ(ox+W/2,oy+H/2,65*s);ctx.stroke();
+  ctx.beginPath();ctx.arc(ox+70*s,oy+H/2,90*s,-Math.PI*0.32,Math.PI*0.32);ctx.stroke();
+  ctx.beginPath();ctx.arc(ox+770*s,oy+H/2,90*s,Math.PI*0.68,Math.PI*1.32);ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,0.85)";
+  circ(ox+W/2,oy+H/2,3*s);ctx.fill();
+  circ(ox+70*s,oy+H/2,3*s);ctx.fill();
+  circ(ox+770*s,oy+H/2,3*s);ctx.fill();
+  ctx.restore();
+  rr(ox,oy,W,H,CR*s);ctx.strokeStyle="#fff";ctx.lineWidth=Math.max(2,3*s);ctx.stroke();
 
-  // Пульсирующее кольцо при ударе
-  if (glow) {
-    var kickAge = 1 - glow;
-    var ringR = r + 4 + kickAge * 12;
-    var ringA = glow * 0.9;
-    ctx.beginPath();
-    ctx.arc(sx, sy, ringR, 0, Math.PI * 2);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,100," + ringA + ")";
-    ctx.stroke();
-  }
-
-  // Номер
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold " + Math.round(14 * m.scale) + "px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(displayNumber), sx, sy);
-
-  // Имя
-  ctx.font = "bold " + Math.round(12 * m.scale) + "px sans-serif";
-  ctx.shadowColor = "#000";
-  ctx.shadowBlur = 3;
-  ctx.fillText(name, sx, sy + r + 12 * m.scale);
-  ctx.shadowBlur = 0;
+  [[0,GT],[0,GB],[FW,GT],[FW,GB]].forEach(function(p){
+    circ(ox+p[0]*s,oy+p[1]*s,Math.max(3,4.5*s));ctx.fillStyle="#fff";ctx.fill();
+    ctx.lineWidth=1.5;ctx.strokeStyle="#000";ctx.stroke();
+  });
 }
 
-function drawBall(m, x, y) {
-  var sx = m.offX + x * m.scale;
-  var sy = m.offY + y * m.scale;
-  var r = BALL_R * m.scale;
-
-  // Тень
-  ctx.beginPath();
-  ctx.ellipse(sx, sy + r * 0.6, r * 0.9, r * 0.3, 0, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
-  ctx.fill();
-
-  // Мяч с градиентом
-  var bg = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
-  bg.addColorStop(0, "#ffffa0");
-  bg.addColorStop(0.6, "#e8e000");
-  bg.addColorStop(1, "#a0a000");
-  ctx.beginPath();
-  ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  ctx.fillStyle = bg;
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = "#000";
-  ctx.stroke();
-
-  // Блик
-  ctx.beginPath();
-  ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.25, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.7)";
-  ctx.fill();
+function pushTrail(key,x,y,max){
+  var t=trails[key];
+  if(!t)t=trails[key]=[];
+  var l=t[t.length-1];
+  if(l&&Math.hypot(x-l[0],y-l[1])>80)t.length=0;
+  t.push([x,y]);
+  if(t.length>max)t.shift();
 }
-
-function fmtTime(t) {
-  t = Math.max(0, Math.round(t));
-  var mm = Math.floor(t / 60), ss = t % 60;
-  return (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
-}
-
-function phaseLabel(state) {
-  if (state.phase === "waiting") {
-    if (state.players.length < 2) return "ЖДЁМ ИГРОКОВ";
-    return state.host_id === MY_UID ? "НАЖМИТЕ НАЧАТЬ" : "ЖДЁМ НАЧАЛА";
+function drawTrail(m,key,r,color,alpha){
+  var t=trails[key];
+  if(!t)return;
+  ctx.fillStyle=color;
+  for(var i=0;i<t.length-1;i++){
+    var k=(i+1)/t.length;
+    ctx.globalAlpha=alpha*k;
+    circ(m.x+t[i][0]*m.s,m.y+t[i][1]*m.s,r*(0.35+0.65*k));ctx.fill();
   }
-  if (state.phase === "goal_pause") return "ГОЛ!";
-  if (state.phase === "over") {
-    if (state.winner === "draw") return "НИЧЬЯ";
-    if (state.winner === state.my_side) return "ПОБЕДА";
-    return "ПОРАЖЕНИЕ";
+  ctx.globalAlpha=1;
+}
+
+function drawPlayer(m,x,y,team,slot,name,jersey,isMe,glow,teamColor){
+  var sx=m.x+x*m.s,sy=m.y+y*m.s,r=PR*m.s;
+  var num=jersey>0?jersey:slot;
+  ctx.fillStyle="rgba(0,0,0,0.3)";
+  ctx.beginPath();ctx.ellipse(sx,sy+r*0.75,r*0.95,r*0.35,0,0,Math.PI*2);ctx.fill();
+  var g=ctx.createRadialGradient(sx-r*0.35,sy-r*0.35,r*0.1,sx,sy,r);
+  g.addColorStop(0,"rgba(255,255,255,0.45)");
+  g.addColorStop(0.4,teamColor);
+  g.addColorStop(1,teamColor);
+  circ(sx,sy,r);ctx.fillStyle=g;ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle=isMe?"#fff":"#000";ctx.stroke();
+  if(glow){circ(sx,sy,r);ctx.fillStyle="rgba(255,255,255,0.35)";ctx.fill();}
+  ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.font="bold "+Math.max(11,Math.round(r*1.05))+"px sans-serif";
+  ctx.fillStyle="#fff";ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=2;
+  ctx.fillText(String(num),sx,sy+1);
+  ctx.font="bold "+Math.max(10,Math.round(12*m.s))+"px sans-serif";ctx.shadowBlur=4;
+  ctx.fillText(name,sx,sy+r+11*m.s);
+  ctx.shadowBlur=0;
+}
+
+function drawBall(m,x,y){
+  var sx=m.x+x*m.s,sy=m.y+y*m.s,r=BR*m.s;
+  ctx.fillStyle="rgba(0,0,0,0.3)";
+  ctx.beginPath();ctx.ellipse(sx,sy+r*0.7,r*0.95,r*0.35,0,0,Math.PI*2);ctx.fill();
+  var g=ctx.createRadialGradient(sx-r*0.35,sy-r*0.35,r*0.1,sx,sy,r);
+  g.addColorStop(0,"#fff");g.addColorStop(1,"#c8c8c8");
+  circ(sx,sy,r);ctx.fillStyle=g;ctx.fill();
+  ctx.lineWidth=1.5;ctx.strokeStyle="#000";ctx.stroke();
+}
+
+function fmtTime(t){
+  t=Math.max(0,Math.round(t));
+  var mm=Math.floor(t/60),ss=t%60;
+  return (mm<10?"0":"")+mm+":"+(ss<10?"0":"")+ss;
+}
+function fmtGoalTime(sec){
+  var mm=Math.floor(sec/60),ss=sec%60;
+  return mm+":"+(ss<10?"0":"")+ss;
+}
+function phaseLabel(st){
+  if(st.phase==="waiting"){
+    if(st.players.length<2)return "ЖДЁМ ИГРОКОВ";
+    return st.host_id===MY_UID?"НАЖМИТЕ НАЧАТЬ":"ЖДЁМ НАЧАЛА";
+  }
+  if(st.phase==="over"){
+    if(st.winner==="draw")return "НИЧЬЯ";
+    return st.winner===st.my_side?"ПОБЕДА":"ПОРАЖЕНИЕ";
   }
   return "";
 }
 
-function drawHud(cw, ch, state) {
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
+// Группируем голы по игроку, сортируем по последнему голу (свежие сверху)
+function groupGoals(log, team){
+  var map={};
+  log.forEach(function(g){
+    if(g.team!==team)return;
+    var k=g.uid;
+    if(!map[k])map[k]={uid:k,name:g.name,jersey:g.jersey,times:[],last:0};
+    map[k].times.push(g.at_sec);
+    if(g.at_sec>map[k].last)map[k].last=g.at_sec;
+  });
+  var arr=[];
+  for(var k in map)arr.push(map[k]);
+  arr.sort(function(a,b){return b.last-a.last;});
+  return arr;
+}
 
-  ctx.font = "bold 32px sans-serif";
-  ctx.fillStyle = "#3a5fdc";
-  ctx.fillText(String(state.score.left), cw / 2 - 26, 40);
-  ctx.fillStyle = "#fff";
-  ctx.fillText(":", cw / 2, 40);
-  ctx.fillStyle = "#dc4040";
-  ctx.fillText(String(state.score.right), cw / 2 + 26, 40);
+function drawHud(cw,ch,m,st){
+  var pw=230,ph=42,px=cw/2-pw/2,py=8;
+  rr(px,py,pw,ph,10);ctx.fillStyle="rgba(0,0,0,0.65)";ctx.fill();
+  rr(px,py,62,ph,10);ctx.fillStyle=TEAM_L_COLOR;ctx.fill();
+  rr(px+pw-62,py,62,ph,10);ctx.fillStyle=TEAM_R_COLOR;ctx.fill();
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="#fff";
+  ctx.font="bold 28px sans-serif";
+  ctx.fillText(String(st.score.left),px+31,py+ph/2+1);
+  ctx.fillText(String(st.score.right),px+pw-31,py+ph/2+1);
+  ctx.fillStyle=(st.phase==="battle"&&st.timer<=10)?"#ff6a5a":"#fff";
+  ctx.font="bold 22px sans-serif";
+  ctx.fillText(fmtTime(st.timer),cw/2,py+ph/2+1);
+  ctx.fillStyle="#bbb";ctx.font="12px sans-serif";
+  var side=st.my_side==="left"?("ВЫ — "+st.left_name):(st.my_side==="right"?("ВЫ — "+st.right_name):"");
+  ctx.fillText("код "+(roomCode||"")+"  ·  "+side,cw/2,py+ph+12);
 
-  ctx.font = "13px sans-serif";
-  ctx.fillStyle = "#ccc";
-  var sideLabel = state.my_side === "left" ? "ВЫ — СИНИЕ" : (state.my_side === "right" ? "ВЫ — КРАСНЫЕ" : "");
-  ctx.fillText(fmtTime(state.timer) + "  ·  код " + (roomCode || "") + "  ·  " + sideLabel, cw / 2, 58);
+  // Лог голов
+  var lGoals=groupGoals(st.goal_log||[],"left");
+  var rGoals=groupGoals(st.goal_log||[],"right");
+  var lx=pxText(st.right_name,r-8, rx=px+pw+8, ly=py+ph+22;
+  ctx.font="11px sans-serif";
+  ctx.textAlign="right";
+  ctx.fillStyle=TEAM_L_COLOR;
+  ctx.fillText(st.left_name,lx,ly-2);
+  ctx.textAlign="left";
+  ctx.fillStyle=TEAM_R_COLOR;
+  ctx.fillx,ly-2);
 
-  var lbl = phaseLabel(state);
-  if (lbl) {
-    ctx.font = "bold 22px sans-serif";
-    ctx.fillStyle = "#fff";
-    ctx.shadowColor = "rgba(0,0,0,0.6)";
-    ctx.shadowBlur = 6;
-    ctx.fillText(lbl, cw / 2, ch / 2 - 20);
-    ctx.shadowBlur = 0;
+  ctx.font="12px sans-serif";
+  ctx.textBaseline="top";
+  var maxRows=6;
+  var lShow=lGoals.slice(0,maxRows);
+  var rShow=rGoals.slice(0,maxRows);
+  var rowH=30;
+  ctx.textAlign="right";
+  for(var i=0;i<lShow.length;i++){
+    var g=lShow[i];
+    var yy=ly+4+i*rowH;
+    ctx.fillStyle="#fff";
+    ctx.font="bold 12px sans-serif";
+    ctx.fillText("#"+g.jersey+" "+g.name,lx,yy);
+    ctx.fillStyle="#bbb";
+    ctx.font="11px sans-serif";
+    var ts=g.times.map(fmtGoalTime).join(", ");
+    ctx.fillText(ts,lx,yy+14);
+  }
+  ctx.textAlign="left";
+  for(var j=0;j<rShow.length;j++){
+    var g2=rShow[j];
+    var yy2=ly+4+j*rowH;
+    ctx.fillStyle="#fff";
+    ctx.font="bold 12px sans-serif";
+    ctx.fillText("#"+g2.jersey+" "+g2.name,rx,yy2);
+    ctx.fillStyle="#bbb";
+    ctx.font="11px sans-serif";
+    var ts2=g2.times.map(fmtGoalTime).join(", ");
+    ctx.fillText(ts2,rx,yy2+14);
+  }
+
+  var lbl=phaseLabel(st);
+  if(lbl){
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.font="bold 22px sans-serif";ctx.fillStyle="#fff";
+    ctx.shadowColor="rgba(0,0,0,0.7)";ctx.shadowBlur=6;
+    ctx.fillText(lbl,cw/2,m.y+FH*m.s/2-40);
+    ctx.shadowBlur=0;
+  }
+
+  if(st.is_private){
+    ctx.textAlign="center";ctx.textBaseline="top";
+    ctx.font="11px sans-serif";ctx.fillStyle="rgba(255,255,255,0.55)";
+    ctx.fillText("ПРИВАТНОЕ ЛОББИ · только по коду",cw/2,py+ph+30);
   }
 }
 
-function drawCountdown(cw, ch, m, state) {
-  var now = performance.now();
-  var cx = cw / 2;
-  var cy = m.offY + FIELD_H * m.scale / 2;
-  var base = Math.min(cw, ch);
-
-  if (state.phase === "countdown") {
-    var left = cdBase - (now - cdBaseT) / 1000;
-    if (left < 0) left = 0;
-    var digit = Math.ceil(left);
-    if (digit < 1) digit = 1;
-    if (digit > 5) digit = 5;
-    var frac = digit - left;
-    if (frac < 0) frac = 0;
-    if (frac > 1) frac = 1;
-    var size = base * 0.42 * (1.1 - 0.25 * frac);
-
-    ctx.save();
-    ctx.globalAlpha = 1 - 0.6 * frac;
-    ctx.font = "bold " + Math.round(size) + "px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,0.7)";
-    ctx.shadowBlur = 14;
-    ctx.fillStyle = "#e8e000";
-    ctx.fillText(String(digit), cx, cy);
-    ctx.restore();
+function drawCountdown(cw,ch,m,st,now){
+  var cx=cw/2,cy=m.y+FH*m.s/2,base=Math.min(cw,ch);
+  ctx.textAlign="center";ctx.textBaseline="middle";
+  if(st.phase==="countdown"){
+    var left=Math.max(0,cdBase-(now-cdT)/1000);
+    var digit=clamp(Math.ceil(left),1,5),frac=clamp(digit-left,0,1);
+    ctx.save();ctx.globalAlpha=1-0.6*frac;
+    ctx.font="bold "+Math.round(base*0.42*(1.1-0.25*frac))+"px sans-serif";
+    ctx.shadowColor="rgba(0,0,0,0.7)";ctx.shadowBlur=14;ctx.fillStyle="#e8e000";
+    ctx.fillText(String(digit),cx,cy);ctx.restore();
     return;
   }
-
-  if (now < goUntil) {
-    var k = (goUntil - now) / GO_SHOW_MS;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, k * 1.5);
-    ctx.font = "bold " + Math.round(base * 0.3) + "px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,0.7)";
-    ctx.shadowBlur = 14;
-    ctx.fillStyle = "#2fe06a";
-    ctx.fillText("GO!", cx, cy);
-    ctx.restore();
+  if(now<goUntil){
+    var k=(goUntil-now)/GO_MS;
+    ctx.save();ctx.globalAlpha=Math.min(1,k*1.5);
+    ctx.font="bold "+Math.round(base*0.3)+"px sans-serif";
+    ctx.shadowColor="rgba(0,0,0,0.7)";ctx.shadowBlur=14;ctx.fillStyle="#2fe06a";
+    ctx.fillText("GO!",cx,cy);ctx.restore();
   }
 }
 
-function render() {
-  var cw = isRotated ? vh : vw;
-  var ch = isRotated ? vw : vh;
+function drawGoalFx(cw,ch,m,now){
+  if(!goalFx)return;
+  var k=(now-goalFx.t)/GOAL_MS;
+  if(k>=1){goalFx=null;return;}
+  var col=goalFx.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
+  ctx.save();
+  ctx.globalAlpha=(1-k)*0.28;ctx.fillStyle=col;
+  ctx.fillRect(m.x,m.y,FW*m.s,FH*m.s);
+  var pop=k<0.15?k/0.15:1;
+  ctx.globalAlpha=Math.min(1,(1-k)*2);
+  ctx.font="bold "+Math.round(Math.min(cw,ch)*0.2*(0.4+0.6*pop))+"px sans-serif";
+  ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.lineWidth=6;ctx.strokeStyle="#000";ctx.strokeText("ГОЛ!",cw/2,m.y+FH*m.s/2);
+  ctx.fillStyle="#fff";ctx.fillText("ГОЛ!",cw/2,m.y+FH*m.s/2);
+  ctx.restore();
+}
+function drawParts(m,now){
+  for(var i=parts.length-1;i>=0;i--){
+    var p=parts[i],age=now-p.t;
+    if(age>p.life){parts.splice(i,1);continue;}
+    p.x+=p.vx*fdt;p.y+=p.vy*fdt;p.vx*=0.97;p.vy*=0.97;
+    ctx.globalAlpha=1-age/p.life;ctx.fillStyle=p.c;
+    circ(m.x+p.x*m.s,m.y+p.y*m.s,Math.max(1.5,3*m.s));ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+function drawRings(m,now){
+  for(var i=rings.length-1;i>=0;i--){
+    var rg=rings[i],k=(now-rg.t)/KICK_MS;
+    var pos=rg.uid===MY_UID?localSelf:remoteRender[rg.uid];
+    if(k>=1||!pos){rings.splice(i,1);continue;}
+    ctx.globalAlpha=1-k;ctx.lineWidth=3;
+    ctx.strokeStyle=rg.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
+    circ(m.x+pos.x*m.s,m.y+pos.y*m.s,PR*m.s*(1.2+k*1.6));ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
 
-  drawField(cw, ch, serverState);
-  var m = fieldToScreen(cw, ch);
-
-  if (serverState) {
-    for (var i = 0; i < serverState.players.length; i++) {
-      var p = serverState.players[i];
-      if (p.user_id === MY_UID) continue;
-      var r = remoteRender[p.user_id];
-      if (!r) continue;
-      drawPlayer(m, r.x, r.y, r.team, r.slot, r.name, r.kick_glow, r.jersey, r.vx, r.vy);
+function render(now){
+  var cw=isRot?vh:vw,ch=isRot?vw:vh;
+  var m=fieldMap(cw,ch);
+  drawField(cw,ch,m,serverState&&serverState.field_color);
+  if(!serverState){
+    ctx.fillStyle="#fff";ctx.font="16px sans-serif";ctx.textAlign="center";
+    ctx.fillText("Подключение...",cw/2,ch/2);return;
+  }
+  var me=findMe(serverState),list=[];
+  serverState.players.forEach(function(p){
+    if(p.user_id===MY_UID){
+      if(me)list.push({uid:p.user_id,x:localSelf.x,y:localSelf.y,team:me.team,slot:me.slot,name:MY_NAME,jersey:me.jersey||MY_JERSEY,glow:me.kick_glow,me:true});
+    }else{
+      var r=remoteRender[p.user_id];
+      if(r)list.push({uid:p.user_id,x:r.x,y:r.y,team:r.team,slot:r.slot,name:r.name,jersey:r.jersey,glow:r.glow,me:false});
     }
-    var me = findMe(serverState);
-    if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow, me.jersey, localSelf.vx, localSelf.vy);
-    drawBall(m, ballRender.x, ballRender.y);
-    drawHud(cw, ch, serverState);
-    drawCountdown(cw, ch, m, serverState);
-  } else {
-    ctx.fillStyle = "#fff";
-    ctx.font = "16px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Подключение...", cw / 2, ch / 2);
-  }
+  });
+  pushTrail("ball",ballRender.x,ballRender.y,14);
+  list.forEach(function(o){pushTrail(o.uid,o.x,o.y,7);});
+  list.forEach(function(o){drawTrail(m,o.uid,PR*m.s,o.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR,0.22);});
+  drawTrail(m,"ball",BR*m.s,"#ffffff",0.35);
+  list.forEach(function(o){
+    var col=o.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
+    drawPlayer(m,o.x,o.y,o.team,o.slot,o.name,o.jersey,o.me,o.glow,col);
+  });
+  drawBall(m,ballRender.x,ballRender.y);
+  drawRings(m,now);
+  drawParts(m,now);
+  drawGoalFx(cw,ch,m,now);
+  drawHud(cw,ch,m,serverState);
+  drawCountdown(cw,ch,m,serverState,now);
 }
 
-var lastFrameTime = performance.now();
-
-function gameLoop(now) {
-  if (elGame.style.display === "none") return;
-  var dt = (now - lastFrameTime) / 1000;
-  if (dt > 0.05) dt = 0.05;
-  lastFrameTime = now;
-
-  stepLocalSelf(dt);
-  renderInterpolated(performance.now());
-  maybeSendState(now);
-  render();
-
-  requestAnimationFrame(gameLoop);
+var lastFrame=performance.now();
+function loop(now){
+  if(elGame.style.display==="none"){looping=false;return;}
+  var dt=(now-lastFrame)/1000;
+  if(dt>0.05)dt=0.05;
+  lastFrame=now;fdt=dt;
+  stepSelf(dt);
+  renderInterp(performance.now());
+  maybeSend(now);
+  render(performance.now());
+  requestAnimationFrame(loop);
 }
 
 resizeGame();
