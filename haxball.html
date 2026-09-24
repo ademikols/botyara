@@ -132,10 +132,11 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 (function () {
 "use strict";
 var $ = function (i) { return document.getElementById(i); };
+
 var FW = 840, FH = 400, GT = 150, GB = 250, GD = 18, CR = 40, PR = 15, BR = 8;
-var SPEED = 220, ACCEL = 12, SEND_MS = 40, TELE = 100, SOFT = 0.08;
-var DELAY = 100, KEEP = 500, SNAP_P = 150, SNAP_B = 200, EXTRAP = 200;
-var GO_MS = 900, GOAL_MS = 1600, KICK_MS = 350;
+var SPEED = 220, ACCEL = 12, SEND_MS = 40, TELE = 100, SOFT = 0.04;
+var DELAY = 90, KEEP = 600, SNAP_P = 150, SNAP_B = 200;
+var GO_MS = 900, GOAL_MS = 1600;
 var DEF_L = "#5689e5", DEF_R = "#e56e56";
 var PALETTE = ["#5689e5","#e56e56","#4eaa5e","#e0c93f","#9b5de5","#e88c3f"];
 var FCOL = { gray:"#5a5a5a", green:"#36793b", blue:"#2c5b8f", dark:"#1f2226" };
@@ -203,10 +204,10 @@ buildPal("pal-left","left");
 buildPal("pal-right","right");
 
 var inPN=$("in-prof-name"),inPJ=$("in-prof-jersey");
-function hasLocalName(){try{return!!localStorage.getItem("hax_name");}catch(e){return false;}}
-function fillStats(p){
-  $("st-matches").textContent=String(p.matches||0);
-  $("st-goals").textContent=String(p.goals||0);
+function hasLocalName(){try{return!!localStorage.getItem("hax_name");}catch(e){returnProf false;}}
+.stylefunction fillStats(p){
+  $("st-m.displayatches").textContent=String(p=".matches||0);
+block  $("st-goals").textContent=String(p.goals||0);
   $("st-wins").textContent=String(p.wins||0);
   $("st-losses").textContent=String(p.losses||0);
   $("st-draws").textContent=String(p.draws||0);
@@ -224,7 +225,7 @@ function loadProfile(applyName){
 }
 $("btn-profile").addEventListener("click",function(){
   inPN.value=MY_NAME;inPJ.value=MY_JERSEY>0?String(MY_JERSEY):"";fillStats({});
-  elMenu.style.display="none";elProf.style.display="block";elProf.scrollTop=0;
+  elMenu.style.display="none";el";elProf.scrollTop=0;
   loadProfile(false).then(function(p){
     if(elProf.style.display==="none")return;
     if(!p){showToast("Не удалось загрузить профиль");return;}
@@ -297,7 +298,7 @@ var remoteRender={};
 var ballRender={x:FW/2,y:FH/2};
 var buf=[];
 var cdBase=0,cdT=0,prevPhase=null,goUntil=0;
-var goalFx=null,rings=[],parts=[],trails={},prevGlow={};
+var goalFx=null,parts=[],prevGlow={};
 var joyDX=0,joyDY=0,kickPressed=false,lastSend=0,fdt=0.016;
 var startBtn=$("start-btn"),rematchBtn=$("rematch-btn");
 
@@ -316,7 +317,7 @@ function clampPos(x,y){
 }
 function enterGame(code){
   roomCode=code;buf=[];remoteRender={};prevPhase=null;goUntil=0;cdBase=0;
-  goalFx=null;rings=[];parts=[];trails={};prevGlow={};
+  goalFx=null;parts=[];prevGlow={};
   startBtn.style.display="none";rematchBtn.style.display="none";
   elMenu.style.display="none";elProf.style.display="none";elGame.style.display="block";
   resizeGame();loadProfile(false);connectWs(code);
@@ -326,7 +327,7 @@ function leaveGame(silent,sendLeave){
   if(ws&&ws.readyState===1&&sendLeave){try{ws.send(JSON.stringify({action:"leave"}));}catch(e){}}
   if(ws){try{ws.close();}catch(e){}ws=null;}
   connected=false;roomCode=null;serverState=null;remoteRender={};buf=[];
-  prevPhase=null;goUntil=0;goalFx=null;rings=[];parts=[];trails={};prevGlow={};
+  prevPhase=null;goUntil=0;goalFx=null;parts=[];prevGlow={};
   startBtn.style.display="none";rematchBtn.style.display="none";
   elGame.style.display="none";elMenu.style.display="block";setTab("main");
   if(!silent)showToast("Вы вышли из игры");
@@ -353,9 +354,9 @@ $("exit-btn").addEventListener("click",function(){leaveGame(false,true);});
 function startGoal(team){
   var now=performance.now();goalFx={t:now,team:team};
   var col=team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
-  for(var i=0;i<36;i++){
-    var a=Math.random()*Math.PI*2,sp=80+Math.random()*260;
-    parts.push({x:ballRender.x,y:ballRender.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,t:now,life:700+Math.random()*500,c:i%3===0?"#fff":col});
+  for(var i=0;i<24;i++){
+    var a=Math.random()*Math.PI*2,sp=80+Math.random()*220;
+    parts.push({x:ballRender.x,y:ballRender.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,t:now,life:600+Math.random()*400,c:i%3===0?"#fff":col});
   }
 }
 function connectWs(code){
@@ -375,10 +376,6 @@ function connectWs(code){
         if(st.score.left>serverState.score.left)startGoal("left");
         else if(st.score.right>serverState.score.right)startGoal("right");
       }
-      st.players.forEach(function(p){
-        if(p.kick_glow&&!prevGlow[p.user_id])rings.push({uid:p.user_id,t:now,team:p.team});
-        prevGlow[p.user_id]=p.kick_glow;
-      });
       serverState=st;myTeam=st.my_side;
       if(st.left_color)TEAM_L_COLOR=st.left_color;
       if(st.right_color)TEAM_R_COLOR=st.right_color;
@@ -398,7 +395,8 @@ function syncSelf(){
   var me=findMe(serverState);
   if(!me)return;
   if(serverState.phase!=="battle"){localSelf.x=me.x;localSelf.y=me.y;localSelf.vx=0;localSelf.vy=0;return;}
-  if(Math.hypot(me.x-localSelf.x,me.y-localSelf.y)>TELE){localSelf.x=me.x;localSelf.y=me.y;}
+  var d=Math.hypot(me.x-localSelf.x,me.y-localSelf.y);
+  if(d>TELE){localSelf.x=me.x;localSelf.y=me.y;}
   else{localSelf.x+=(me.x-localSelf.x)*SOFT;localSelf.y+=(me.y-localSelf.y)*SOFT;}
 }
 
@@ -465,14 +463,6 @@ function stepSelf(dt){
   localSelf.vy+=(joyDY*SPEED*k-localSelf.vy)*a;
   localSelf.x+=localSelf.vx*dt;localSelf.y+=localSelf.vy*dt;
   var c=clampPos(localSelf.x,localSelf.y);localSelf.x=c[0];localSelf.y=c[1];
-  serverState.players.forEach(function(p){
-    if(p.user_id===MY_UID||p.team===myTeam)return;
-    var rp=remoteRender[p.user_id];if(!rp)return;
-    var dx=localSelf.x-rp.x,dy=localSelf.y-rp.y,d=Math.hypot(dx,dy),md=PR*2;
-    if(d>0&&d<md){localSelf.x+=dx/d*(md-d)*0.5;localSelf.y+=dy/d*(md-d)*0.5;var cc=clampPos(localSelf.x,localSelf.y);localSelf.x=cc[0];localSelf.y=cc[1];}
-  });
-  var bx=localSelf.x-ballRender.x,by=localSelf.y-ballRender.y,bd=Math.hypot(bx,by),bm=PR+BR;
-  if(bd<bm&&bd>0.001){localSelf.x+=bx/bd*(bm-bd);localSelf.y+=by/bd*(bm-bd);var bc=clampPos(localSelf.x,localSelf.y);localSelf.x=bc[0];localSelf.y=bc[1];}
 }
 function maybeSend(now){
   if(!connected||!ws||ws.readyState!==1||now-lastSend<SEND_MS)return;
@@ -481,40 +471,41 @@ function maybeSend(now){
 }
 
 function lerp(a,b,t){return a+(b-a)*t;}
-function rp(p,x,y,vx,vy,g){return {x:x,y:y,vx:vx||0,vy:vy||0,name:p.name,team:p.team,slot:p.slot,jersey:p.jersey||0,glow:g};}
-function fromSnap(s,dt){
-  var o={};
-  s.players.forEach(function(p){
-    if(p.user_id===MY_UID)return;
-    o[p.user_id]=rp(p,p.x+(p.vx||0)*dt,p.y+(p.vy||0)*dt,p.vx,p.vy,p.kick_glow);
-  });
-  remoteRender=o;
-  ballRender.x=s.ball.x+(s.ball.vx||0)*dt;
-  ballRender.y=s.ball.y+(s.ball.vy||0)*dt;
-}
+function rp(p,x,y,vx,vy){return {x:x,y:y,name:p.name,team:p.team,slot:p.slot,jersey:p.jersey||0};}
 function renderInterp(now){
   var n=buf.length;if(!n)return;
-  var rt=now-DELAY,last=buf[n-1];
-  if(n===1||rt<=buf[0].t){fromSnap(buf[0],0);return;}
-  if(rt>last.t){fromSnap(last,Math.min(rt-last.t,EXTRAP)/1000);return;}
+  var rt=now-DELAY;
+  if(n===1||rt<=buf[0].t){
+    var s=buf[0],o={};
+    s.players.forEach(function(p){if(p.user_id===MY_UID)return;o[p.user_id]=rp(p,p.x,p.y);});
+    remoteRender=o;
+    ballRender.x=s.ball.x;ballRender.y=s.ball.y;
+    return;
+  }
+  var last=buf[n-1];
+  if(rt>=last.t){
+    var o2={};
+    last.players.forEach(function(p){if(p.user_id===MY_UID)return;o2[p.user_id]=rp(p,p.x,p.y);});
+    remoteRender=o2;
+    ballRender.x=last.ball.x;ballRender.y=last.ball.y;
+    return;
+  }
   var i=0;
   while(i<n-2&&buf[i+1].t<rt)i++;
   var A=buf[i],B=buf[i+1],span=B.t-A.t;
   var al=span>0?clamp((rt-A.t)/span,0,1):1;
   var am={};
   A.players.forEach(function(p){am[p.user_id]=p;});
-  var o={};
+  var o3={};
   B.players.forEach(function(pb){
     if(pb.user_id===MY_UID)return;
-    var pa=am[pb.user_id],x=pb.x,y=pb.y,g=pb.kick_glow,vx=pb.vx,vy=pb.vy;
+    var pa=am[pb.user_id],x=pb.x,y=pb.y;
     if(pa){
       if(Math.hypot(pb.x-pa.x,pb.y-pa.y)<=SNAP_P){x=lerp(pa.x,pb.x,al);y=lerp(pa.y,pb.y,al);}
-      vx=lerp(pa.vx||0,pb.vx||0,al);vy=lerp(pa.vy||0,pb.vy||0,al);
-      if(al<0.5)g=pa.kick_glow;
     }
-    o[pb.user_id]=rp(pb,x,y,vx,vy,g);
+    o3[pb.user_id]=rp(pb,x,y);
   });
-  remoteRender=o;
+  remoteRender=o3;
   if(Math.hypot(B.ball.x-A.ball.x,B.ball.y-A.ball.y)>SNAP_B){ballRender.x=B.ball.x;ballRender.y=B.ball.y;}
   else{ballRender.x=lerp(A.ball.x,B.ball.x,al);ballRender.y=lerp(A.ball.y,B.ball.y,al);}
 }
@@ -556,21 +547,7 @@ function drawField(cw,ch,m,key){
     ctx.lineWidth=1.5;ctx.strokeStyle="#000";ctx.stroke();
   });
 }
-function pushTrail(key,x,y,max){
-  var t=trails[key];if(!t)t=trails[key]=[];
-  var l=t[t.length-1];if(l&&Math.hypot(x-l[0],y-l[1])>80)t.length=0;
-  t.push([x,y]);if(t.length>max)t.shift();
-}
-function drawTrail(m,key,r,color,alpha){
-  var t=trails[key];if(!t)return;
-  ctx.fillStyle=color;
-  for(var i=0;i<t.length-1;i++){
-    var k=(i+1)/t.length;ctx.globalAlpha=alpha*k;
-    circ(m.x+t[i][0]*m.s,m.y+t[i][1]*m.s,r*(0.35+0.65*k));ctx.fill();
-  }
-  ctx.globalAlpha=1;
-}
-function drawPlayer(m,x,y,team,slot,name,jersey,isMe,glow,teamColor){
+function drawPlayer(m,x,y,team,slot,name,jersey,isMe,teamColor){
   var sx=m.x+x*m.s,sy=m.y+y*m.s,r=PR*m.s;
   var num=jersey>0?jersey:slot;
   ctx.fillStyle="rgba(0,0,0,0.3)";
@@ -579,7 +556,6 @@ function drawPlayer(m,x,y,team,slot,name,jersey,isMe,glow,teamColor){
   g.addColorStop(0,"rgba(255,255,255,0.45)");g.addColorStop(0.4,teamColor);g.addColorStop(1,teamColor);
   circ(sx,sy,r);ctx.fillStyle=g;ctx.fill();
   ctx.lineWidth=2;ctx.strokeStyle=isMe?"#fff":"#000";ctx.stroke();
-  if(glow){circ(sx,sy,r);ctx.fillStyle="rgba(255,255,255,0.35)";ctx.fill();}
   ctx.textAlign="center";ctx.textBaseline="middle";
   ctx.font="bold "+Math.max(11,Math.round(r*1.05))+"px sans-serif";
   ctx.fillStyle="#fff";ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=2;
@@ -597,6 +573,23 @@ function drawBall(m,x,y){
   circ(sx,sy,r);ctx.fillStyle=g;ctx.fill();
   ctx.lineWidth=1.5;ctx.strokeStyle="#000";ctx.stroke();
 }
+
+// Визуальное выталкивание мяча из игроков (только рендер)
+function resolveBallVisual(){
+  var minD=PR+BR;
+  var list=[{x:localSelf.x,y:localSelf.y}];
+  for(var uid in remoteRender)list.push(remoteRender[uid]);
+  for(var i=0;i<list.length;i++){
+    var dx=ballRender.x-list[i].x;
+    var dy=ballRender.y-list[i].y;
+    var d=Math.hypot(dx,dy);
+    if(d<minD&&d>0.001){
+      var ux=dx/d,uy=dy/d,ov=minD-d;
+      ballRender.x+=ux*ov;ballRender.y+=uy*ov;
+    }
+  }
+}
+
 function fmtTime(t){t=Math.max(0,Math.round(t));var mm=Math.floor(t/60),ss=t%60;return (mm<10?"0":"")+mm+":"+(ss<10?"0":"")+ss;}
 function fmtGoalTime(sec){var mm=Math.floor(sec/60),ss=sec%60;return mm+":"+(ss<10?"0":"")+ss;}
 function phaseLabel(st){
@@ -710,17 +703,6 @@ function drawParts(m,now){
   }
   ctx.globalAlpha=1;
 }
-function drawRings(m,now){
-  for(var i=rings.length-1;i>=0;i--){
-    var rg=rings[i],k=(now-rg.t)/KICK_MS;
-    var pos=rg.uid===MY_UID?localSelf:remoteRender[rg.uid];
-    if(k>=1||!pos){rings.splice(i,1);continue;}
-    ctx.globalAlpha=1-k;ctx.lineWidth=3;
-    ctx.strokeStyle=rg.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
-    circ(m.x+pos.x*m.s,m.y+pos.y*m.s,PR*m.s*(1.2+k*1.6));ctx.stroke();
-  }
-  ctx.globalAlpha=1;
-}
 function render(now){
   var cw=isRot?vh:vw,ch=isRot?vw:vh;
   var m=fieldMap(cw,ch);
@@ -732,22 +714,19 @@ function render(now){
   var me=findMe(serverState),list=[];
   serverState.players.forEach(function(p){
     if(p.user_id===MY_UID){
-      if(me)list.push({uid:p.user_id,x:localSelf.x,y:localSelf.y,team:me.team,slot:me.slot,name:MY_NAME,jersey:me.jersey||MY_JERSEY,glow:me.kick_glow,me:true});
+      if(me)list.push({x:localSelf.x,y:localSelf.y,team:me.team,slot:me.slot,name:MY_NAME,jersey:me.jersey||MY_JERSEY,me:true});
     }else{
       var r=remoteRender[p.user_id];
-      if(r)list.push({uid:p.user_id,x:r.x,y:r.y,team:r.team,slot:r.slot,name:r.name,jersey:r.jersey,glow:r.glow,me:false});
+      if(r)list.push({x:r.x,y:r.y,team:r.team,slot:r.slot,name:r.name,jersey:r.jersey,me:false});
     }
   });
-  pushTrail("ball",ballRender.x,ballRender.y,14);
-  list.forEach(function(o){pushTrail(o.uid,o.x,o.y,7);});
-  list.forEach(function(o){drawTrail(m,o.uid,PR*m.s,o.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR,0.22);});
-  drawTrail(m,"ball",BR*m.s,"#ffffff",0.35);
   list.forEach(function(o){
     var col=o.team==="left"?TEAM_L_COLOR:TEAM_R_COLOR;
-    drawPlayer(m,o.x,o.y,o.team,o.slot,o.name,o.jersey,o.me,o.glow,col);
+    drawPlayer(m,o.x,o.y,o.team,o.slot,o.name,o.jersey,o.me,col);
   });
+  resolveBallVisual();
   drawBall(m,ballRender.x,ballRender.y);
-  drawRings(m,now);drawParts(m,now);
+  drawParts(m,now);
   drawGoalFx(cw,ch,m,now);
   drawHud(cw,ch,m,serverState);
   drawCountdown(cw,ch,m,serverState,now);
