@@ -282,8 +282,6 @@ function postJson(url, body) {
   }).then(function (r) { return r.json(); });
 }
 
-// ==================== ПРОФИЛЬ ====================
-
 var inProfName = document.getElementById("in-prof-name");
 var inProfJersey = document.getElementById("in-prof-jersey");
 var stMatches = document.getElementById("st-matches");
@@ -367,8 +365,6 @@ document.getElementById("btn-prof-save").addEventListener("click", function () {
       showToast("Профиль сохранён");
     }).catch(function () { showToast("Ошибка сети"); });
 });
-
-// ==================== ЛОББИ ====================
 
 document.getElementById("btn-create").addEventListener("click", function () {
   var gname = inGameName.value.trim() || (MY_NAME + " игра");
@@ -514,7 +510,7 @@ function leaveGame(silent) {
   elGame.style.display = "none";
   elMenu.style.display = "block";
   refreshList();
-phase  if (!silent) showToast("Вы вышли из игры");
+  if (!silent) showToast("Вы вышли из игры");
 }
 
 function pushSnapshot(state) {
@@ -532,7 +528,7 @@ function hideActionButtons() {
 
 function updateButtons(st) {
   var isHost = !!st && st.host_id === MY_UID;
-  var canStart = isHost && st. === "waiting" && st.players.length >= 2;
+  var canStart = isHost && st.phase === "waiting" && st.players.length >= 2;
   var canRematch = isHost && st.phase === "over";
   startBtn.style.display = canStart ? "block" : "none";
   rematchBtn.style.display = canRematch ? "block" : "none";
@@ -777,8 +773,6 @@ function stepLocalSelf(dt) {
     }
   }
 
-  // Не даём своей фигуре залезать внутрь мяча (только локально на клиенте).
-  // Мяч не трогаем — он едет по серверной физике.
   var bdx = localSelf.x - ballRender.x;
   var bdy = localSelf.y - ballRender.y;
   var bd = Math.hypot(bdx, bdy);
@@ -807,8 +801,6 @@ function maybeSendState(now) {
     }));
   } catch (e) {}
 }
-
-// ==================== БУФЕРИЗОВАННАЯ ИНТЕРПОЛЯЦИЯ ====================
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
@@ -895,8 +887,6 @@ function renderInterpolated(now) {
   ballRender.x = bp[0];
   ballRender.y = bp[1];
 }
-
-// ==================== РЕНДЕР ====================
 
 var canvas = document.getElementById("gcanvas");
 var ctx = canvas.getContext("2d");
