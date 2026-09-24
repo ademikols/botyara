@@ -49,7 +49,6 @@
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.85); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 14px; z-index: 999; opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: 85%; text-align: center; }
   #toast.show { opacity: 1; }
 
-  /* Экран профиля */
   #s-profile {
     position: fixed; inset: 0; display: none;
     background: linear-gradient(180deg, #2a2a2a, #151515);
@@ -194,12 +193,10 @@ var SEND_INTERVAL = 1000 / SEND_HZ;
 var SELF_CORRECT_TELEPORT = 100;
 var SELF_CORRECT_SOFT = 0.08;
 
-// Буферизованная интерполяция: рисуем мир с задержкой RENDER_DELAY_MS
-// между двумя снапшотами из буфера (как в оригинальном haxball.com).
-var RENDER_DELAY_MS = 100;      // можно 90-120
-var BUFFER_KEEP_MS = 500;       // снапшоты старше этого удаляются
-var SNAP_DIST_PLAYER = 150;     // если игрок "прыгнул" дальше — не интерполируем (телепорт после гола)
-var SNAP_DIST_BALL = 200;       // то же для мяча
+var RENDER_DELAY_MS = 100;
+var BUFFER_KEEP_MS = 500;
+var SNAP_DIST_PLAYER = 150;
+var SNAP_DIST_BALL = 200;
 
 var GO_SHOW_MS = 900;
 
@@ -229,7 +226,6 @@ try {
   if (savedName) MY_NAME = savedName;
 } catch (e) {}
 
-// Номер на футболке из профиля (0 — без номера)
 var MY_JERSEY = 0;
 
 var toastEl = document.getElementById("toast");
@@ -308,7 +304,6 @@ function fillStats(p) {
   stDraws.textContent = String(p.draws || 0);
 }
 
-// Загрузка профиля с сервера. Сохраняет MY_JERSEY (и MY_NAME, если своего имени ещё нет).
 function loadProfile(applyName) {
   return fetch("/api/haxball/profile?uid=" + encodeURIComponent(MY_UID))
     .then(function (r) { return r.json(); })
@@ -450,14 +445,11 @@ var connected = false;
 var serverState = null;
 var localSelf = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
 
-// Рендер-состояние для чужих игроков и мяча (заполняется renderInterpolated)
 var remoteRender = {};
 var ballRender = { x: FIELD_W / 2, y: FIELD_H / 2 };
 
-// Буфер снапшотов: [{ t, players, ball }, ...]
 var snapshotBuffer = [];
 
-// Обратный отсчёт: локальное сглаживание между снапшотами
 var cdBase = 0, cdBaseT = 0;
 var prevPhase = null;
 var goUntil = 0;
@@ -475,7 +467,6 @@ function clampPlayerPos(x, y) {
   if (inMouth) x = clamp(x, -GOAL_DEPTH + 2, FIELD_W + GOAL_DEPTH - 2);
   else x = clamp(x, PLAYER_R, FIELD_W - PLAYER_R);
 
-  // скруглённые углы поля
   var cx = null, cy = null;
   if (x < CORNER_R) cx = CORNER_R;
   else if (x > FIELD_W - CORNER_R) cx = FIELD_W - CORNER_R;
@@ -523,7 +514,7 @@ function leaveGame(silent) {
   elGame.style.display = "none";
   elMenu.style.display = "block";
   refreshList();
-  if (!silent) showToast("Вы вышли из игры");
+phase  if (!silent) showToast("Вы вышли из игры");
 }
 
 function pushSnapshot(state) {
@@ -541,7 +532,7 @@ function hideActionButtons() {
 
 function updateButtons(st) {
   var isHost = !!st && st.host_id === MY_UID;
-  var canStart = isHost && st.phase === "waiting" && st.players.length >= 2;
+  var canStart = isHost && st. === "waiting" && st.players.length >= 2;
   var canRematch = isHost && st.phase === "over";
   startBtn.style.display = canStart ? "block" : "none";
   rematchBtn.style.display = canRematch ? "block" : "none";
@@ -785,6 +776,22 @@ function stepLocalSelf(dt) {
       localSelf.x = cc[0]; localSelf.y = cc[1];
     }
   }
+
+  // Не даём своей фигуре залезать внутрь мяча (только локально на клиенте).
+  // Мяч не трогаем — он едет по серверной физике.
+  var bdx = localSelf.x - ballRender.x;
+  var bdy = localSelf.y - ballRender.y;
+  var bd = Math.hypot(bdx, bdy);
+  var bmin = PLAYER_R + BALL_R;
+  if (bd < bmin && bd > 0.001) {
+    var bux = bdx / bd, buy = bdy / bd;
+    var boverlap = bmin - bd;
+    localSelf.x += bux * boverlap;
+    localSelf.y += buy * boverlap;
+    var bc = clampPlayerPos(localSelf.x, localSelf.y);
+    localSelf.x = bc[0];
+    localSelf.y = bc[1];
+  }
 }
 
 function maybeSendState(now) {
@@ -805,13 +812,11 @@ function maybeSendState(now) {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// Интерполяция позиции; при слишком большом скачке (гол, ресет) — сразу B.
 function lerpPos(ax, ay, bx, by, alpha, snapDist) {
   if (Math.hypot(bx - ax, by - ay) > snapDist) return [bx, by];
   return [lerp(ax, bx, alpha), lerp(ay, by, alpha)];
 }
 
-// Применить один снапшот как есть (без интерполяции)
 function applySnapshot(s) {
   var out = {};
   for (var i = 0; i < s.players.length; i++) {
@@ -838,14 +843,11 @@ function renderInterpolated(now) {
 
   var rt = now - RENDER_DELAY_MS;
 
-  // rt раньше самого старого снапшота (буфер только начал наполняться) — держим первый,
-  // чтобы не было скачка вперёд к последнему
   if (rt <= snapshotBuffer[0].t) {
     applySnapshot(snapshotBuffer[0]);
     return;
   }
 
-  // найти два снапшота A и B, между которыми rt
   var A = null, B = null;
   for (var i = 0; i < n - 1; i++) {
     if (snapshotBuffer[i].t <= rt && rt <= snapshotBuffer[i + 1].t) {
@@ -855,7 +857,6 @@ function renderInterpolated(now) {
     }
   }
   if (!A) {
-    // rt за пределами буфера (новее последнего) — используем последний
     applySnapshot(snapshotBuffer[n - 1]);
     return;
   }
@@ -865,7 +866,6 @@ function renderInterpolated(now) {
   if (alpha < 0) alpha = 0;
   if (alpha > 1) alpha = 1;
 
-  // игроки по user_id
   var aById = {};
   for (var ai = 0; ai < A.players.length; ai++) aById[A.players[ai].user_id] = A.players[ai];
 
@@ -891,7 +891,6 @@ function renderInterpolated(now) {
   }
   remoteRender = out;
 
-  // мяч
   var bp = lerpPos(A.ball.x, A.ball.y, B.ball.x, B.ball.y, alpha, SNAP_DIST_BALL);
   ballRender.x = bp[0];
   ballRender.y = bp[1];
@@ -910,7 +909,6 @@ function fieldToScreen(cw, ch) {
   return { scale: scale, offX: offX, offY: offY };
 }
 
-// Путь прямоугольника со скруглёнными углами (через arc, без ctx.roundRect)
 function roundRectPath(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -935,7 +933,6 @@ function drawField(cw, ch, state) {
   ctx.fillStyle = "#111";
   ctx.fillRect(0, 0, cw, ch);
 
-  // поле со скруглёнными углами; всё содержимое обрезается по этому контуру
   roundRectPath(ox, oy, FIELD_W * s, FIELD_H * s, CORNER_R * s);
   ctx.fillStyle = baseColor;
   ctx.fill();
@@ -978,7 +975,6 @@ function drawField(cw, ch, state) {
 
   ctx.restore();
 
-  // контур поля со скруглёнными углами
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
   roundRectPath(ox, oy, FIELD_W * s, FIELD_H * s, CORNER_R * s);
@@ -1004,7 +1000,6 @@ function drawPlayer(m, x, y, team, slot, name, glow, jersey) {
   var sy = m.offY + y * m.scale;
   var r = PLAYER_R * m.scale;
 
-  // Номер на фигуре: свой номер из профиля, иначе номер по позиции
   var displayNumber = (jersey > 0) ? jersey : slot;
 
   if (glow) {
@@ -1050,31 +1045,6 @@ function drawBall(m, x, y) {
   ctx.arc(sx - r * 0.35, sy - r * 0.35, r * 0.28, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(255,255,255,0.8)";
   ctx.fill();
-}
-
-// Визуальное выталкивание мяча из игроков (только рендер, не физика).
-// Устраняет визуальное "прохождение" мяча сквозь фигуры.
-function resolveBallVisual() {
-  var minD = PLAYER_R + BALL_R;
-  var list = [{ x: localSelf.x, y: localSelf.y }];
-  for (var uid in remoteRender) {
-    list.push(remoteRender[uid]);
-  }
-  for (var i = 0; i < list.length; i++) {
-    var dx = ballRender.x - list[i].x;
-    var dy = ballRender.y - list[i].y;
-    var d = Math.hypot(dx, dy);
-    if (d < minD) {
-      if (d < 0.001) {
-        ballRender.y -= minD;
-        continue;
-      }
-      var ux = dx / d, uy = dy / d;
-      var overlap = minD - d;
-      ballRender.x += ux * overlap;
-      ballRender.y += uy * overlap;
-    }
-  }
 }
 
 function fmtTime(t) {
@@ -1125,7 +1095,6 @@ function drawHud(cw, ch, state) {
   }
 }
 
-// Крупный обратный отсчёт 5..1 и надпись GO! по центру поля
 function drawCountdown(cw, ch, m, state) {
   var now = performance.now();
   var cx = cw / 2;
@@ -1188,7 +1157,6 @@ function render() {
     }
     var me = findMe(serverState);
     if (me) drawPlayer(m, localSelf.x, localSelf.y, me.team, me.slot, MY_NAME, me.kick_glow, me.jersey);
-    resolveBallVisual();
     drawBall(m, ballRender.x, ballRender.y);
     drawHud(cw, ch, serverState);
     drawCountdown(cw, ch, m, serverState);
@@ -1218,7 +1186,6 @@ function gameLoop(now) {
 
 resizeGame();
 
-// При загрузке подтягиваем профиль (номер и, если своего имени ещё нет, имя)
 loadProfile(true);
 
 })();
